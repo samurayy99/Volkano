@@ -1,26 +1,1298 @@
-@import "tailwindcss";
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --bg-0: #040404;
+  --line-soft: rgba(247, 241, 231, 0.08);
+  --line-strong: rgba(247, 241, 231, 0.16);
+  --line-bright: rgba(247, 241, 231, 0.28);
+  --text-main: rgba(247, 241, 231, 0.96);
+  --text-dim: rgba(219, 208, 190, 0.68);
+  --font-display:
+    "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow",
+    "Helvetica Neue", sans-serif;
+  --font-ui:
+    "Inter Tight", "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  --light-angle: -72deg;
+  --source-focus-x: 39%;
+  --source-focus-y: 60%;
+  --cube-width: min(1320px, calc(100vw - clamp(6rem, 11vw, 18rem)));
+  --cube-height: min(780px, calc(100vh - clamp(5rem, 10vh, 9rem)));
+  --cube-depth: min(calc(var(--cube-width) * 1.22), 1320px);
+  --cube-perspective: 1880px;
+  --backwall-seat-top: clamp(0.9rem, 1.3vh, 1.2rem);
+  --backwall-seat-side: clamp(0.9rem, 1.4vw, 1.2rem);
+  --backwall-seat-bottom: clamp(0.95rem, 1.5vh, 1.25rem);
+  --backwall-source-top: clamp(2.8rem, 4vh, 3.7rem);
+  --backwall-source-side: clamp(9.5rem, 12.6vw, 13rem);
+  --backwall-source-bottom: clamp(2.2rem, 3.2vh, 2.9rem);
+  /* Architectural edge seam color */
+  --seam-light: rgba(247, 241, 231, 0.12);
+  --seam-warm: rgba(255, 200, 140, 0.08);
+  --rotation-duration: 1900ms;
+  --rotation-ease: cubic-bezier(0.76, 0, 0.18, 1);
+  --proof-size: clamp(4.6rem, 11vw, 10.8rem);
+  /* Material families — per surface identity */
+  --mat-graphite: hsl(220, 4%, 11%);
+  --mat-obsidian: hsl(230, 5%, 7%);
+  --mat-basalt: hsl(20, 6%, 9%);
+  --mat-void: hsl(0, 0%, 3%);
+  /* Hot/cold zone tints — directional temperature per surface */
+  --zone-warm: rgba(255, 200, 140, 0.024);
+  --zone-cool: rgba(180, 200, 230, 0.016);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-0);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  font-synthesis: none;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.site-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 50% 18%,
+      rgba(113, 80, 48, 0.16),
+      transparent 30%
+    ),
+    linear-gradient(180deg, rgba(8, 8, 8, 0.96), rgba(2, 2, 2, 1));
+}
+
+.cube-wrapper {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  perspective: var(--cube-perspective);
+  /* Pointer parallax: perspective-origin moves subtly with mouse (Phase 4) */
+  perspective-origin:
+    calc(50.3% + var(--mouse-x, 0) * -4%)
+    calc(29vh + var(--mouse-y, 0) * -6vh);
+  transition: perspective-origin 0.14s ease-out;
+  transform-style: preserve-3d;
+  background:
+    /* Subtle warm ambience where the source would illuminate the environment */
+    radial-gradient(
+      ellipse 60% 50% at var(--source-focus-x) var(--source-focus-y),
+      rgba(128, 72, 28, 0.06),
+      transparent 60%
+    ),
+    radial-gradient(circle at 50% 30%, rgba(86, 60, 37, 0.08), transparent 40%),
+    linear-gradient(180deg, #060606 0%, #020202 100%);
+  isolation: isolate;
+}
+
+.chamber-stage {
+  position: relative;
+  width: var(--cube-width);
+  height: var(--cube-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transform-style: preserve-3d;
+}
+
+.chamber-stage::before,
+.chamber-stage::after {
+  content: none;
+}
+
+.chamber-aperture {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  isolation: isolate;
+  transform-style: preserve-3d;
+}
+
+.cube {
+  position: relative;
+  width: var(--cube-width);
+  height: var(--cube-height);
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  transform: rotateY(0deg) translateX(0vw) translateZ(0vw);
+}
+
+.site-root[data-phase="rotating"] .cube {
+  animation: chamber-rotate var(--rotation-duration) var(--rotation-ease)
+    forwards;
+  will-change: transform;
+}
+
+.site-root[data-view="proof"] .cube {
+  transform: rotateY(-90deg) translateX(calc(var(--cube-depth) * -0.5))
+    translateZ(calc(var(--cube-depth) * 0.5));
+}
+
+.site-root[data-view="back"] .cube,
+.site-root[data-phase="back"] .cube {
+  transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
+}
+
+.cube-face {
+  position: absolute;
+  backface-visibility: visible;
+  transform-style: preserve-3d;
+  overflow: hidden;
+}
+
+.cube-face-front,
+.cube-face-back {
+  top: 0;
+  left: 0;
+  width: var(--cube-width);
+  height: var(--cube-height);
+}
+
+.cube-face-left,
+.cube-face-right {
+  top: 0;
+  left: 0;
+  width: var(--cube-depth);
+  height: var(--cube-height);
+  backface-visibility: hidden;
+}
+
+.cube-face-top,
+.cube-face-bottom {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--cube-width);
+  height: var(--cube-depth);
+  display: block;
+  pointer-events: none;
+  backface-visibility: hidden;
+}
+
+.cube-face-front {
+  transform: translateZ(0);
+  pointer-events: none;
+  background: transparent;
+}
+
+.cube-face-back {
+  transform: translateZ(calc(var(--cube-depth) * -1)) rotateY(180deg);
+  pointer-events: none;
+}
+
+.cube-face-back.is-interactive {
+  pointer-events: auto;
+}
+
+.cube-face-right {
+  transform: rotateY(-270deg) translateX(var(--cube-depth));
+  transform-origin: top right;
+}
+
+.cube-face-left {
+  transform: rotateY(270deg) translateX(calc(var(--cube-depth) * -1));
+  transform-origin: top left;
+}
+
+.cube-face-left,
+.cube-face-right {
+  position: relative;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.045),
+    inset 1px 0 0 rgba(247, 241, 231, 0.18),
+    inset -1px 0 0 rgba(247, 241, 231, 0.08),
+    inset 0 1px 0 rgba(247, 241, 231, 0.12),
+    inset 0 -1px 0 rgba(200, 160, 100, 0.06),
+    inset 0 6rem 12rem rgba(255, 255, 255, 0.026),
+    inset 0 -8rem 10rem rgba(0, 0, 0, 0.16),
+    inset -4rem 0 7rem rgba(0, 0, 0, 0.04);
+}
+
+/* Left wall — slightly warmer/brighter (directional light from left) */
+.cube-face-left {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(242, 234, 224, 0.34) 0%,
+      rgba(196, 180, 160, 0.26) 10%,
+      rgba(122, 108, 92, 0.82) 28%,
+      rgba(58, 52, 46, 0.88) 60%,
+      rgba(14, 14, 14, 0.97) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 245, 230, 0.07) 0%,
+      transparent 20%,
+      transparent 74%,
+      rgba(0, 0, 0, 0.18) 100%
+    ),
+    linear-gradient(
+      var(--light-angle),
+      rgba(255, 255, 255, 0.03),
+      transparent 54%
+    ),
+    /* Hot zone tint — left wall is warmer (light source side) */
+    linear-gradient(90deg, var(--zone-warm), transparent 60%);
+}
+
+/* Right wall (proof face inherits this) — cooler, in shadow */
+.cube-face-right {
+  background:
+    linear-gradient(
+      270deg,
+      rgba(232, 234, 240, 0.22) 0%,
+      rgba(168, 174, 184, 0.15) 10%,
+      rgba(96, 102, 114, 0.82) 28%,
+      rgba(40, 44, 50, 0.88) 60%,
+      rgba(10, 11, 14, 0.97) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(200, 210, 224, 0.05) 0%,
+      transparent 20%,
+      transparent 74%,
+      rgba(0, 0, 0, 0.18) 100%
+    ),
+    linear-gradient(
+      var(--light-angle),
+      rgba(255, 255, 255, 0.026),
+      transparent 54%
+    ),
+    /* Cool zone tint — right wall in shadow, slightly cooler */
+    linear-gradient(270deg, var(--zone-cool), transparent 60%);
+}
+
+/* Ceiling — darker, recedes, with edge seams where it meets walls */
+.cube-face-top {
+  top: 0;
+  transform: rotateX(-90deg);
+  transform-origin: top center;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(44, 48, 54, 0.92) 0%,
+      rgba(28, 31, 36, 0.94) 36%,
+      rgba(8, 10, 13, 1) 100%
+    ),
+    radial-gradient(
+      ellipse 48% 38% at 50% 30%,
+      rgba(248, 242, 232, 0.065),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 30% 24% at var(--source-focus-x) 84%,
+      rgba(200, 130, 60, 0.03),
+      transparent 54%
+    ),
+    /* Cool zone tint — ceiling is coldest, most receding */
+    radial-gradient(ellipse 70% 50% at 50% 0%, var(--zone-cool), transparent 80%);
+  box-shadow:
+    inset 0 -1px 0 var(--seam-light),
+    inset 0 1px 0 rgba(247, 241, 231, 0.04),
+    inset 1px 0 0 rgba(247, 241, 231, 0.07),
+    inset -1px 0 0 rgba(247, 241, 231, 0.07),
+    inset 0 -6rem 10rem rgba(0, 0, 0, 0.14),
+    inset 5rem 0 9rem rgba(0, 0, 0, 0.04),
+    inset -5rem 0 9rem rgba(0, 0, 0, 0.04);
+}
+
+/* Floor — warmest surface, catches source light, with receding depth */
+.cube-face-bottom {
+  top: auto;
+  bottom: 0;
+  transform: rotateX(90deg);
+  transform-origin: bottom center;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(36, 30, 24, 0.88) 0%,
+      rgba(18, 15, 12, 0.94) 42%,
+      rgba(2, 2, 3, 1) 100%
+    ),
+    radial-gradient(
+      ellipse 38% 28% at var(--source-focus-x) 20%,
+      rgba(196, 124, 56, 0.16),
+      transparent 56%
+    ),
+    radial-gradient(
+      ellipse 56% 28% at 50% 14%,
+      rgba(128, 73, 24, 0.08),
+      transparent 46%
+    ),
+    /* Hot zone tint — floor is warmest surface, lava proximity */
+    radial-gradient(ellipse 60% 40% at var(--source-focus-x) 0%, var(--zone-warm), transparent 70%);
+  box-shadow:
+    inset 0 1px 0 var(--seam-light),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.24),
+    inset 1px 0 0 var(--seam-warm),
+    inset -1px 0 0 var(--seam-warm),
+    inset 0 7rem 10rem rgba(0, 0, 0, 0.16),
+    inset 5rem 0 9rem rgba(0, 0, 0, 0.05),
+    inset -5rem 0 9rem rgba(0, 0, 0, 0.05);
+}
+
+.cube-face-left::before,
+.cube-face-right::before,
+.cube-face-top::before,
+.cube-face-bottom::before,
+.cube-face-left::after,
+.cube-face-right::after,
+.cube-face-top::after,
+.cube-face-bottom::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Charred 3-layer texture — left wall (grain angle: --light-angle, -72deg) */
+.cube-face-left::before {
+  background:
+    /* Macro grain: rare wide bands */
+    repeating-linear-gradient(
+      var(--light-angle),
+      transparent 0% 6%,
+      rgba(247, 241, 231, 0.055) 6% 7.4%
+    ),
+    /* Micro grain: frequent fine lines */
+    repeating-linear-gradient(
+      var(--light-angle),
+      transparent 0% 4%,
+      rgba(247, 241, 231, 0.018) 4% 4.5%
+    ),
+    /* Mineral shimmer: dense bright lines */
+    repeating-linear-gradient(
+      var(--light-angle),
+      transparent 0% 1.2%,
+      rgba(247, 241, 231, 0.08) 1.2% 2.1%
+    ),
+    radial-gradient(circle at 18% 16%, rgba(247, 241, 231, 0.022), transparent 14%),
+    radial-gradient(circle at 74% 66%, rgba(0, 0, 0, 0.08), transparent 22%);
+  opacity: 0.38;
+}
+
+/* Charred 3-layer texture — right wall (grain angle mirrored: +72deg) */
+.cube-face-right::before {
+  background:
+    /* Macro grain: rare wide bands, mirrored angle */
+    repeating-linear-gradient(
+      calc(var(--light-angle) * -1),
+      transparent 0% 6%,
+      rgba(247, 241, 231, 0.05) 6% 7.4%
+    ),
+    /* Micro grain: frequent fine lines */
+    repeating-linear-gradient(
+      calc(var(--light-angle) * -1),
+      transparent 0% 4%,
+      rgba(247, 241, 231, 0.016) 4% 4.5%
+    ),
+    /* Mineral shimmer */
+    repeating-linear-gradient(
+      calc(var(--light-angle) * -1),
+      transparent 0% 1.2%,
+      rgba(247, 241, 231, 0.07) 1.2% 2.1%
+    ),
+    radial-gradient(circle at 82% 16%, rgba(247, 241, 231, 0.018), transparent 14%),
+    radial-gradient(circle at 26% 66%, rgba(0, 0, 0, 0.08), transparent 22%);
+  opacity: 0.34;
+}
+
+/* Vertical light fall-off on side walls — top lit, bottom in shadow */
+.cube-face-left::after,
+.cube-face-right::after {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 250, 240, 0.09) 0%,
+      transparent 18%,
+      transparent 74%,
+      rgba(0, 0, 0, 0.14) 92%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(247, 241, 231, 0.16),
+      transparent 5%,
+      transparent 90%,
+      rgba(0, 0, 0, 0.16)
+    ),
+    radial-gradient(
+      ellipse 20% 100% at 100% 50%,
+      rgba(0, 0, 0, 0.1),
+      transparent 60%
+    );
+  opacity: 0.96;
+}
+
+/* Charred texture — ceiling (horizontal grain — poured concrete / cast slab) */
+.cube-face-top::before {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0% 6%,
+      rgba(247, 241, 231, 0.04) 6% 7.2%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0% 4%,
+      rgba(247, 241, 231, 0.014) 4% 4.4%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0% 1.2%,
+      rgba(247, 241, 231, 0.06) 1.2% 2%
+    ),
+    radial-gradient(circle at 26% 22%, rgba(247, 241, 231, 0.016), transparent 14%),
+    radial-gradient(circle at 64% 58%, rgba(0, 0, 0, 0.08), transparent 16%);
+  opacity: 0.28;
+}
+
+/* Charred texture — floor (vertical grain — polished stone / panel seams) */
+.cube-face-bottom::before {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0% 6%,
+      rgba(247, 241, 231, 0.045) 6% 7.2%
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0% 4%,
+      rgba(247, 241, 231, 0.016) 4% 4.4%
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0% 1.2%,
+      rgba(247, 241, 231, 0.065) 1.2% 2%
+    ),
+    radial-gradient(circle at var(--source-focus-x) 22%, rgba(247, 241, 231, 0.018), transparent 18%),
+    radial-gradient(circle at 64% 58%, rgba(0, 0, 0, 0.07), transparent 16%);
+  opacity: 0.3;
+}
+
+/* Ceiling ::after — edge definition and subtle ambient wash */
+.cube-face-top::after {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(247, 241, 231, 0.06),
+      transparent 12%,
+      rgba(0, 0, 0, 0.12) 100%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(247, 241, 231, 0.045),
+      transparent 10%,
+      transparent 90%,
+      rgba(247, 241, 231, 0.045)
+    ),
+    radial-gradient(
+      ellipse 100% 14% at 50% 100%,
+      rgba(0, 0, 0, 0.12),
+      transparent 80%
+    );
+}
+
+/* Floor ::after — source warm spill and edge definition */
+.cube-face-bottom::after {
+  background:
+    radial-gradient(
+      ellipse 22% 18% at var(--source-focus-x) 12%,
+      rgba(255, 140, 48, 0.12),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 36% 24% at 44% 16%,
+      rgba(200, 120, 50, 0.065),
+      transparent 40%
+    ),
+    linear-gradient(180deg, rgba(247, 241, 231, 0.045), rgba(0, 0, 0, 0.1)),
+    linear-gradient(
+      90deg,
+      var(--seam-warm),
+      transparent 8%,
+      transparent 92%,
+      var(--seam-warm)
+    ),
+    radial-gradient(
+      ellipse 100% 12% at 50% 100%,
+      rgba(0, 0, 0, 0.1),
+      transparent 80%
+    );
+}
+
+.front-source {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  isolation: isolate;
+}
+
+.front-source-host,
+.front-engine-fallback {
+  position: absolute;
+  inset: 0;
+}
+
+.front-source-host {
+  z-index: 3;
+}
+
+.flow-engine-host,
+.front-flow-host {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.front-flow-host {
+  pointer-events: none;
+}
+
+.front-flow-host.is-interactive {
+  pointer-events: auto;
+}
+
+.site-root[data-front-interactive="false"] .cube-face-front,
+.site-root[data-front-interactive="false"] .front-source,
+.site-root[data-front-interactive="false"] .front-flow-host {
+  pointer-events: none;
+}
+
+.site-root[data-front-interactive="true"] .front-flow-host {
+  pointer-events: auto;
+}
+
+.front-flow-host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.front-engine-fallback {
+  background:
+    radial-gradient(
+      circle at 50% 46%,
+      rgba(172, 127, 78, 0.22),
+      transparent 20%
+    ),
+    radial-gradient(circle at 50% 58%, rgba(72, 49, 28, 0.3), transparent 38%);
+  opacity: 0.58;
+}
+
+.site-root[data-phase="rotating"] .front-source {
+  animation: front-yield var(--rotation-duration) linear forwards;
+}
+
+.site-root[data-view="proof"] .front-source,
+.site-root[data-view="back"] .front-source,
+.site-root[data-phase="back"] .front-source {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.proof-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: clamp(2rem, 7vh, 6rem) clamp(2rem, 6vw, 5rem);
+}
+
+.proof-surface::before {
+  content: none;
+}
+
+.site-root[data-phase="rotating"] .proof-surface::before,
+.site-root[data-view="proof"] .proof-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(0, 0, 0, 0.22), transparent 28%),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.12),
+      rgba(0, 0, 0, 0.04) 34%,
+      rgba(0, 0, 0, 0.16) 100%
+    );
+  opacity: 1;
+}
+
+.proof-headline {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: var(--proof-size);
+  font-weight: 700;
+  line-height: 0.84;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+  color: var(--text-main);
+  text-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: translateY(1rem);
+}
+
+.site-root[data-phase="rotating"] .proof-headline {
+  animation: proof-copy-reveal var(--rotation-duration) linear forwards;
+}
+
+.site-root[data-view="proof"] .proof-headline {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.back-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1rem, 2vw, 1.6rem);
+  border: 1px solid var(--line-soft);
+  background: linear-gradient(180deg, rgba(8, 8, 8, 0.9), rgba(4, 4, 4, 0.98));
+  box-shadow:
+    /* Recessed inset — the back wall sits inside the room, not flush */
+    inset 0 0 0 1px rgba(247, 241, 231, 0.03),
+    inset 0 4rem 8rem rgba(0, 0, 0, 0.24),
+    inset 0 -3rem 6rem rgba(0, 0, 0, 0.18),
+    inset 4rem 0 8rem rgba(0, 0, 0, 0.14),
+    inset -4rem 0 8rem rgba(0, 0, 0, 0.14),
+    0 0 0 1px rgba(247, 241, 231, 0.04);
+}
+
+.back-surface::before,
+.back-surface::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.back-scene-media,
+.back-scene-haze {
+  position: absolute;
+  inset: var(--backwall-seat-top) var(--backwall-seat-side)
+    var(--backwall-seat-bottom);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.back-scene-media {
+  background:
+    linear-gradient(180deg, rgba(4, 4, 4, 0.16), rgba(4, 4, 4, 0.06)),
+    url("/images/volkano-bg.png") center 52% / cover no-repeat;
+  transform: scale(1);
+  transform-origin: center center;
+  /* Contact shadow — grounds the image on the floor, kills the poster-float */
+  box-shadow:
+    inset 0 -4rem 5rem rgba(0, 0, 0, 0.52),
+    inset 4rem 0 5rem rgba(0, 0, 0, 0.18),
+    inset -4rem 0 5rem rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(247, 241, 231, 0.02);
+}
+
+.back-scene-haze {
+  background:
+    radial-gradient(
+      ellipse 36% 44% at var(--source-focus-x) var(--source-focus-y),
+      rgba(5, 5, 5, 0.5) 0%,
+      rgba(5, 5, 5, 0.14) 52%,
+      transparent 80%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(5, 5, 5, 0.58) 0%,
+      rgba(5, 5, 5, 0.18) 24%,
+      rgba(5, 5, 5, 0.04) 52%,
+      rgba(0, 0, 0, 0.2) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(3, 3, 3, 0.34) 0%,
+      rgba(3, 3, 3, 0.08) 34%,
+      rgba(3, 3, 3, 0.18) 100%
+    );
+}
+
+.back-surface::before {
+  inset: calc(var(--backwall-seat-top) - 1.1rem)
+    calc(var(--backwall-seat-side) - 1.15rem)
+    calc(var(--backwall-seat-bottom) - 1.1rem);
+  z-index: 0;
+  border: 1px solid rgba(247, 241, 231, 0.025);
+  background:
+    linear-gradient(180deg, rgba(9, 10, 12, 0.94), rgba(3, 3, 4, 0.98)),
+    linear-gradient(
+      var(--light-angle),
+      rgba(247, 241, 231, 0.018),
+      transparent 44%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.22),
+    inset 0 2rem 3rem rgba(0, 0, 0, 0.14),
+    inset 0 -2.4rem 3.6rem rgba(0, 0, 0, 0.18),
+    inset 2.4rem 0 3.4rem rgba(0, 0, 0, 0.16),
+    inset -2.4rem 0 3.4rem rgba(0, 0, 0, 0.16);
+}
+
+.back-surface::after {
+  left: var(--backwall-seat-side);
+  right: var(--backwall-seat-side);
+  bottom: calc(var(--backwall-seat-bottom) - 0.05rem);
+  height: clamp(0.7rem, 1vw, 1rem);
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0)),
+    linear-gradient(
+      90deg,
+      rgba(247, 241, 231, 0.05),
+      transparent 8%,
+      transparent 92%,
+      rgba(247, 241, 231, 0.03)
+    );
+  opacity: 0.95;
+}
+
+.site-root[data-view="source"] {
+  --backwall-seat-top: var(--backwall-source-top);
+  --backwall-seat-side: var(--backwall-source-side);
+  --backwall-seat-bottom: var(--backwall-source-bottom);
+}
+
+.site-root[data-view="source"] .cube-face-left,
+.site-root[data-view="source"] .cube-face-right,
+.site-root[data-view="source"] .cube-face-top,
+.site-root[data-view="source"] .cube-face-bottom {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.site-root[data-view="source"] .cube-face-back {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.site-root[data-view="source"] .back-scene-media {
+  background-position: center 50%;
+  filter: brightness(0.82) saturate(0.8) contrast(0.9);
+  transform: scale(0.985);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.36),
+    inset 0 0 0 1px rgba(247, 241, 231, 0.018),
+    inset 0 -2rem 3rem rgba(0, 0, 0, 0.2);
+}
+
+.site-root[data-view="source"] .back-scene-haze {
+  background:
+    radial-gradient(
+      ellipse 34% 42% at var(--source-focus-x) var(--source-focus-y),
+      rgba(6, 6, 6, 0.28) 0%,
+      rgba(6, 6, 6, 0.10) 50%,
+      transparent 78%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(3, 3, 3, 0.14) 0%,
+      rgba(3, 3, 3, 0.06) 26%,
+      rgba(3, 3, 3, 0.10) 100%
+    );
+}
+
+.site-root[data-view="source"] .back-surface {
+  opacity: 1;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.site-root[data-view="source"] .back-scene-media {
+  opacity: 0;
+}
+
+.site-root[data-view="source"] .chamber-stage {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.site-root[data-view="source"][data-engine-ready="true"] .chamber-stage {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.3s ease-out;
+}
+
+.site-root[data-view="source"] .back-scene-haze {
+  opacity: 0;
+}
+
+.site-root[data-view="source"] .back-surface::before,
+.site-root[data-view="source"] .back-surface::after {
+  opacity: 0;
+}
+
+.back-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1.2rem, 2vw, 1.8rem) clamp(1.6rem, 2.8vw, 2.8rem);
+  opacity: 0;
+}
+
+.back-brand,
+.back-cta,
+.back-panel-label {
+  font-family: var(--font-mono);
+  font-size: clamp(0.72rem, 0.92vw, 0.88rem);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-main);
+  text-decoration: none;
+}
+
+.back-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.45rem;
+  padding: 0 0.92rem;
+  border: 1px solid rgba(247, 241, 231, 0.12);
+  background: rgba(10, 10, 10, 0.24);
+  transition:
+    border-color 160ms linear,
+    color 160ms linear,
+    background-color 160ms linear;
+}
+
+.back-cta:hover {
+  border-color: rgba(247, 241, 231, 0.24);
+  background: rgba(247, 241, 231, 0.06);
+}
+
+.back-scroll {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  padding: clamp(5.8rem, 10vh, 7.4rem) clamp(1.6rem, 3vw, 3rem)
+    clamp(2rem, 6vh, 4rem);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2rem, 4vw, 3.4rem);
+}
+
+.back-hero {
+  min-height: calc(100vh - clamp(6.5rem, 11vh, 8rem));
+  max-width: min(30rem, 34vw);
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: clamp(2rem, 9vh, 6.5rem);
+  opacity: 0;
+}
+
+.back-hero h2 {
+  font-family: var(--font-display);
+  font-size: clamp(2.9rem, 5.8vw, 5.8rem);
+  font-weight: 700;
+  line-height: 0.86;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 0 28px rgba(0, 0, 0, 0.24);
+}
+
+.back-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1rem, 1.8vw, 1.5rem);
+}
+
+.back-panel {
+  min-height: 15rem;
+  padding: clamp(1.15rem, 1.9vw, 1.6rem);
+  border: 1px solid rgba(247, 241, 231, 0.08);
+  background:
+    linear-gradient(180deg, rgba(15, 15, 15, 0.72), rgba(8, 8, 8, 0.86)),
+    linear-gradient(180deg, rgba(247, 241, 231, 0.014), transparent);
+  backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.back-list {
+  list-style: none;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.back-list li {
+  color: var(--text-main);
+  font-size: clamp(0.94rem, 1.02vw, 1rem);
+  line-height: 1.46;
+}
+
+.back-list-contact li {
+  color: var(--text-dim);
+}
+
+.back-list-contact a {
+  color: var(--text-main);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(247, 241, 231, 0.16);
+}
+
+.site-root[data-phase="rotating"] .back-chrome,
+.site-root[data-phase="rotating"] .back-hero {
+  animation: hero-copy-reveal var(--rotation-duration) linear forwards;
+}
+
+.site-root[data-view="back"] .back-chrome,
+.site-root[data-view="back"] .back-hero,
+.site-root[data-phase="back"] .back-chrome,
+.site-root[data-phase="back"] .back-hero {
+  opacity: 1;
+}
+
+.site-root[data-view="back"] .back-scroll,
+.site-root[data-phase="back"] .back-scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(247, 241, 231, 0.16) transparent;
+}
+
+.site-root[data-back-interactive="false"] .cube-face-back,
+.site-root[data-back-interactive="false"] .back-scroll {
+  pointer-events: none;
+}
+
+.site-root[data-back-interactive="true"] .cube-face-back,
+.site-root[data-back-interactive="true"] .back-scroll {
+  pointer-events: auto;
+}
+
+.site-root[data-back-interactive="true"] .back-scroll {
+  overflow: auto;
+}
+
+.site-root[data-back-interactive="false"] .back-scroll {
+  overflow: hidden;
+}
+
+.back-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.back-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.back-scroll::-webkit-scrollbar-thumb {
+  background: rgba(247, 241, 231, 0.14);
+}
+
+.enter-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 clamp(1rem, 4vw, 3rem) clamp(2rem, 6vh, 4rem);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms linear;
+}
+
+.vessel-debug {
+  position: absolute;
+  top: clamp(1rem, 2vw, 1.4rem);
+  left: clamp(1rem, 2vw, 1.4rem);
+  z-index: 8;
+  display: flex;
+  gap: 0.45rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms linear;
+}
+
+.vessel-debug.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.vessel-debug button {
+  appearance: none;
+  min-width: 6.9rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(247, 241, 231, 0.12);
+  background: rgba(10, 10, 10, 0.42);
+  color: rgba(247, 241, 231, 0.78);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.vessel-debug button.is-active {
+  border-color: rgba(247, 241, 231, 0.28);
+  background: rgba(247, 241, 231, 0.08);
+  color: rgba(247, 241, 231, 0.96);
+}
+
+.enter-overlay.is-visible {
+  opacity: 1;
+}
+
+.enter-button {
+  appearance: none;
+  min-width: 9.2rem;
+  padding: 0.92rem 1.3rem;
+  border: 1px solid var(--line-strong);
+  background: rgba(10, 10, 10, 0.6);
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateX(calc(var(--cube-width) * 0.28));
+  transition:
+    border-color 160ms linear,
+    background-color 160ms linear,
+    transform 160ms linear;
+}
+
+.enter-button:hover {
+  border-color: var(--line-bright);
+  background: rgba(14, 14, 14, 0.78);
+  transform: translateX(calc(var(--cube-width) * 0.28)) translateY(-1px);
+}
+
+.enter-button:disabled {
+  cursor: default;
+  pointer-events: none;
+}
+
+@keyframes chamber-rotate {
+  0% {
+    transform: rotateY(0deg) translateX(0vw) translateZ(0vw);
+  }
+
+  34% {
+    transform: rotateY(-84deg) translateX(calc(var(--cube-depth) * -0.5))
+      translateZ(calc(var(--cube-depth) * 0.46));
+  }
+
+  56% {
+    transform: rotateY(-90deg) translateX(calc(var(--cube-depth) * -0.5))
+      translateZ(calc(var(--cube-depth) * 0.5));
+  }
+
+  100% {
+    transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
+  }
+}
+
+@keyframes front-yield {
+  0%,
+  20% {
+    opacity: 1;
+    filter: none;
+  }
+
+  34%,
+  56% {
+    opacity: 0.2;
+    filter: blur(8px) brightness(0.54) saturate(0.7);
+  }
+
+  100% {
+    opacity: 0;
+    filter: blur(14px) brightness(0.24) saturate(0.4);
+  }
+}
+
+@keyframes proof-copy-reveal {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+
+  36%,
+  64% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-0.35rem);
+  }
+}
+
+@keyframes hero-copy-reveal {
+  0%,
+  70% {
+    opacity: 0;
+  }
+
+  88%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 1040px) {
+  :root {
+    --cube-perspective: 1480px;
+    --cube-width: min(1000px, calc(100vw - 4rem));
+    --cube-height: min(720px, calc(100vh - 4.5rem));
+    --cube-depth: min(calc(var(--cube-width) * 1.14), 1120px);
+    --backwall-source-side: clamp(5.8rem, 9.4vw, 8rem);
+    --backwall-source-top: clamp(2.1rem, 3.2vh, 2.7rem);
+    --backwall-source-bottom: clamp(1.7rem, 2.8vh, 2.2rem);
+    --proof-size: clamp(4rem, 10vw, 7.8rem);
+  }
+
+  .back-hero {
+    max-width: min(100%, 32rem);
+  }
+
+  .back-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .back-panel {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --cube-perspective: 1120px;
+    --cube-width: calc(100vw - 1.5rem);
+    --cube-height: min(84vh, calc(var(--cube-width) * 0.88));
+    --cube-depth: calc(var(--cube-width) * 1.04);
+    --backwall-seat-side: clamp(0.55rem, 1.8vw, 0.75rem);
+    --backwall-seat-top: clamp(0.55rem, 1.2vh, 0.8rem);
+    --backwall-seat-bottom: clamp(0.6rem, 1.3vh, 0.85rem);
+    --backwall-source-side: clamp(2.3rem, 6.6vw, 3.3rem);
+    --backwall-source-top: clamp(1.35rem, 2.6vh, 1.75rem);
+    --backwall-source-bottom: clamp(1.25rem, 2.4vh, 1.65rem);
+    --proof-size: clamp(3.2rem, 13vw, 5.8rem);
+  }
+
+  .cube-wrapper {
+    perspective-origin: 50.2% 30vh;
+  }
+
+  .back-chrome {
+    padding: 1rem 1.1rem;
+  }
+
+  .vessel-debug {
+    top: 0.8rem;
+    left: 0.8rem;
+    gap: 0.35rem;
+  }
+
+  .vessel-debug button {
+    min-width: 5.75rem;
+    padding: 0.55rem 0.65rem;
+    font-size: 0.62rem;
+  }
+
+  .back-scroll {
+    padding: 4.9rem 1.1rem 1.4rem;
+  }
+
+  .enter-button,
+  .enter-button:hover {
+    transform: translateX(clamp(4rem, 18vw, 7rem));
+  }
+
+  .back-hero {
+    min-height: calc(100vh - 5.5rem);
+    max-width: 100%;
+    padding-bottom: 2rem;
+  }
+
+  .back-hero h2 {
+    font-size: clamp(2.4rem, 11vw, 4.8rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cube {
+    transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
+  }
+
+  .cube-face-front,
+  .cube-face-right,
+  .enter-overlay {
+    display: none;
+  }
+
+  .cube-face-back {
+    pointer-events: auto;
+  }
+
+  .back-chrome,
+  .back-hero {
+    opacity: 1;
+  }
+
+  .back-scroll {
+    overflow: auto;
+  }
 }

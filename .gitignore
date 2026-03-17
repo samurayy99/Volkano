@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated field binaries (32MB+ each, regenerate via: node scripts/generate-fields.js)
+public/targets/2048/*.bin
+
+# reference material
+/docs+examples/
+codepen_examples1.txt
+
+# screenshots
+Screenshot *.png

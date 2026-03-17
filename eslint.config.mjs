@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Temporary while flow-engine is ported 1:1 from reference.
+    "src/flow-engine/**",
   ]),
 ]);
 
