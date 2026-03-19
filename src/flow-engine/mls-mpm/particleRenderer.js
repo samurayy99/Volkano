@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import {Fn, attribute, triNoise3D, time, vec3, vec4, float, varying,instanceIndex,mix,normalize,cross,mat3,normalLocal,transformNormalToView,mx_hsvtorgb,mrt,uniform,smoothstep} from "three/tsl";
+import {Fn, attribute, triNoise3D, time, vec3, vec4, float, varying,instanceIndex,mix,normalize,cross,mat3,normalLocal,transformNormalToView,mx_hsvtorgb,mrt,uniform,smoothstep,pow} from "three/tsl";
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {conf} from "../conf";
 
@@ -120,9 +120,8 @@ class ParticleRenderer {
         this.geometry.instanceCount = this.mlsMpmSim.numParticles;
 
         this.material = new THREE.MeshStandardNodeMaterial({
-            metalness: 0.900,
-            roughness: 0.50,
-            //iridescence: 1.0,
+            metalness: 0.08,
+            roughness: 0.85,
         });
 
         this.uniforms.size = uniform(1);
@@ -135,13 +134,29 @@ class ParticleRenderer {
             const particleDensity = particle.get("density");
             const particleDirection = particle.get("direction");
 
+            const particleVelocity = particle.get("velocity");
+            const speed = particleVelocity.length();
+
+            // Velocity-stretch: slow=compact, fast=streak, clamped to avoid brush-soup
+            const stretchT = smoothstep(float(1.2), float(3.5), speed);
+            const stretch = stretchT.mul(1.2).add(1.0);               // 1.0 → 2.2× along Z
+            const thinning = pow(stretch, -0.4);                       // volume-preserving XY shrink
+
+            const localPos = attribute("position").xyz;
+            const stretchedPos = vec3(localPos.x.mul(thinning), localPos.y.mul(thinning), localPos.z.mul(stretch));
+
             const mat = calcLookAtMatrix(particleDirection.xyz);
             vNormal.assign(transformNormalToView(mat.mul(normalLocal)));
             vAo.assign(particlePosition.z.div(64));
             vAo.assign(vAo.mul(vAo).oneMinus());
-            return mat.mul(attribute("position").xyz.mul(this.uniforms.size)).mul(particleDensity.mul(0.4).add(0.5).clamp(0,1)).add(particlePosition.mul(vec3(1,1,1.0)));
+            return mat.mul(stretchedPos.mul(this.uniforms.size.mul(1.08))).mul(particleDensity.mul(0.4).add(0.5).clamp(0,1)).add(particlePosition.mul(vec3(1,1,1.0)));
         })();
-        this.material.colorNode = particle.get("color");
+        const particleColor = particle.get("color");
+        const particleHeat = particle.get("heat");
+        this.material.colorNode = particleColor;
+        // Heat now represents ignition only, so emissive can stay selective while still revealing ember lanes.
+        const glowFactor = smoothstep(float(0.24), float(0.58), particleHeat);
+        this.material.emissiveNode = particleColor.mul(glowFactor).mul(0.45);
         this.material.aoNode = vAo;
 
         //this.material.fragmentNode = vec4(0,0,0,1);
@@ -194,9 +209,13 @@ class ParticleRenderer {
 
         if (bloom !== this.bloom) {
             this.bloom = bloom;
-            this.material.mrtNode = bloom ? mrt( {
-                bloomIntensity: 1
-            } ) : null;
+            if (bloom) {
+                const pc = this.mlsMpmSim.particleBuffer.element(instanceIndex);
+                const bloomGlow = smoothstep(float(0.62), float(0.82), pc.get("heat"));
+                this.material.mrtNode = mrt({ bloomIntensity: bloomGlow });
+            } else {
+                this.material.mrtNode = null;
+            }
         }
     }
 }

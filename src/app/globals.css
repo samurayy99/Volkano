@@ -720,7 +720,7 @@ select {
 .back-scene-media {
   background:
     linear-gradient(180deg, rgba(4, 4, 4, 0.16), rgba(4, 4, 4, 0.06)),
-    url("/images/volkano-bg.png") center 52% / cover no-repeat;
+    url("/images/rift-monolith.png") center center / cover no-repeat;
   transform: scale(1);
   transform-origin: center center;
   /* Contact shadow — grounds the image on the floor, kills the poster-float */

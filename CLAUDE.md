@@ -73,41 +73,21 @@ The business surface that remains after the reveal.
 
 ## Current Highest Priority
 
-### Pre-ENTER Source Stage
+### Back Wall → Interface Surface
 
-This is the main bottleneck now.
+The source stage is solved (lab particle system transplanted, bloom off, gravity center-pull).
 
-Before more proof polish or back-face UI polish, the opening state must become spatially convincing.
+The next bottleneck is the **back wall / hero wall**. This surface must evolve from a static volcano image into the actual interface layer:
 
-The source must read as:
+- About / Projects / Contact sections
+- AI assistant instance
+- VOLKANO brand + CTA
 
-- massive
-- dangerous
-- alive
-- volumetric
-- suspended in space
-- clearly separated from the volcano wall behind it
+The back wall is the **destination after the chamber rotation**. It must feel like a cinematic reveal, not a generic landing page.
 
-The chamber must read as:
-
-- built
-- dark
-- premium
-- spatial
-- framing the event without swallowing it
-
-If the source looks like any of the following, the implementation is wrong:
-
-- a box-memory remnant
-- a flat curtain on the back wall
-- a bronze asteroid
-- a ghostly missing cloud
-- a center-glued widget
-- a generic blob in a dark room
-
-The target feeling is:
-
-> a contained eruption inside a designed pressure chamber
+Design this as one cohesive surface that works both as:
+1. A scenic hero moment (first impression after rotation)
+2. A functional interface (where the user actually does things)
 
 ---
 

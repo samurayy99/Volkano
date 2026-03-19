@@ -224,7 +224,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.speed = 1.02;
     conf.stiffness = 1.92;
     conf.dynamicViscosity = 0.034;
-    conf.bloom = false;
+    conf.bloom = true;
     conf.colorSaturation = 0.9;
     conf.particleDebugMode = "off";
     conf.craterUV.set(0.488, 0.714);

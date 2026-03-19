@@ -19,7 +19,7 @@ import {
     mat3,
     clamp,
     time,
-    cross, mix, mx_hsvtorgb, select, ivec3
+    cross, mix, mx_hsvtorgb, select, ivec3, smoothstep
 } from "three/tsl";
 import {triNoise3Dvec} from "../common/noise";
 import {conf} from "../conf";
@@ -52,6 +52,7 @@ class mlsMpmSimulator {
             C: { type: 'mat3' },
             direction: { type: 'vec3' },
             color: { type: 'vec3' },
+            heat: { type: 'float' },
         };
         this.particleBuffer = new StructuredArray(particleStruct, maxParticles, "particleData");
 
@@ -66,6 +67,7 @@ class mlsMpmSimulator {
             const mass = 1.0 - Math.random() * 0.002;
             this.particleBuffer.set(i, "position", vec);
             this.particleBuffer.set(i, "mass", mass);
+            this.particleBuffer.set(i, "heat", 0);
         }
 
         const cellCount = this.gridSize.x * this.gridSize.y * this.gridSize.z;
@@ -93,6 +95,10 @@ class mlsMpmSimulator {
         this.uniforms.mouseRayDirection = uniform(new THREE.Vector3());
         this.uniforms.mouseRayOrigin = uniform(new THREE.Vector3());
         this.uniforms.mouseForce = uniform(new THREE.Vector3());
+        this.uniforms.sourceFieldCenter = uniform(new THREE.Vector3());
+        this.uniforms.sourceFieldSecondaryCenter = uniform(new THREE.Vector3());
+        this.uniforms.sourceFieldRadius = uniform(1);
+        this.uniforms.sourceFieldSecondaryRadius = uniform(1);
 
         this.kernels.clearGrid = Fn(() => {
             this.cellBuffer.setAtomic("x", false);
@@ -337,9 +343,79 @@ class mlsMpmSimulator {
 
             const direction = this.particleBuffer.element(instanceIndex).get('direction');
             direction.assign(mix(direction,particleVelocity, 0.1));
+            const previousHeat = this.particleBuffer.element(instanceIndex).get('heat').toConst("previousHeat");
 
-            const color = hsvtorgb(vec3(particleDensity.div(this.uniforms.restDensity).mul(0.25).add(time.mul(0.05)), particleVelocity.length().mul(0.5).clamp(0,1).mul(0.3).add(0.7), force.mul(0.3).add(0.7)));
+            // VOLKANO THERMAL RAMP — dark body plus separate ignition channels
+            const coal      = vec3(0.005, 0.003, 0.003);
+            const deepRed   = vec3(0.20, 0.010, 0.010);
+            const ember     = vec3(0.36, 0.026, 0.014);
+            const flareRed  = vec3(0.78, 0.050, 0.022);
+            const fireGold  = vec3(0.98, 0.60, 0.055);
+            const hotWhite  = vec3(1.0, 0.80, 0.12);
+
+            // Inputs — keep the body dark, let fast/source-bound particles carry ignition
+            const densityRatio = smoothstep(float(0.22), float(1.18), particleDensity.div(this.uniforms.restDensity));
+            const velocityFactor = smoothstep(float(0.12), float(0.92), particleVelocity.length().mul(0.26));
+
+            // Centered noise — enough to break up neighborhoods without tinting the whole cloud warm
+            const signedNoise = triNoise3Dvec(particlePosition.mul(0.12), 0.3, time).x.sub(0.285);
+
+            const primarySourceProximity = particlePosition.sub(this.uniforms.sourceFieldCenter)
+                .length()
+                .div(this.uniforms.sourceFieldRadius)
+                .oneMinus()
+                .clamp(0, 1)
+                .pow(1.6);
+            const secondarySourceProximity = particlePosition.sub(this.uniforms.sourceFieldSecondaryCenter)
+                .length()
+                .div(this.uniforms.sourceFieldSecondaryRadius)
+                .oneMinus()
+                .clamp(0, 1)
+                .pow(1.45);
+            const sourceHeat = max(primarySourceProximity, secondarySourceProximity);
+
+            const laneSignal = triNoise3Dvec(particlePosition.mul(0.17).add(particleVelocity.mul(0.12)), 0.08, time).x;
+            const emberLane = smoothstep(float(0.25), float(0.37), laneSignal);
+            const ignitionLane = smoothstep(float(0.38), float(0.50), laneSignal);
+            const neighborhoodWarmth = smoothstep(float(-0.02), float(0.10), signedNoise);
+
+            // Body heat owns the coal/deep-red mass and only occasionally lifts into ember.
+            const bodyHeat = densityRatio.mul(0.18)
+                .add(sourceHeat.mul(0.16))
+                .add(velocityFactor.mul(0.08))
+                .add(signedNoise.mul(0.06))
+                .sub(0.14)
+                .clamp(0, 1);
+            const crimsonLift = emberLane
+                .mul(velocityFactor.mul(0.14).add(sourceHeat.mul(0.08)).add(neighborhoodWarmth.mul(0.06)));
+            const bodyThermal = bodyHeat.add(crimsonLift).clamp(0, 1);
+
+            // Ignition carries memory: particles heat up near the source or cursor and cool gradually as they travel away.
+            const hoverIgnition = dist.mul(0.12).oneMinus().max(0.0).pow(4).clamp(0, 1);
+            const ignitionHeat = previousHeat.mul(0.955)
+                .add(sourceHeat.mul(0.045))
+                .add(velocityFactor.mul(0.028))
+                .add(ignitionLane.mul(sourceHeat.mul(0.008).add(velocityFactor.mul(0.006))))
+                .add(hoverIgnition.mul(0.14))
+                .clamp(0, 1);
+            const colorIgnition = ignitionHeat.add(
+                emberLane.mul(sourceHeat.mul(0.10).add(velocityFactor.mul(0.07)).add(neighborhoodWarmth.mul(0.05)))
+            ).clamp(0, 1);
+
+            const bodyT1 = smoothstep(float(0.0),  float(0.22), bodyThermal);
+            const bodyT2 = smoothstep(float(0.24), float(0.54), bodyThermal);
+            const redIgnition = smoothstep(float(0.12), float(0.38), colorIgnition);
+            const fireIgnition = smoothstep(float(0.54), float(0.80), colorIgnition);
+            const hotIgnition = smoothstep(float(0.94), float(0.992), ignitionHeat);
+
+            const c1 = mix(coal, deepRed, bodyT1);
+            const c2 = mix(c1, ember, bodyT2);
+            const c3 = mix(c2, flareRed, redIgnition);
+            const c4 = mix(c3, fireGold, fireIgnition);
+            const color = mix(c4, hotWhite, hotIgnition);
+
             this.particleBuffer.element(instanceIndex).get('color').assign(color);
+            this.particleBuffer.element(instanceIndex).get('heat').assign(ignitionHeat);
         })().compute(1);
     }
 
@@ -367,6 +443,10 @@ class mlsMpmSimulator {
         }
         this.uniforms.dynamicViscosity.value = dynamicViscosity;
         this.uniforms.restDensity.value = restDensity;
+        this.uniforms.sourceFieldCenter.value.copy(conf.sourceFieldCenter);
+        this.uniforms.sourceFieldSecondaryCenter.value.copy(conf.sourceFieldSecondaryCenter);
+        this.uniforms.sourceFieldRadius.value = (conf.sourceFieldRadii.x + conf.sourceFieldRadii.y + conf.sourceFieldRadii.z) / 3 * 0.82;
+        this.uniforms.sourceFieldSecondaryRadius.value = (conf.sourceFieldSecondaryRadii.x + conf.sourceFieldSecondaryRadii.y + conf.sourceFieldSecondaryRadii.z) / 3 * 0.88;
 
         if (particles !== this.numParticles) {
             this.numParticles = particles;
@@ -384,9 +464,9 @@ class mlsMpmSimulator {
         this.uniforms.dt.value = dt;
 
         this.mousePosArray.push(this.mousePos.clone())
-        if (this.mousePosArray.length > 3) { this.mousePosArray.shift(); }
+        if (this.mousePosArray.length > 2) { this.mousePosArray.shift(); }
         if (this.mousePosArray.length > 1) {
-            this.uniforms.mouseForce.value.copy(this.mousePosArray[this.mousePosArray.length - 1]).sub(this.mousePosArray[0]).divideScalar(this.mousePosArray.length);
+            this.uniforms.mouseForce.value.copy(this.mousePosArray[this.mousePosArray.length - 1]).sub(this.mousePosArray[0]).multiplyScalar(0.8);
         }
 
 

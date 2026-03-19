@@ -4,7 +4,7 @@ import { conf } from "./conf";
 const NORMAL_MAP_URL = "/flow-assets/concrete_0016_normal_opengl_1k.png";
 const COLOR_MAP_URL = "/flow-assets/concrete_0016_color_1k.jpg";
 const ROUGHNESS_MAP_URL = "/flow-assets/concrete_0016_roughness_1k.jpg";
-const BACK_PLATE_URL = "/images/volkano-bg.png";
+const BACK_PLATE_URL = "/images/rift-monolith.png";
 
 const textureLoader = new THREE.TextureLoader();
 
@@ -504,18 +504,10 @@ class BackgroundGeometry {
         sourceDebugArrow.visible = false;
         this.sourceDebugArrow = sourceDebugArrow;
 
-        // DEBUG: toggle individual vessel parts via URL params
-        // e.g. ?hideFrame=1&hideWalls=1&hideBack=1
-        const debugParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-        const hideFrame = debugParams?.get("hideFrame") === "1";
-        const hideLiner = debugParams?.get("hideLiner") === "1";
-        const hideWalls = debugParams?.get("hideWalls") === "1";
-        const hideBack = debugParams?.get("hideBack") === "1";
-
-        if (!hideFrame) group.add(frameLeft, frameRight, frameTop, frameBottom);
-        if (!hideLiner) group.add(linerLeft, linerRight, linerTop, linerBottom);
-        if (!hideWalls) group.add(leftWall, rightWall, topWall, bottomWall);
-        if (!hideBack) group.add(backWall, backPlate);
+        group.add(frameLeft, frameRight, frameTop, frameBottom);
+        group.add(linerLeft, linerRight, linerTop, linerBottom);
+        group.add(leftWall, rightWall, topWall, bottomWall);
+        group.add(backWall, backPlate);
         group.add(sourceDebugRing, sourceDebugArrow);
 
         group.position.set(centerX, centerY, centerZ);
