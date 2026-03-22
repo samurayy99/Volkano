@@ -89,6 +89,17 @@ class Conf {
     sourceDepthScale = 1.0;    // additional play-state depth exaggeration for volumetric read
     activeFieldIndex = 0;      // index into interleaved field buffer (0=mountain, 1=hero, 2=logo)
     eruptImpulse = 0.0;        // one-frame Y-velocity burst (unused in play, kept for shader compat)
+    convergenceProgress = 0.0; // 0..100 production convergence core state
+    convergenceSlowdown = 0.0; // 0..1 motion/turbulence reduction mix
+    convergenceCompression = 0.0; // 0..1 spatial densification mix
+    convergenceFreeze = 0.0; // 0..1 terminal stillness mix
+    convergenceHeatRetention = 0.0; // 0..1 thermal memory retention during convergence
+    convergenceThermalExtinction = 0.0; // 0..1 pre-freeze heat extinction for dark pressure lock
+    proofLockMix = 0.0; // 0..1 post-freeze pressure lock
+    postFreezeSettleMix = 0.0; // 0..1 sim-side post-freeze settle field
+    condensationMix = 0.0; // 0..1 condensation pull to seam
+    seamSettleMix = 0.0; // 0..1 seam settle / quiet hold before proof
+
 
     diagOverrideOpacity = false; // T-key diagnostic
 

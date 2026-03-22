@@ -2,11 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { FlowEngineBridge } from "./engineBridge";
-import type { FlowEngineHostProps } from "./types";
+import type { FlowEngineFrontRailMetrics, FlowEngineHostProps } from "./types";
 
 export function FlowEngineHost({
   onReady,
   onPhaseChange,
+  onConvergenceFreeze,
+  onProofReady,
+  onFrontRailMetricsChange,
   onError,
   className,
   debugView,
@@ -17,6 +20,9 @@ export function FlowEngineHost({
   const callbacksRef = useRef({
     onReady,
     onPhaseChange,
+    onConvergenceFreeze,
+    onProofReady,
+    onFrontRailMetricsChange,
     onError,
   });
 
@@ -24,9 +30,19 @@ export function FlowEngineHost({
     callbacksRef.current = {
       onReady,
       onPhaseChange,
+      onConvergenceFreeze,
+      onProofReady,
+      onFrontRailMetricsChange,
       onError,
     };
-  }, [onReady, onPhaseChange, onError]);
+  }, [
+    onReady,
+    onPhaseChange,
+    onConvergenceFreeze,
+    onProofReady,
+    onFrontRailMetricsChange,
+    onError,
+  ]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -35,6 +51,15 @@ export function FlowEngineHost({
     const bridge = new FlowEngineBridge(host, {
       onPhaseChange: (phase) => {
         callbacksRef.current.onPhaseChange?.(phase);
+      },
+      onConvergenceFreeze: () => {
+        callbacksRef.current.onConvergenceFreeze?.();
+      },
+      onProofReady: () => {
+        callbacksRef.current.onProofReady?.();
+      },
+      onFrontRailMetricsChange: (metrics: FlowEngineFrontRailMetrics) => {
+        callbacksRef.current.onFrontRailMetricsChange?.(metrics);
       },
       onError: (error) => {
         callbacksRef.current.onError?.(error);
@@ -97,7 +122,7 @@ export function FlowEngineHost({
       }}
       onPointerLeave={(event) => {
         pointerDownRef.current = false;
-        bridgeRef.current?.setPointer(event.clientX, event.clientY, false);
+        bridgeRef.current?.clearPointer(event.clientX, event.clientY);
       }}
     />
   );

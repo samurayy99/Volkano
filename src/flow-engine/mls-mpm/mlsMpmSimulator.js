@@ -99,6 +99,14 @@ class mlsMpmSimulator {
         this.uniforms.sourceFieldSecondaryCenter = uniform(new THREE.Vector3());
         this.uniforms.sourceFieldRadius = uniform(1);
         this.uniforms.sourceFieldSecondaryRadius = uniform(1);
+        this.uniforms.convergenceSlowdown = uniform(0);
+        this.uniforms.convergenceCompression = uniform(0);
+        this.uniforms.convergenceFreeze = uniform(0);
+        this.uniforms.convergenceHeatRetention = uniform(0);
+        this.uniforms.convergenceThermalExtinction = uniform(0);
+        this.uniforms.postFreezeSettleMix = uniform(0);
+        this.uniforms.mouseInfluence = uniform(1);
+        this.uniforms.mouseActive = uniform(0);
 
         this.kernels.clearGrid = Fn(() => {
             this.cellBuffer.setAtomic("x", false);
@@ -279,7 +287,7 @@ class mlsMpmSimulator {
             const particleVelocity = vec3(0).toVar();
             If(this.uniforms.gravityType.equal(uint(2)), () => {
                 const pn = particlePosition.div(vec3(this.uniforms.gridSize.sub(1))).sub(0.5).normalize().toConst();
-                particleVelocity.subAssign(pn.mul(0.3).mul(this.uniforms.dt));
+                particleVelocity.addAssign(pn.negate().mul(0.3).mul(this.uniforms.dt));
             }).Else(() => {
                 particleVelocity.addAssign(this.uniforms.gravity.mul(this.uniforms.dt));
             });
@@ -287,6 +295,31 @@ class mlsMpmSimulator {
 
             const noise = triNoise3Dvec(particlePosition.mul(0.015), time, 0.11).sub(0.285).normalize().mul(0.28).toVar();
             particleVelocity.subAssign(noise.mul(this.uniforms.noise).mul(this.uniforms.dt));
+
+            const convergenceCenter = mix(this.uniforms.sourceFieldCenter, this.uniforms.sourceFieldSecondaryCenter, float(0.42)).toConst("convergenceCenter");
+            const toConvergenceCenter = convergenceCenter.sub(particlePosition).toConst("toConvergenceCenter");
+            const convergenceDistance = toConvergenceCenter.length().max(float(0.0001)).toConst("convergenceDistance");
+            const convergencePull = smoothstep(float(2.5), float(18.0), convergenceDistance)
+                .mul(this.uniforms.convergenceCompression)
+                .mul(float(0.38))
+                .toConst("convergencePull");
+            particleVelocity.addAssign(toConvergenceCenter.div(convergenceDistance).mul(convergencePull).mul(this.uniforms.dt));
+
+            // Short post-freeze coast: a sheet-like downward settle field that keeps the solver
+            // responsible for the first readable motion toward the floor.
+            const settleFloorY = float(4.0).toConst("settleFloorY");
+            const settleHeight = particlePosition.y.sub(settleFloorY).max(float(0.0)).toConst("settleHeight");
+            const settleBand = smoothstep(float(0.4), float(12.0), settleHeight).toConst("settleBand");
+            const settleDensity = particleDensity.clamp(float(0.35), float(1.15))
+                .mul(float(0.35))
+                .add(float(0.65))
+                .toConst("settleDensity");
+            particleVelocity.addAssign(
+                vec3(0, -0.28, 0)
+                    .mul(this.uniforms.postFreezeSettleMix)
+                    .mul(settleBand)
+                    .mul(settleDensity)
+            );
 
             const cellIndex =  ivec3(particlePosition).sub(1).toConst("cellIndex");
             const cellDiff = particlePosition.fract().sub(0.5).toConst("cellDiff");
@@ -320,8 +353,18 @@ class mlsMpmSimulator {
             const dist = cross(this.uniforms.mouseRayDirection, particlePosition.mul(vec3(1,1,1.0)).sub(this.uniforms.mouseRayOrigin)).length()
             const force = dist.mul(0.1).oneMinus().max(0.0).pow(2);
             //particleVelocity.assign(mix(particleVelocity, this.uniforms.mouseForce.mul(6), force));
-            particleVelocity.addAssign(this.uniforms.mouseForce.mul(1).mul(force));
+            particleVelocity.addAssign(
+                this.uniforms.mouseForce
+                    .mul(this.uniforms.mouseInfluence)
+                    .mul(this.uniforms.mouseActive)
+                    .mul(force)
+            );
             particleVelocity.mulAssign(particleMass); // to ensure difference between particles
+
+            const slowdownDamping = float(1).sub(this.uniforms.convergenceSlowdown.mul(0.006)).max(float(0.994)).toConst("slowdownDamping");
+            particleVelocity.mulAssign(slowdownDamping);
+            const freezeDamping = float(1).sub(this.uniforms.convergenceFreeze.mul(0.06)).max(float(0.94)).toConst("freezeDamping");
+            particleVelocity.mulAssign(freezeDamping);
 
             this.particleBuffer.element(instanceIndex).get('C').assign(B.mul(4));
             particlePosition.addAssign(particleVelocity.mul(this.uniforms.dt));
@@ -391,31 +434,82 @@ class mlsMpmSimulator {
             const bodyThermal = bodyHeat.add(crimsonLift).clamp(0, 1);
 
             // Ignition carries memory: particles heat up near the source or cursor and cool gradually as they travel away.
-            const hoverIgnition = dist.mul(0.12).oneMinus().max(0.0).pow(4).clamp(0, 1);
-            const ignitionHeat = previousHeat.mul(0.955)
+            const hoverIgnition = dist
+                .mul(0.12)
+                .oneMinus()
+                .max(0.0)
+                .pow(4)
+                .mul(this.uniforms.mouseActive)
+                .clamp(0, 1);
+            const heatMemory = mix(float(0.955), float(0.994), this.uniforms.convergenceHeatRetention).toConst("heatMemory");
+            const thermalExtinction = this.uniforms.convergenceThermalExtinction
+                .clamp(0, 0.98)
+                .toConst("thermalExtinction");
+            const ignitionHeat = previousHeat.mul(heatMemory)
                 .add(sourceHeat.mul(0.045))
                 .add(velocityFactor.mul(0.028))
                 .add(ignitionLane.mul(sourceHeat.mul(0.008).add(velocityFactor.mul(0.006))))
                 .add(hoverIgnition.mul(0.14))
                 .clamp(0, 1);
-            const colorIgnition = ignitionHeat.add(
-                emberLane.mul(sourceHeat.mul(0.10).add(velocityFactor.mul(0.07)).add(neighborhoodWarmth.mul(0.05)))
+            const collapseCooling = this.uniforms.convergenceThermalExtinction
+                .clamp(0, 0.985)
+                .toConst("collapseCooling");
+            const cooledIgnitionHeat = ignitionHeat
+                .mul(float(1).sub(collapseCooling).max(float(0.03)))
+                .toConst("cooledIgnitionHeat");
+            const colorIgnition = cooledIgnitionHeat.add(
+                emberLane.mul(
+                    sourceHeat.mul(0.10)
+                        .add(velocityFactor.mul(0.07))
+                        .add(neighborhoodWarmth.mul(0.05))
+                        .mul(float(1).sub(thermalExtinction.mul(0.82)))
+                )
             ).clamp(0, 1);
+            const collapseFlareTame = this.uniforms.convergenceThermalExtinction
+                .clamp(0, 0.985)
+                .toConst("collapseFlareTame");
+            const collapseColorIgnition = colorIgnition
+                .mul(float(1).sub(collapseFlareTame.mul(0.86)))
+                .clamp(0, 1)
+                .toConst("collapseColorIgnition");
+            const collapsePeakHeat = cooledIgnitionHeat
+                .mul(float(1).sub(collapseFlareTame.mul(0.985)))
+                .toConst("collapsePeakHeat");
 
             const bodyT1 = smoothstep(float(0.0),  float(0.22), bodyThermal);
             const bodyT2 = smoothstep(float(0.24), float(0.54), bodyThermal);
-            const redIgnition = smoothstep(float(0.12), float(0.38), colorIgnition);
-            const fireIgnition = smoothstep(float(0.54), float(0.80), colorIgnition);
-            const hotIgnition = smoothstep(float(0.94), float(0.992), ignitionHeat);
+            const redIgnition = smoothstep(
+                mix(float(0.12), float(0.16), thermalExtinction),
+                mix(float(0.38), float(0.32), thermalExtinction),
+                collapseColorIgnition
+            );
+            const fireIgnition = smoothstep(
+                mix(float(0.54), float(0.9), thermalExtinction),
+                mix(float(0.80), float(0.985), thermalExtinction),
+                collapseColorIgnition
+            );
+            const hotIgnition = smoothstep(
+                mix(float(0.94), float(0.9992), thermalExtinction),
+                mix(float(0.992), float(0.99985), thermalExtinction),
+                collapsePeakHeat
+            );
 
             const c1 = mix(coal, deepRed, bodyT1);
             const c2 = mix(c1, ember, bodyT2);
             const c3 = mix(c2, flareRed, redIgnition);
-            const c4 = mix(c3, fireGold, fireIgnition);
-            const color = mix(c4, hotWhite, hotIgnition);
+            const fireLayer = fireIgnition
+                .mul(float(1).sub(thermalExtinction.mul(0.96)))
+                .toConst("fireLayer");
+            const hotLayer = hotIgnition
+                .mul(float(1).sub(thermalExtinction.mul(0.995)))
+                .toConst("hotLayer");
+            const c4 = mix(c3, fireGold, fireLayer);
+            const color = mix(c4, hotWhite, hotLayer);
+            const collapseDarken = this.uniforms.convergenceThermalExtinction.mul(0.18).toConst("collapseDarken");
+            const cooledColor = mix(color, coal, collapseDarken);
 
-            this.particleBuffer.element(instanceIndex).get('color').assign(color);
-            this.particleBuffer.element(instanceIndex).get('heat').assign(ignitionHeat);
+            this.particleBuffer.element(instanceIndex).get('color').assign(cooledColor);
+            this.particleBuffer.element(instanceIndex).get('heat').assign(cooledIgnitionHeat);
         })().compute(1);
     }
 
@@ -447,6 +541,12 @@ class mlsMpmSimulator {
         this.uniforms.sourceFieldSecondaryCenter.value.copy(conf.sourceFieldSecondaryCenter);
         this.uniforms.sourceFieldRadius.value = (conf.sourceFieldRadii.x + conf.sourceFieldRadii.y + conf.sourceFieldRadii.z) / 3 * 0.82;
         this.uniforms.sourceFieldSecondaryRadius.value = (conf.sourceFieldSecondaryRadii.x + conf.sourceFieldSecondaryRadii.y + conf.sourceFieldSecondaryRadii.z) / 3 * 0.88;
+        this.uniforms.convergenceSlowdown.value = conf.convergenceSlowdown;
+        this.uniforms.convergenceCompression.value = conf.convergenceCompression;
+        this.uniforms.convergenceFreeze.value = conf.convergenceFreeze;
+        this.uniforms.convergenceHeatRetention.value = conf.convergenceHeatRetention;
+        this.uniforms.convergenceThermalExtinction.value = conf.convergenceThermalExtinction;
+        this.uniforms.postFreezeSettleMix.value = conf.postFreezeSettleMix;
 
         if (particles !== this.numParticles) {
             this.numParticles = particles;
@@ -477,7 +577,12 @@ class mlsMpmSimulator {
     }
 
     // Compat stubs for Production engineBridge/app.js integration
-    setMouseInfluence(value) {}
+    setMouseInfluence(value) {
+        this.uniforms.mouseInfluence.value = value;
+    }
+    setMouseActive(value) {
+        this.uniforms.mouseActive.value = value ? 1 : 0;
+    }
     prepareStartupFromVent() {}
     reseedAllParticlesFromVent() {}
     seedMatureIdlePopulation() {}

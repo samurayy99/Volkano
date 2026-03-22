@@ -1,2 +1,9 @@
 export { FlowEngineHost } from "./FlowEngineHost";
-export type { FlowEngineApi, FlowEnginePhase } from "./types";
+export type {
+  FlowEngineApi,
+  FlowEngineBridgeOptions,
+  FlowEngineDebugView,
+  FlowEngineFrontRailMetrics,
+  FlowEngineHostProps,
+  FlowEnginePhase,
+} from "./types";

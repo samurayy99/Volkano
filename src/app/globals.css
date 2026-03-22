@@ -572,6 +572,12 @@ select {
   z-index: 3;
 }
 
+.front-trigger-anchor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 6;
+}
+
 .flow-engine-host,
 .front-flow-host {
   width: 100%;

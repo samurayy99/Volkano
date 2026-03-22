@@ -8,7 +8,6 @@ import {Info} from "./info";
 import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
 import BackgroundGeometry, { PREENTER_VESSEL } from "./backgroundGeometry";
-import TransitionParticles from "./transitionParticles";
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 
 const HDRI_URL = "/flow-assets/autumn_field_puresky_1k.hdr";
@@ -72,7 +71,6 @@ class App {
         this.mlsMpmSim = new MlsMpmSimulator(this.renderer);
         await this.mlsMpmSim.init();
         this.particleRenderer = new ParticleRenderer(this.mlsMpmSim);
-        this.transitionParticles = new TransitionParticles({ isMobile: conf.isMobile });
         this.backgroundGeometry = new BackgroundGeometry();
         await this.backgroundGeometry.init();
         this.scene.add(this.backgroundGeometry.object);
@@ -80,7 +78,6 @@ class App {
         this.lights = new Lights();
         this.scene.add(this.lights.object);
         this.scene.add(this.particleRenderer.object);
-        this.scene.add(this.transitionParticles.object);
 
         this.applyDebugView();
 
@@ -144,6 +141,7 @@ class App {
         const intersect = this.raycaster.ray.intersectPlane(this.plane, this.pointerIntersect);
         if (intersect) {
             this.mlsMpmSim.setMouseRay(this.raycaster.ray.origin, this.raycaster.ray.direction, intersect);
+            this.mlsMpmSim.setMouseActive(true);
             if (isDown) {
                 this.backgroundGeometry?.addImpulse?.(0.12);
             }
@@ -265,26 +263,66 @@ class App {
         this.mlsMpmSim?.setMouseInfluence?.(value);
     }
 
-    setMode(mode = "idle") {
-        if (this.mode === mode) return;
-        this.mode = mode;
+    setConvergenceProgress(progress) {
+        // Progress is read from conf by the simulator each frame — no-op here.
+    }
 
-        if (mode === "idle") {
-            this.idleParticlePresentation = "active";
-            this.transitionParticles?.reset?.();
-        } else {
-            if (mode === "enter_burst") {
-                const descriptor = this.backgroundGeometry?.getCraterSourceDescriptor?.();
-                if (descriptor) {
-                    this.transitionParticles?.setOriginFromDescriptor?.(descriptor);
-                }
-            }
-            this.idleParticlePresentation = "hidden";
+    clearPointer(x, y) {
+        this.mlsMpmSim?.setMouseActive?.(false);
+    }
 
-            this.transitionParticles?.setMode?.(mode);
-        }
+    getFrontRailMetrics() {
+        if (!this.camera || !this.backgroundGeometry?.object) return null;
 
-        this.applyDebugView();
+        const {
+            apertureWidth,
+            apertureHeight,
+            frameSide,
+            frameTop,
+            frameDepth,
+        } = PREENTER_VESSEL;
+
+        const outerWidth = apertureWidth + frameSide * 2;
+        const outerHeight = apertureHeight + frameTop * 2;
+        const frameFrontZ = frameDepth * 0.5;
+        const bandCenterY = -outerHeight * 0.5 + frameTop * 0.5;
+        const railObject = this.backgroundGeometry.object;
+
+        railObject.updateWorldMatrix(true, false);
+        this.camera.updateMatrixWorld();
+
+        const projectPoint = (x, y, z) => {
+            const worldPoint = railObject.localToWorld(new THREE.Vector3(x, y, z));
+            const projectedPoint = worldPoint.project(this.camera);
+
+            return {
+                x: (projectedPoint.x + 1) * 0.5,
+                y: (1 - projectedPoint.y) * 0.5,
+            };
+        };
+
+        const corners = [
+            projectPoint(-outerWidth * 0.5, bandCenterY - frameTop * 0.5, frameFrontZ),
+            projectPoint(-outerWidth * 0.5, bandCenterY + frameTop * 0.5, frameFrontZ),
+            projectPoint(outerWidth * 0.5, bandCenterY - frameTop * 0.5, frameFrontZ),
+            projectPoint(outerWidth * 0.5, bandCenterY + frameTop * 0.5, frameFrontZ),
+        ];
+        const center = projectPoint(0, bandCenterY, frameFrontZ);
+        const xs = corners.map(point => point.x);
+        const ys = corners.map(point => point.y);
+        const left = Math.min(...xs);
+        const right = Math.max(...xs);
+        const top = Math.min(...ys);
+        const bottom = Math.max(...ys);
+
+        return {
+            left,
+            top,
+            width: right - left,
+            height: bottom - top,
+            centerX: center.x,
+            centerY: center.y,
+        };
     }
 
 
@@ -294,13 +332,9 @@ class App {
         this.backgroundGeometry?.update?.(delta, elapsed);
         this.lights.update(elapsed);
 
-        if (this.idleParticlePresentation === "active") {
-            this.syncSourceMapping();
-            await this.mlsMpmSim.update(delta, elapsed);
-            this.particleRenderer.update();
-        }
-
-        this.transitionParticles?.update?.(delta, elapsed);
+        this.syncSourceMapping();
+        await this.mlsMpmSim.update(delta, elapsed);
+        this.particleRenderer.update();
         this.applyDebugView();
 
         if (conf.bloom) {
@@ -314,7 +348,6 @@ class App {
 
     dispose() {
         this.info?.dispose?.();
-        this.transitionParticles?.dispose?.();
         conf.dispose();
     }
 
@@ -339,7 +372,6 @@ class App {
             this.particleRenderer.object.visible =
                 resolvedDebugView !== "geometry" && this.idleParticlePresentation !== "hidden";
         }
-        this.transitionParticles?.setDebugVisibility?.(resolvedDebugView !== "geometry");
         if (this.backgroundGeometry?.object) {
             this.backgroundGeometry.object.visible = resolvedDebugView !== "particles";
         }
@@ -351,6 +383,9 @@ class App {
         if (!this.camera) return;
 
         const aspect = width / Math.max(height, 1);
+        const tallBlend = THREE.MathUtils.smoothstep(aspect, 0.8, 0.96);
+        const midBlend = THREE.MathUtils.smoothstep(aspect, 1.08, 1.28);
+        const wideBlend = THREE.MathUtils.smoothstep(aspect, 1.42, 1.62);
         const {
             apertureWidth,
             apertureHeight,
@@ -363,14 +398,26 @@ class App {
 
         const outerWidth = apertureWidth + frameSide * 2;
         const outerHeight = apertureHeight + frameTop * 2;
-        const fov = aspect < 0.88 ? 51 : aspect < 1.2 ? 48 : 46;
-        const fillHeight = aspect > 1.55 ? 0.8 : aspect > 1.18 ? 0.76 : 0.72;
-        const fillWidth = aspect > 1.55 ? 0.86 : aspect > 1.18 ? 0.88 : 0.9;
+        const fov = THREE.MathUtils.lerp(
+            THREE.MathUtils.lerp(51, 48, tallBlend),
+            46,
+            midBlend,
+        );
+        const fillHeight = THREE.MathUtils.lerp(
+            THREE.MathUtils.lerp(0.72, 0.76, midBlend),
+            0.8,
+            wideBlend,
+        );
+        const fillWidth = THREE.MathUtils.lerp(
+            THREE.MathUtils.lerp(0.9, 0.88, midBlend),
+            0.86,
+            wideBlend,
+        );
         const fovRadians = THREE.MathUtils.degToRad(fov);
         const distanceForHeight = outerHeight / (2 * Math.tan(fovRadians * 0.5) * fillHeight);
         const distanceForWidth = outerWidth / (2 * Math.tan(fovRadians * 0.5) * aspect * fillWidth);
         const distance = Math.max(distanceForHeight, distanceForWidth);
-        const cameraY = lookAtY + (aspect < 0.88 ? 0.074 : 0.04);
+        const cameraY = lookAtY + THREE.MathUtils.lerp(0.074, 0.04, tallBlend);
 
         this.camera.fov = fov;
         this.camera.position.set(lookAtX + 0.008, cameraY, lookAtZ - distance);

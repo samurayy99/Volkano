@@ -26,19 +26,21 @@ We already proved one important thing:
 
 We also proved what does **not** work:
 
-- particles becoming typography
+- particles morphing letter-by-letter into typography (too fragile, weak staging)
 - particles becoming logo
 - overbuilt sequence engines
 - fragile transform theater
 - mathematically correct motion with weak staging
+- endless scalar tuning without structural change
 
-The new direction is locked:
+The current direction is locked:
 
-- **particles stay particles**
-- **DOM stays text and UI**
+- **particles are living matter that converges, freezes, and hands off to DOM**
+- **DOM owns proof text, brand, and UI**
 - **CSS owns chamber motion**
 - **the chamber is the carrier**
 - **scene dominance matters more than geometric purity**
+- **thermal ramp is LOCKED — do not reopen color tuning**
 
 If something is technically correct but emotionally weak, it is wrong.
 
@@ -57,51 +59,65 @@ That order is non-negotiable.
 
 ### Meaning of each stage
 
-**Source**  
-Live, pressurized matter inside a shared chamber.
+**Source**
+Live, pressurized matter inside a shared chamber. Thermal ramp locked (coal → deepRed → ember → flareRed → fireGold → hotWhite). Temporal heat memory with source-proximity accumulation.
 
-**Proof**  
-“I BUILD SUPA STUFF” as a full readable verdict.
+**Convergence** (transition from Source to Proof)
+Internal progress 0–100. Particles gradually slow, organize, and freeze. At 100: particles are still, DOM text “I BUILD SUPA STUFF” appears over/through the frozen mass. This is NOT particles forming letters — particles freeze as a mass, DOM text takes over.
 
-**Hero wall**  
+**Proof**
+“I BUILD SUPA STUFF” as a full readable verdict. DOM-owned. Visible on the front face together with frozen particles.
+
+**180° rotation** → reveals Hero/Interface on the back face
+
+**Hero wall**
 The volcano world revealed as a cinematic destination.
 
-**Interface**  
+**Interface**
 The business surface that remains after the reveal.
+
+Note: Legacy convergence code (2×90° rotation, old sequence engine) exists in the codebase. It must be replaced, not extended.
 
 ---
 
 ## Current Highest Priority
 
-### Back Wall → Interface Surface
+### Convergence Pipeline
 
-The source stage is solved (lab particle system transplanted, bloom off, gravity center-pull).
+The source stage is solved — thermal ramp locked, particle look finalized, pushed to GitHub.
 
-The next bottleneck is the **back wall / hero wall**. This surface must evolve from a static volcano image into the actual interface layer:
+The next bottleneck is the **convergence pipeline**: the transition from living source to frozen proof.
 
-- About / Projects / Contact sections
-- AI assistant instance
-- VOLKANO brand + CTA
+**Pipeline spec:**
+- Internal progress value 0–100 (driven by Enter button or scroll or timer — TBD)
+- 0–70: particles gradually slow down, turbulence reduces, mass compresses
+- 70–95: particles organize into a denser, calmer formation
+- 95–100: particles freeze to stillness
+- At 100: DOM text "I BUILD SUPA STUFF" fades in over/through the frozen mass
+- After convergence: proof text appears on front face over frozen particles
+- After proof moment: 180° chamber rotation reveals hero wall on back face
 
-The back wall is the **destination after the chamber rotation**. It must feel like a cinematic reveal, not a generic landing page.
-
-Design this as one cohesive surface that works both as:
-1. A scenic hero moment (first impression after rotation)
-2. A functional interface (where the user actually does things)
+**Constraints:**
+- Particles do NOT form letter shapes — they freeze as a natural mass
+- The slowdown must feel like cooling lava, not a pause button
+- The proof text must feel like it was always there, revealed by stillness
+- The freeze must be reversible if the user hasn't triggered rotation yet
+- Do not touch the thermal ramp — color is locked
 
 ---
 
 ## Ownership Rules
 
-| Concern         | Owner                  |
-| --------------- | ---------------------- |
-| live matter     | WebGPU particle engine |
-| proof text      | DOM/CSS                |
-| brand text      | DOM/CSS                |
-| UI              | DOM/CSS                |
-| chamber motion  | CSS 3D transforms      |
-| hero wall image | DOM/CSS                |
-| stage dominance | layout + motion logic  |
+| Concern              | Owner                  |
+| -------------------- | ---------------------- |
+| live matter + freeze | WebGPU particle engine |
+| convergence progress | engine bridge / JS     |
+| proof text           | DOM/CSS                |
+| brand text           | DOM/CSS                |
+| UI                   | DOM/CSS                |
+| chamber motion       | CSS 3D transforms      |
+| hero wall image      | DOM/CSS                |
+| stage dominance      | layout + motion logic  |
 
 ### Hard rule
 
@@ -174,16 +190,10 @@ It must feel like:
 - clear air to back wall
 - readable front / middle / rear depth layers
 
-### Desired source palette
+### Source palette (LOCKED)
 
-- deep ember
-- ash
-- charcoal
-- restrained heat
-- selective hot regions
-- not neon
-- not rainbow
-- not bright flame orange everywhere
+6-stop volcanic thermal ramp: coal → deepRed → ember → flareRed → fireGold → hotWhite.
+Temporal heat memory with source-proximity accumulation. Do not modify.
 
 ---
 
@@ -297,29 +307,33 @@ The interface comes after.
 
 ## Particle Engine Policy
 
-Keep the particle engine as the source-stage core.
+The particle engine owns source + convergence + freeze.
 
-Allowed:
+### Locked (do not touch)
 
-- small source-stage tuning
-- small transition dominance tuning
-- minimal progress hooks if truly necessary
+- thermal ramp (color stops, accumulation rates, decay)
+- velocity-stretch
+- particle geometry (rounded box)
+- MLS-MPM simulation core
 
-Not allowed:
+### Allowed
 
-- particle typography
-- particle logo formation
-- convergence revival
-- field switching revival
+- convergence pipeline: slowdown, compression, freeze driven by progress 0–100
+- reading progress uniform to modulate simulation speed / turbulence / gravity
+- minimal hooks to signal freeze-complete to DOM layer
+
+### Not allowed
+
+- particles forming letter shapes or logos
+- field switching between different attractor targets
 - giant transform state machines
 - hidden second choreography systems
+- reopening thermal ramp tuning
 
 ### Important
 
-Keep the simulation/rendering core.  
-But do **not** preserve old geometry or staging assumptions if they fight the new chamber concept.
-
-The source belongs in the shared chamber world, not in an isolated opaque box.
+The convergence is a controlled cooldown, not a choreographed animation.
+Particles slow and compress under physics — they don't teleport to target positions.
 
 ---
 
@@ -392,7 +406,7 @@ They notice:
 
 ## Non-Negotiable Rules
 
-1. **Particles stay particles**
+1. **Particles are matter — they converge and freeze, they don't form shapes**
 2. **DOM owns proof, brand, and interface**
 3. **CSS owns chamber motion**
 4. **Active stage must take over perception**
@@ -407,11 +421,12 @@ They notice:
 
 When implementing:
 
-1. solve the source stage first
-2. verify proof is truly readable
-3. verify hero landing feels cinematic
-4. then layer interface density carefully
-5. only add tiny engine-side helpers if absolutely needed
+1. ~~solve the source stage first~~ DONE — locked
+2. build convergence pipeline (slowdown → freeze → text reveal)
+3. verify proof is truly readable after freeze
+4. build chamber rotation (180° reveal)
+5. verify hero landing feels cinematic
+6. then layer interface density carefully
 
 When judging quality:
 
@@ -427,6 +442,7 @@ When judging quality:
 This is correct if the experience feels like:
 
 - the source was alive
+- the matter cooled and settled
 - the proof landed with authority
 - the world behind it was revealed
 - the interface remained as the disciplined consequence
