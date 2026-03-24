@@ -99,6 +99,13 @@ class Conf {
     postFreezeSettleMix = 0.0; // 0..1 sim-side post-freeze settle field
     condensationMix = 0.0; // 0..1 condensation pull to seam
     seamSettleMix = 0.0; // 0..1 seam settle / quiet hold before proof
+    seamAbsorption = 0.0; // 0..1 seam absorption pull — consumes floor mass into crack
+    seamPocketOffset = new THREE.Vector3(0.0, 10.5, -8.5); // hidden reservoir behind/above the readable seam
+    seamPocketCaptureRadius = 3.2; // local seam-zone capture trigger
+    seamPocketCullRadius = 2.8; // renderer-only local hide radius for the hidden seam reservoir
+    quietChamberMix = 0.0; // 0..1 late renderer-owned quiet chamber handoff
+    authoredTakeoverMix = 0.0; // 0..1 authored post-wave takeover beat
+    authoredTakeoverTriggered = false; // one-shot latch once settleMix crosses the handoff threshold
 
 
     diagOverrideOpacity = false; // T-key diagnostic

@@ -53,6 +53,7 @@ class mlsMpmSimulator {
             direction: { type: 'vec3' },
             color: { type: 'vec3' },
             heat: { type: 'float' },
+            captured: { type: 'float' },
         };
         this.particleBuffer = new StructuredArray(particleStruct, maxParticles, "particleData");
 
@@ -68,6 +69,7 @@ class mlsMpmSimulator {
             this.particleBuffer.set(i, "position", vec);
             this.particleBuffer.set(i, "mass", mass);
             this.particleBuffer.set(i, "heat", 0);
+            this.particleBuffer.set(i, "captured", 0);
         }
 
         const cellCount = this.gridSize.x * this.gridSize.y * this.gridSize.z;
@@ -95,6 +97,8 @@ class mlsMpmSimulator {
         this.uniforms.mouseRayDirection = uniform(new THREE.Vector3());
         this.uniforms.mouseRayOrigin = uniform(new THREE.Vector3());
         this.uniforms.mouseForce = uniform(new THREE.Vector3());
+        this.uniforms.ventCenter = uniform(new THREE.Vector3());
+        this.uniforms.seamPocketCenter = uniform(new THREE.Vector3());
         this.uniforms.sourceFieldCenter = uniform(new THREE.Vector3());
         this.uniforms.sourceFieldSecondaryCenter = uniform(new THREE.Vector3());
         this.uniforms.sourceFieldRadius = uniform(1);
@@ -105,6 +109,9 @@ class mlsMpmSimulator {
         this.uniforms.convergenceHeatRetention = uniform(0);
         this.uniforms.convergenceThermalExtinction = uniform(0);
         this.uniforms.postFreezeSettleMix = uniform(0);
+        this.uniforms.seamAbsorption = uniform(0);
+        this.uniforms.seamPocketCaptureRadius = uniform(0);
+        this.uniforms.seamPocketCullRadius = uniform(0);
         this.uniforms.mouseInfluence = uniform(1);
         this.uniforms.mouseActive = uniform(0);
 
@@ -150,6 +157,10 @@ class mlsMpmSimulator {
             If(instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)), () => {
                 Return();
             });
+            const captured = this.particleBuffer.element(instanceIndex).get('captured').toConst("captured");
+            If(captured.greaterThan(float(0.5)), () => {
+                Return();
+            });
             const particlePosition = this.particleBuffer.element(instanceIndex).get('position').xyz.toConst("particlePosition");
             const particleVelocity = this.particleBuffer.element(instanceIndex).get('velocity').xyz.toConst("particleVelocity");
 
@@ -189,6 +200,10 @@ class mlsMpmSimulator {
             this.cellBuffer.setAtomic("mass", false);
 
             If(instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)), () => {
+                Return();
+            });
+            const captured = this.particleBuffer.element(instanceIndex).get('captured').toConst("captured");
+            If(captured.greaterThan(float(0.5)), () => {
                 Return();
             });
             const particlePosition = this.particleBuffer.element(instanceIndex).get('position').xyz.toConst("particlePosition");
@@ -284,7 +299,22 @@ class mlsMpmSimulator {
             const particleMass = this.particleBuffer.element(instanceIndex).get('mass').toConst("particleMass");
             const particleDensity = this.particleBuffer.element(instanceIndex).get('density').toConst("particleDensity");
             const particlePosition = this.particleBuffer.element(instanceIndex).get('position').xyz.toVar("particlePosition");
+            const particleCaptured = this.particleBuffer.element(instanceIndex).get('captured').toVar("particleCaptured");
             const particleVelocity = vec3(0).toVar();
+            const seamPocketCenter = vec3(
+                this.uniforms.seamPocketCenter.x,
+                this.uniforms.seamPocketCenter.y,
+                this.uniforms.seamPocketCenter.z,
+            ).toConst("seamPocketCenter");
+            If(particleCaptured.greaterThan(float(0.5)), () => {
+                particlePosition.assign(seamPocketCenter);
+                this.particleBuffer.element(instanceIndex).get('C').assign(mat3(0));
+                this.particleBuffer.element(instanceIndex).get('position').assign(particlePosition);
+                this.particleBuffer.element(instanceIndex).get('velocity').assign(vec3(0));
+                this.particleBuffer.element(instanceIndex).get('color').assign(vec3(0.005, 0.003, 0.003));
+                this.particleBuffer.element(instanceIndex).get('heat').assign(float(0));
+                Return();
+            });
             If(this.uniforms.gravityType.equal(uint(2)), () => {
                 const pn = particlePosition.div(vec3(this.uniforms.gridSize.sub(1))).sub(0.5).normalize().toConst();
                 particleVelocity.addAssign(pn.negate().mul(0.3).mul(this.uniforms.dt));
@@ -305,6 +335,40 @@ class mlsMpmSimulator {
                 .toConst("convergencePull");
             particleVelocity.addAssign(toConvergenceCenter.div(convergenceDistance).mul(convergencePull).mul(this.uniforms.dt));
 
+            const seamReclaimCenter = vec3(
+                this.uniforms.ventCenter.x,
+                this.uniforms.ventCenter.y.sub(float(8.6)),
+                this.uniforms.ventCenter.z.add(float(2.1)),
+            ).toConst("seamReclaimCenter");
+            const seamBodyCenter = vec3(
+                this.uniforms.ventCenter.x,
+                this.uniforms.ventCenter.y.sub(float(7.2)),
+                this.uniforms.ventCenter.z.add(float(1.6)),
+            ).toConst("seamBodyCenter");
+            const reclaimDx = particlePosition.x.sub(seamReclaimCenter.x).abs().toConst("reclaimDx");
+            const reclaimDy = particlePosition.y.sub(seamReclaimCenter.y).abs().toConst("reclaimDy");
+            const reclaimDz = particlePosition.z.sub(seamReclaimCenter.z).abs().toConst("reclaimDz");
+            const reclaimXField = smoothstep(float(19.0), float(3.5), reclaimDx).toConst("reclaimXField");
+            const reclaimYField = smoothstep(float(18.0), float(3.2), reclaimDy).toConst("reclaimYField");
+            const reclaimZField = smoothstep(float(10.5), float(1.6), reclaimDz).toConst("reclaimZField");
+            const seamReclaimField = this.uniforms.seamAbsorption
+                .mul(reclaimXField.add(reclaimYField).add(reclaimZField).div(float(3.0)))
+                .toConst("seamReclaimField");
+            const seamBodyDx = particlePosition.x.sub(seamBodyCenter.x).abs().toConst("seamBodyDx");
+            const seamBodyDy = particlePosition.y.sub(seamBodyCenter.y).abs().toConst("seamBodyDy");
+            const seamBodyDz = particlePosition.z.sub(seamBodyCenter.z).abs().toConst("seamBodyDz");
+            const seamBodyXField = smoothstep(float(15.0), float(2.6), seamBodyDx).toConst("seamBodyXField");
+            const seamBodyYField = smoothstep(float(15.5), float(2.8), seamBodyDy).toConst("seamBodyYField");
+            const seamBodyZField = smoothstep(float(9.0), float(1.4), seamBodyDz).toConst("seamBodyZField");
+            const seamBodyCaptureField = this.uniforms.seamAbsorption
+                .mul(
+                    seamBodyXField
+                        .mul(float(0.42))
+                        .add(seamBodyYField.mul(float(0.28)))
+                        .add(seamBodyZField.mul(float(0.30))),
+                )
+                .toConst("seamBodyCaptureField");
+
             // Short post-freeze coast: a sheet-like downward settle field that keeps the solver
             // responsible for the first readable motion toward the floor.
             const settleFloorY = float(4.0).toConst("settleFloorY");
@@ -314,12 +378,74 @@ class mlsMpmSimulator {
                 .mul(float(0.35))
                 .add(float(0.65))
                 .toConst("settleDensity");
+            const settleSuppression = seamReclaimField
+                .mul(float(1.2))
+                .clamp(float(0.0), float(0.99))
+                .toConst("settleSuppression");
             particleVelocity.addAssign(
                 vec3(0, -0.28, 0)
                     .mul(this.uniforms.postFreezeSettleMix)
                     .mul(settleBand)
                     .mul(settleDensity)
+                    .mul(float(1).sub(settleSuppression))
             );
+
+            // --- Rift reclaim: gravitational pull toward the vent (back wall rift) ---
+            // Inverse-square force: gentle drift far away, violent acceleration near the rift.
+            // Inspired by black-hole absorption mechanics — creates a visible funnel, not a uniform vacuum.
+            const riftTarget = vec3(
+                this.uniforms.ventCenter.x,
+                this.uniforms.ventCenter.y.sub(float(4.0)),
+                this.uniforms.ventCenter.z,
+            ).toConst("riftTarget");
+            const toRift = riftTarget.sub(particlePosition).toConst("toRift");
+            const riftDist = toRift.length().max(float(0.5)).toConst("riftDist");
+            // Inverse-square gravitational falloff: force ∝ (eventHorizon / distance)²
+            // eventHorizon 32 ensures floor particles (~22 units away) feel real pull
+            const riftEventHorizon = float(32.0);
+            const riftGravity = riftEventHorizon.div(riftDist).pow(2.0)
+                .clamp(float(0.0), float(10.0))
+                .toConst("riftGravity");
+            const riftPull = this.uniforms.seamAbsorption
+                .mul(riftGravity)
+                .mul(float(0.68))
+                .toConst("riftPull");
+            particleVelocity.addAssign(
+                toRift.div(riftDist).mul(riftPull).mul(this.uniforms.dt)
+            );
+            // Focused reclaim: seam body zone adds a secondary pull for the dense core
+            const seamReclaimTargetY = mix(
+                particlePosition.y,
+                seamBodyCenter.y.add(float(2.2)),
+                seamReclaimField.mul(float(0.94)).clamp(float(0.0), float(0.94)),
+            ).toConst("seamReclaimTargetY");
+            const seamReclaimTarget = vec3(
+                this.uniforms.ventCenter.x,
+                seamReclaimTargetY,
+                seamBodyCenter.z,
+            ).toConst("seamReclaimTarget");
+            const toSeamReclaim = seamReclaimTarget.sub(particlePosition).toConst("toSeamReclaim");
+            const seamReclaimDist = toSeamReclaim.length().max(float(0.5)).toConst("seamReclaimDist");
+            const seamReclaimGravity = float(24.0).div(seamReclaimDist).pow(2.0)
+                .clamp(float(0.0), float(8.0))
+                .toConst("seamReclaimGravity");
+            const seamReclaimPull = seamReclaimField
+                .mul(seamReclaimGravity)
+                .mul(float(0.48))
+                .toConst("seamReclaimPull");
+            particleVelocity.addAssign(
+                toSeamReclaim.div(seamReclaimDist).mul(seamReclaimPull).mul(this.uniforms.dt)
+            );
+            // Capture: consume particles that reach the rift zone
+            const seamApexCapture = this.uniforms.seamAbsorption
+                .mul(
+                    smoothstep(
+                        this.uniforms.seamPocketCaptureRadius.add(float(3.4)),
+                        this.uniforms.seamPocketCaptureRadius,
+                        riftDist,
+                    ),
+                )
+                .toConst("seamApexCapture");
 
             const cellIndex =  ivec3(particlePosition).sub(1).toConst("cellIndex");
             const cellDiff = particlePosition.fract().sub(0.5).toConst("cellDiff");
@@ -365,6 +491,11 @@ class mlsMpmSimulator {
             particleVelocity.mulAssign(slowdownDamping);
             const freezeDamping = float(1).sub(this.uniforms.convergenceFreeze.mul(0.06)).max(float(0.94)).toConst("freezeDamping");
             particleVelocity.mulAssign(freezeDamping);
+            // Absorption damping: smooth the flow toward the rift, prevent chaotic oscillation
+            const absorptionDamping = float(1).sub(
+                this.uniforms.seamAbsorption.mul(float(0.016))
+            ).max(float(0.984)).toConst("absorptionDamping");
+            particleVelocity.mulAssign(absorptionDamping);
 
             this.particleBuffer.element(instanceIndex).get('C').assign(B.mul(4));
             particlePosition.addAssign(particleVelocity.mul(this.uniforms.dt));
@@ -381,8 +512,23 @@ class mlsMpmSimulator {
             If(xN.z.lessThan(wallMin.z), () => { particleVelocity.z.addAssign(wallMin.z.sub(xN.z).mul(wallStiffness)); });
             If(xN.z.greaterThan(wallMax.z), () => { particleVelocity.z.addAssign(wallMax.z.sub(xN.z).mul(wallStiffness)); });
 
+            const postSeamBodyDx = particlePosition.x.sub(seamBodyCenter.x).abs().toConst("postSeamBodyDx");
+            const postSeamBodyDy = particlePosition.y.sub(seamBodyCenter.y).abs().toConst("postSeamBodyDy");
+            const postSeamBodyDz = particlePosition.z.sub(seamBodyCenter.z).abs().toConst("postSeamBodyDz");
+            const postSeamBodyCapture = this.uniforms.seamAbsorption
+                .mul(smoothstep(float(15.0), float(2.6), postSeamBodyDx).mul(float(0.42)))
+                .add(this.uniforms.seamAbsorption.mul(smoothstep(float(15.5), float(2.8), postSeamBodyDy).mul(float(0.28))))
+                .add(this.uniforms.seamAbsorption.mul(smoothstep(float(9.0), float(1.4), postSeamBodyDz).mul(float(0.30))))
+                .toConst("postSeamBodyCapture");
+            const seamCapture = max(seamApexCapture, postSeamBodyCapture).toConst("seamCapture");
+            If(seamCapture.greaterThan(float(0.36)), () => {
+                particleCaptured.assign(float(1));
+                particlePosition.assign(seamPocketCenter);
+            });
+
             this.particleBuffer.element(instanceIndex).get('position').assign(particlePosition)
             this.particleBuffer.element(instanceIndex).get('velocity').assign(particleVelocity)
+            this.particleBuffer.element(instanceIndex).get('captured').assign(particleCaptured)
 
             const direction = this.particleBuffer.element(instanceIndex).get('direction');
             direction.assign(mix(direction,particleVelocity, 0.1));
@@ -507,9 +653,9 @@ class mlsMpmSimulator {
             const color = mix(c4, hotWhite, hotLayer);
             const collapseDarken = this.uniforms.convergenceThermalExtinction.mul(0.18).toConst("collapseDarken");
             const cooledColor = mix(color, coal, collapseDarken);
-
-            this.particleBuffer.element(instanceIndex).get('color').assign(cooledColor);
-            this.particleBuffer.element(instanceIndex).get('heat').assign(cooledIgnitionHeat);
+            const captureDarken = particleCaptured.mul(float(0.96)).clamp(float(0.0), float(1.0)).toConst("captureDarken");
+            this.particleBuffer.element(instanceIndex).get('color').assign(mix(cooledColor, coal, captureDarken));
+            this.particleBuffer.element(instanceIndex).get('heat').assign(mix(cooledIgnitionHeat, float(0.0), captureDarken));
         })().compute(1);
     }
 
@@ -537,6 +683,8 @@ class mlsMpmSimulator {
         }
         this.uniforms.dynamicViscosity.value = dynamicViscosity;
         this.uniforms.restDensity.value = restDensity;
+        this.uniforms.ventCenter.value.copy(conf.ventCenter);
+        this.uniforms.seamPocketCenter.value.copy(conf.ventCenter).add(conf.seamPocketOffset);
         this.uniforms.sourceFieldCenter.value.copy(conf.sourceFieldCenter);
         this.uniforms.sourceFieldSecondaryCenter.value.copy(conf.sourceFieldSecondaryCenter);
         this.uniforms.sourceFieldRadius.value = (conf.sourceFieldRadii.x + conf.sourceFieldRadii.y + conf.sourceFieldRadii.z) / 3 * 0.82;
@@ -547,6 +695,9 @@ class mlsMpmSimulator {
         this.uniforms.convergenceHeatRetention.value = conf.convergenceHeatRetention;
         this.uniforms.convergenceThermalExtinction.value = conf.convergenceThermalExtinction;
         this.uniforms.postFreezeSettleMix.value = conf.postFreezeSettleMix;
+        this.uniforms.seamAbsorption.value = conf.seamAbsorption || 0;
+        this.uniforms.seamPocketCaptureRadius.value = conf.seamPocketCaptureRadius;
+        this.uniforms.seamPocketCullRadius.value = conf.seamPocketCullRadius;
 
         if (particles !== this.numParticles) {
             this.numParticles = particles;
@@ -562,6 +713,13 @@ class mlsMpmSimulator {
         interval = Math.min(interval, 1/60);
         const dt = interval * 6 * speed;
         this.uniforms.dt.value = dt;
+
+        // --- DEBUG: log speed/dt/seamAbsorption every 60 frames ---
+        if (!this._debugFrameCount) this._debugFrameCount = 0;
+        this._debugFrameCount++;
+        if (this._debugFrameCount % 60 === 0 && (conf.seamAbsorption > 0 || conf.convergenceThermalExtinction > 0)) {
+            console.log(`[SIM DEBUG] speed=${speed.toFixed(4)} dt=${dt.toFixed(6)} seamAbsorption=${(conf.seamAbsorption||0).toFixed(4)} thermalExtinction=${conf.convergenceThermalExtinction.toFixed(4)} settleMix=${conf.postFreezeSettleMix.toFixed(4)}`);
+        }
 
         this.mousePosArray.push(this.mousePos.clone())
         if (this.mousePosArray.length > 2) { this.mousePosArray.shift(); }

@@ -31,7 +31,9 @@ type ChamberPreview = "source" | "proof" | "back" | null;
 const FREEZE_FALLBACK_MS = 420;
 const PROOF_READY_FALLBACK_MS = 1320;
 const PROOF_HOLD_MS = 1800;
-const TRIGGER_BAND_FILL_RATIO = 0.86;
+const TRIGGER_HEIGHT_RATIO = 0.72;
+const TRIGGER_WIDTH_RATIO = 0.115;
+const TRIGGER_VERTICAL_BIAS_RATIO = 0.02;
 
 export function SpatialChamber() {
   const reducedMotion = useReducedMotionPreference();
@@ -266,7 +268,7 @@ export function SpatialChamber() {
               onAnimationEnd={(event) => {
                 if (
                   event.currentTarget !== event.target ||
-                  event.animationName !== "chamber-rotate-180" ||
+                  event.animationName !== "chamber-rotate" ||
                   !rotationActive
                 ) {
                   return;
@@ -452,30 +454,18 @@ function FrontFace({
 function getFrontRailAnchorGeometry(metrics: FlowEngineFrontRailMetrics) {
   const railWidth = Math.max(metrics.width, 1);
   const railHeight = Math.max(metrics.height, 1);
-  const viewportWidth =
-    typeof window === "undefined" ? railWidth : window.innerWidth;
-  const compactViewportBlend = 1 - smoothstepNumber(viewportWidth, 720, 1040);
-  const narrowRailBlend = 1 - smoothstepNumber(railWidth, 320, 520);
-  const responsiveBlend = Math.max(compactViewportBlend, narrowRailBlend);
-  const unclampedHeight = railHeight * TRIGGER_BAND_FILL_RATIO;
+  const unclampedHeight = railHeight * TRIGGER_HEIGHT_RATIO;
   const moduleHeight = clampNumber(
     unclampedHeight,
-    16,
-    40,
+    18,
+    46,
   );
-  const widthRatio = lerpNumber(0.18, 0.235, responsiveBlend);
   const moduleWidth = clampNumber(
-    railWidth * widthRatio,
-    lerpNumber(72, 56, responsiveBlend),
-    lerpNumber(140, 104, responsiveBlend),
+    railWidth * TRIGGER_WIDTH_RATIO,
+    moduleHeight * 2.35,
+    railWidth * 0.16,
   );
-  const heightOverflow = Math.max(0, moduleHeight - unclampedHeight);
-  const smallRailNudge = lerpNumber(0, 1.8, responsiveBlend);
-  const centerY =
-    metrics.centerY
-    + railHeight * lerpNumber(0.02, 0.012, responsiveBlend)
-    + heightOverflow * lerpNumber(0.45, 0.56, responsiveBlend)
-    + smallRailNudge;
+  const centerY = metrics.centerY + railHeight * TRIGGER_VERTICAL_BIAS_RATIO;
   const fontSize = clampNumber(moduleWidth * 0.095, 7.5, 12.5);
   const letterSpacing = clampNumber(moduleWidth * 0.028, 1.5, 3.2);
 
@@ -491,19 +481,6 @@ function getFrontRailAnchorGeometry(metrics: FlowEngineFrontRailMetrics) {
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-function lerpNumber(start: number, end: number, t: number) {
-  return start + (end - start) * clampNumber(t, 0, 1);
-}
-
-function smoothstepNumber(value: number, edge0: number, edge1: number) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-
-  const t = clampNumber((value - edge0) / (edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
 }
 
 function writeFrontRailAnchorStyle(

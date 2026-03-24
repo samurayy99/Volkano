@@ -687,6 +687,47 @@ select {
   transform: translateY(0);
 }
 
+/* ── Proof-front overlay (appears on front face BEFORE rotation) ── */
+
+.proof-front-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.proof-front-overlay.is-visible {
+  animation: proof-front-reveal 1200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.proof-front-overlay.is-settled {
+  opacity: 1;
+  animation: none;
+}
+
+.proof-front-copy {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.proof-front-headline {
+  font-family: var(--font-display);
+  font-size: var(--proof-size);
+  font-weight: 700;
+  line-height: 0.84;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+  color: var(--text-main);
+  text-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.6),
+    0 6px 28px rgba(0, 0, 0, 0.35);
+}
+
 .back-surface {
   position: relative;
   width: 100%;
@@ -1195,6 +1236,18 @@ select {
   88%,
   100% {
     opacity: 1;
+  }
+}
+
+@keyframes proof-front-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(0.6rem);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

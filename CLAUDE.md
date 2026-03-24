@@ -332,8 +332,9 @@ The particle engine owns source + convergence + freeze.
 
 ### Important
 
-The convergence is a controlled cooldown, not a choreographed animation.
-Particles slow and compress under physics — they don't teleport to target positions.
+The primary convergence read should remain a controlled cooldown, not fake choreography.
+Particles should slow and compress under physics through the strongest part of the event.
+If the late-stage aftermath becomes visually weak or structurally stuck, a narrow hybrid handoff is allowed to clear the chamber and support proof dominance.
 
 ---
 
@@ -406,7 +407,8 @@ They notice:
 
 ## Non-Negotiable Rules
 
-1. **Particles are matter — they converge and freeze, they don't form shapes**
+1. **Particles are matter** — they must not be asked to form typography, logos, or decorative symbolic shapes.
+   They may, however, hand off to a controlled late-stage clearing / staging layer if that preserves stronger scene dominance and a cleaner proof moment.
 2. **DOM owns proof, brand, and interface**
 3. **CSS owns chamber motion**
 4. **Active stage must take over perception**

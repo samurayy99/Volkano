@@ -181,18 +181,26 @@ class ParticleRenderer {
     this.uniforms.convergenceSettle = uniform(0);
     this.uniforms.seamCenterX = uniform(27.0);
     this.uniforms.seamCenterZ = uniform(22.0);
+    this.uniforms.seamPocketCenter = uniform(new THREE.Vector3());
+    this.uniforms.quietChamber = uniform(0);
+    this.uniforms.seamAbsorption = uniform(0);
+    this.uniforms.ventCenter = uniform(new THREE.Vector3());
+    this.uniforms.debugVis = uniform(0);
+    const vDebugSettledFooting = varying(float(0), "vDebugSettledFooting");
+    const vDebugSeamDist = varying(float(0), "vDebugSeamDist");
+    const vAbsorptionProximity = varying(float(0), "vAbsorptionProximity");
     const vSeamY = varying(float(0), "vSeamY");
     const vSettled = varying(float(0), "vSettled");
     const vGrounding = varying(float(0), "vGrounding");
     const vCrustBody = varying(float(0), "vCrustBody");
     const vCrustHeat = varying(float(0), "vCrustHeat");
     const vCrustShadow = varying(float(0), "vCrustShadow");
-
     const particle = this.mlsMpmSim.particleBuffer.element(instanceIndex);
     this.material.positionNode = Fn(() => {
       const particlePosition = particle.get("position");
       const particleDensity = particle.get("density");
       const particleDirection = particle.get("direction");
+      const particleCaptured = particle.get("captured");
 
       const localPos = attribute("position").xyz;
       const particleVelocity = particle.get("velocity");
@@ -290,6 +298,47 @@ class ParticleRenderer {
         .mul(smoothstep(float(24.0), float(34.0), particlePosition.y))
         .mul(0.12);
       const seamScale = float(1).sub(stragglerFade);
+      const quietUncaptured = this.uniforms.quietChamber
+        .mul(float(1).sub(particleCaptured.clamp(0, 1)))
+        .toConst("quietUncaptured");
+      // Rift absorption proximity — particles compress toward zero as they approach the vent
+      const riftDx = particlePosition.x.sub(this.uniforms.ventCenter.x);
+      const riftDy = particlePosition.y.sub(this.uniforms.ventCenter.y.sub(float(4.0)));
+      const riftDz = particlePosition.z.sub(this.uniforms.ventCenter.z);
+      const riftDistSq = riftDx.mul(riftDx).add(riftDy.mul(riftDy)).add(riftDz.mul(riftDz));
+      const riftDist = riftDistSq.pow(0.5).max(float(0.01));
+      const absorptionProximity = this.uniforms.seamAbsorption
+        .mul(smoothstep(float(18.0), float(2.0), riftDist))
+        .clamp(0, 1)
+        .toConst("absorptionProximity");
+      vAbsorptionProximity.assign(absorptionProximity);
+      const absorptionShrink = mix(
+        float(1),
+        float(0.1),
+        pow(absorptionProximity, 2.2),
+      ).toConst("absorptionShrink");
+      const renderScale = seamScale
+        .mul(float(1).sub(particleCaptured.clamp(0, 1)))
+        .mul(pow(float(1).sub(quietUncaptured), 2.6))
+        .mul(absorptionShrink)
+        .toConst("renderScale");
+      const quietPocketTarget = vec3(
+        this.uniforms.seamPocketCenter.x.add(
+          particlePosition.x.sub(this.uniforms.seamCenterX).mul(0.08),
+        ),
+        this.uniforms.seamPocketCenter.y.add(
+          particlePosition.y.sub(float(6.0)).mul(0.05),
+        ),
+        this.uniforms.seamPocketCenter.z.add(
+          particlePosition.z.sub(this.uniforms.seamCenterZ).mul(0.08),
+        ),
+      ).toConst("quietPocketTarget");
+      const basePosition = vec3(seamX, seamY, seamZ).toConst("basePosition");
+      const renderPosition = mix(
+        basePosition,
+        quietPocketTarget,
+        quietUncaptured.mul(0.92).clamp(0, 0.92),
+      ).toConst("renderPosition");
 
       // Pass to fragment shader
       vSeamY.assign(seamY);
@@ -298,7 +347,10 @@ class ParticleRenderer {
       vCrustBody.assign(crustBody);
       vCrustHeat.assign(crustHeat);
       vCrustShadow.assign(crustShadow);
-
+      vDebugSettledFooting.assign(settledFooting);
+      const debugSeamDx = particlePosition.x.sub(this.uniforms.seamCenterX);
+      const debugSeamDz = particlePosition.z.sub(this.uniforms.seamCenterZ);
+      vDebugSeamDist.assign(debugSeamDx.mul(debugSeamDx).add(debugSeamDz.mul(debugSeamDz)).pow(0.5));
       const settledDirection = normalize(
         vec3(surfaceNoise.mul(0.18), float(0.02), float(1.0)),
       ).toConst("settledDirection");
@@ -328,8 +380,8 @@ class ParticleRenderer {
         .mul(stretchedPos.mul(this.uniforms.size.mul(1.08)))
         .mul(crustBulk)
         .mul(particleDensity.mul(0.4).add(0.5).clamp(0, 1))
-        .mul(seamScale)
-        .add(vec3(seamX, seamY, seamZ));
+        .mul(renderScale)
+        .add(renderPosition);
     })();
     const particleColor = particle.get("color");
     const particleDensity = particle.get("density");
@@ -373,7 +425,20 @@ class ParticleRenderer {
       crustEmberColor,
       emberAccent,
     ).toConst("surfaceColor");
-    this.material.colorNode = surfaceColor;
+    // Debug visualization using mix/smoothstep (select() breaks WGSL)
+    // debugVis: 0=off, 1=settledFooting, 2=raw heat, 3=seam proximity
+    const debugSettledColor = vec3(vDebugSettledFooting, float(0), float(1).sub(vDebugSettledFooting));
+    const debugHeatColor = vec3(particleHeat, particleHeat.mul(0.3), float(0));
+    const debugSeamProx = smoothstep(float(18.0), float(1.0), vDebugSeamDist);
+    const debugSeamColor = vec3(float(0), debugSeamProx, debugSeamProx.mul(0.5));
+    // Weights that peak at 1, 2, 3 respectively using smoothstep pairs
+    const dv = this.uniforms.debugVis;
+    const w1 = smoothstep(float(0.5), float(1.0), dv).mul(smoothstep(float(1.5), float(1.0), dv));
+    const w2 = smoothstep(float(1.5), float(2.0), dv).mul(smoothstep(float(2.5), float(2.0), dv));
+    const w3 = smoothstep(float(2.5), float(3.0), dv);
+    const debugColor = debugSettledColor.mul(w1).add(debugHeatColor.mul(w2)).add(debugSeamColor.mul(w3));
+    const debugMix = smoothstep(float(0.3), float(0.7), dv);
+    this.material.colorNode = mix(surfaceColor, debugColor, debugMix);
     // Gentle glow suppression — only for settled particles during final cleanup.
     const glowSuppression = vGrounding
       .mul(0.24)
@@ -421,10 +486,15 @@ class ParticleRenderer {
       .mul(vGrounding)
       .mul(0.06)
       .toConst("crustEmber");
-    this.material.emissiveNode = surfaceColor
+    // Rift absorption glow — faint ember as particles approach the rift, readability aid not beauty
+    const absorptionGlow = vAbsorptionProximity
+      .mul(0.06)
+      .toConst("absorptionGlow");
+    const normalEmissive = surfaceColor
       .mul(glowFactor)
       .mul(0.34)
-      .add(ember.mul(seamGlow.add(bodyEmber).add(crustEmber)));
+      .add(ember.mul(seamGlow.add(bodyEmber).add(crustEmber).add(absorptionGlow)));
+    this.material.emissiveNode = mix(normalEmissive, vec3(0), debugMix);
     const heatBloom = smoothstep(float(0.62), float(0.82), particleHeat);
     this._bloomIntensityNode = heatBloom;
     this.material.aoNode = vAo;
@@ -491,6 +561,12 @@ class ParticleRenderer {
       (conf.sourceFieldCenter.z + conf.sourceFieldSecondaryCenter.z) * 0.5;
     this.uniforms.seamCenterX.value = cx;
     this.uniforms.seamCenterZ.value = cz;
+    this.uniforms.seamPocketCenter.value.copy(conf.ventCenter).add(conf.seamPocketOffset);
+    this.uniforms.quietChamber.value = conf.quietChamberMix || 0;
+    this.uniforms.seamAbsorption.value = conf.seamAbsorption || 0;
+    this.uniforms.ventCenter.value.copy(conf.ventCenter);
+    const debugMap = { settled: 1, heat: 2, seamPull: 3 };
+    this.uniforms.debugVis.value = debugMap[conf.particleDebugMode] || 0;
     this.geometry.instanceCount = particles;
 
     if (bloom !== this.bloom) {

@@ -35,11 +35,23 @@ export class FlowEngineBridge implements FlowEngineApi {
   private proofReadyHoldFrames = 0;
   private postFreezeActive = false;
   private postFreezeElapsed = 0;
+  private quietChamberStarted = false;
+  private quietChamberElapsed = 0;
+  private authoredTakeoverStarted = false;
+  private authoredTakeoverElapsed = 0;
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
-  private static readonly POST_FREEZE_PROOF_HOLD = 0.3;
+  private static readonly POST_FREEZE_PROOF_HOLD = 0.72;
   private static readonly RENDERER_SEAM_DURATION = 0.35;
+  private static readonly AUTHORED_TAKEOVER_THRESHOLD = 0.62;
+  private static readonly AUTHORED_TAKEOVER_DURATION = 0.58;
+  private static readonly RECLAIM_DELAY = 0.42;
+  private static readonly RECLAIM_DURATION = 1.8;
+  private static readonly QUIET_CHAMBER_TRIGGER = 0.85;
+  private static readonly QUIET_CHAMBER_DELAY = 0.12;
+  private static readonly QUIET_CHAMBER_DURATION = 0.42;
+  private static readonly QUIET_CHAMBER_PROOF_HOLD = 0.35;
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
@@ -105,6 +117,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     if (this.disposed) return;
     const clampedProgress = THREE.MathUtils.clamp(progress, 0, 100);
     if (this.convergenceProgress === clampedProgress) return;
+    const previousProgress = this.convergenceProgress;
 
     this.convergenceProgress = clampedProgress;
     this.app?.setConvergenceProgress?.(clampedProgress);
@@ -122,6 +135,15 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.proofReadyHoldFrames = 0;
       this.postFreezeActive = false;
       this.postFreezeElapsed = 0;
+    }
+    if (clampedProgress <= 0 || clampedProgress < previousProgress) {
+      this.quietChamberStarted = false;
+      this.quietChamberElapsed = 0;
+      conf.quietChamberMix = 0;
+      this.authoredTakeoverStarted = false;
+      this.authoredTakeoverElapsed = 0;
+      conf.authoredTakeoverMix = 0;
+      conf.authoredTakeoverTriggered = false;
     }
   }
 
@@ -255,6 +277,12 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.advanceIdleMaturation();
       if (this.postFreezeActive) {
         this.postFreezeElapsed += delta;
+      }
+      if (this.quietChamberStarted) {
+        this.quietChamberElapsed += delta;
+      }
+      if (this.authoredTakeoverStarted) {
+        this.authoredTakeoverElapsed += delta;
       }
       this.applyConvergenceSignals();
       await this.app.update(delta, elapsed);
@@ -465,9 +493,17 @@ export class FlowEngineBridge implements FlowEngineApi {
       conf.postFreezeSettleMix = 0;
       conf.condensationMix = 0;
       conf.seamSettleMix = 0;
+      conf.seamAbsorption = 0;
+      conf.quietChamberMix = 0;
+      conf.authoredTakeoverMix = 0;
+      conf.authoredTakeoverTriggered = false;
       conf.freshnessDecayRate = 0.044;
       this.currentPointerInfluence = 1;
       this.app?.setPointerInfluence?.(this.interactiveEnabled ? this.currentPointerInfluence : 0);
+      this.quietChamberStarted = false;
+      this.quietChamberElapsed = 0;
+      this.authoredTakeoverStarted = false;
+      this.authoredTakeoverElapsed = 0;
       return;
     }
 
@@ -485,8 +521,33 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.convergenceThermalExtinction = thermalExtinctionMix;
     conf.freshnessDecayRate = THREE.MathUtils.lerp(0.044, 0.004, heatRetentionMix);
 
-    // Solver settle: drives downward pull DURING convergence, not after freeze
-    conf.postFreezeSettleMix = settleMix;
+    // Reclaim is a POST-FREEZE event. Settle/wave tail must complete first.
+    // postFreezeElapsed starts counting after freeze + FREEZE_SETTLE_DELAY.
+    const reclaimActiveElapsed = this.postFreezeActive
+      ? Math.max(0, this.postFreezeElapsed - FlowEngineBridge.RECLAIM_DELAY)
+      : 0;
+    const environmentalReclaimMix = this.ease01(
+      reclaimActiveElapsed / FlowEngineBridge.RECLAIM_DURATION,
+    );
+    if (
+      !this.quietChamberStarted &&
+      environmentalReclaimMix >= FlowEngineBridge.QUIET_CHAMBER_TRIGGER
+    ) {
+      this.quietChamberStarted = true;
+      this.quietChamberElapsed = 0;
+    }
+    const quietActiveElapsed = Math.max(
+      0,
+      this.quietChamberElapsed - FlowEngineBridge.QUIET_CHAMBER_DELAY,
+    );
+    const quietChamberMix = this.quietChamberStarted
+      ? this.ease01(
+          quietActiveElapsed / FlowEngineBridge.QUIET_CHAMBER_DURATION,
+        )
+      : 0;
+
+    // Solver settle owns the floor until reclaim takes over — then fully releases.
+    conf.postFreezeSettleMix = settleMix * THREE.MathUtils.lerp(1, 0.0, environmentalReclaimMix);
 
     // Renderer: no convergence-driven position work. Solver owns the floor motion.
     conf.condensationMix = 0;
@@ -499,8 +560,9 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.seamSettleMix = rendererSeamSettle;
     conf.proofLockMix = 0;
 
-    // Gravity: switch from centered attractor (2) to downward (1) as settle ramps
-    conf.gravity = settleMix > 0.3 ? 1 : 2;
+    // Gravity: downward (1) during settle, back to centered attractor (2) during reclaim
+    // so gravity stops fighting the upward rift pull
+    conf.gravity = (settleMix > 0.3 && environmentalReclaimMix < 0.4) ? 1 : 2;
 
     // Noise calms gently during settle, then more during slowdown
     let noise = THREE.MathUtils.lerp(1.08, 0.62, settleMix * 0.4);
@@ -520,6 +582,14 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.trailStretch = THREE.MathUtils.lerp(0.28, 0.18, slowdownMix);
     conf.pointerWake = THREE.MathUtils.lerp(0.76, 0.18, slowdownMix);
     conf.gridVelocityScale = THREE.MathUtils.lerp(0.92, 0.76, densifyMix);
+
+    // Broad post-wave reclamation toward the rift replaces the discrete authored object for this prototype.
+    conf.seamAbsorption = environmentalReclaimMix;
+    conf.quietChamberMix = quietChamberMix;
+    this.authoredTakeoverStarted = false;
+    this.authoredTakeoverElapsed = 0;
+    conf.authoredTakeoverTriggered = false;
+    conf.authoredTakeoverMix = 0;
 
     conf.noise = noise;
     conf.speed = speed;
@@ -554,6 +624,17 @@ export class FlowEngineBridge implements FlowEngineApi {
   private updateProofReady(): void {
     if (this.proofReadyEmitted || !this.externalFreezeSettled) return;
     if (!this.postFreezeActive) return;
+
+    if (
+      this.quietChamberStarted &&
+      this.quietChamberElapsed <
+        FlowEngineBridge.QUIET_CHAMBER_DELAY +
+          FlowEngineBridge.QUIET_CHAMBER_DURATION +
+          FlowEngineBridge.QUIET_CHAMBER_PROOF_HOLD
+    ) {
+      this.proofReadyHoldFrames = 0;
+      return;
+    }
 
     if (this.postFreezeElapsed < FlowEngineBridge.POST_FREEZE_PROOF_HOLD) {
       this.proofReadyHoldFrames = 0;

@@ -7,6 +7,7 @@ import {conf} from "./conf";
 import {Info} from "./info";
 import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
+import AuthoredTakeoverLayer from "./AuthoredTakeoverLayer";
 import BackgroundGeometry, { PREENTER_VESSEL } from "./backgroundGeometry";
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 
@@ -35,6 +36,7 @@ class App {
     pointerNdc = new THREE.Vector2();
     pointerIntersect = new THREE.Vector3();
     debugView = "composite";
+    authoredTakeoverLayer = null;
     sourceFieldAnchorOffsets = null;
     startupSourceFieldAnchorOffsets = null;
     mode = "idle";
@@ -74,6 +76,8 @@ class App {
         this.backgroundGeometry = new BackgroundGeometry();
         await this.backgroundGeometry.init();
         this.scene.add(this.backgroundGeometry.object);
+        this.authoredTakeoverLayer = new AuthoredTakeoverLayer();
+        this.backgroundGeometry.object.add(this.authoredTakeoverLayer.object);
 
         this.lights = new Lights();
         this.scene.add(this.lights.object);
@@ -335,6 +339,7 @@ class App {
         this.syncSourceMapping();
         await this.mlsMpmSim.update(delta, elapsed);
         this.particleRenderer.update();
+        this.authoredTakeoverLayer?.update(delta, elapsed);
         this.applyDebugView();
 
         if (conf.bloom) {
@@ -347,6 +352,7 @@ class App {
     }
 
     dispose() {
+        this.authoredTakeoverLayer?.dispose?.();
         this.info?.dispose?.();
         conf.dispose();
     }
@@ -365,12 +371,18 @@ class App {
             || particleDebug === "binding"
             || particleDebug === "hover"
             || particleDebug === "walls"
+            || particleDebug === "settled"
+            || particleDebug === "heat"
+            || particleDebug === "seamPull"
             ? particleDebug
             : "off";
 
         if (this.particleRenderer?.object) {
             this.particleRenderer.object.visible =
                 resolvedDebugView !== "geometry" && this.idleParticlePresentation !== "hidden";
+        }
+        if (this.authoredTakeoverLayer?.object) {
+            this.authoredTakeoverLayer.object.visible = resolvedDebugView !== "geometry";
         }
         if (this.backgroundGeometry?.object) {
             this.backgroundGeometry.object.visible = resolvedDebugView !== "particles";
