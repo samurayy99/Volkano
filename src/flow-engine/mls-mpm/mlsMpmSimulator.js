@@ -112,6 +112,7 @@ class mlsMpmSimulator {
         this.uniforms.seamAbsorption = uniform(0);
         this.uniforms.seamPocketCaptureRadius = uniform(0);
         this.uniforms.seamPocketCullRadius = uniform(0);
+        this.uniforms.collapseMix = uniform(0);
         this.uniforms.mouseInfluence = uniform(1);
         this.uniforms.mouseActive = uniform(0);
 
@@ -390,6 +391,10 @@ class mlsMpmSimulator {
                     .mul(float(1).sub(settleSuppression))
             );
 
+            // Collapse force removed — simulation stays frozen during collapse.
+            // The renderer owns the entire collapse visual (position squeeze, staggered death, drift).
+            // Unfreezing the sim reactivated grid momentum which pushed particles into the wall.
+
             // --- Rift reclaim: gravitational pull toward the vent (back wall rift) ---
             // Inverse-square force: gentle drift far away, violent acceleration near the rift.
             // Inspired by black-hole absorption mechanics — creates a visible funnel, not a uniform vacuum.
@@ -404,7 +409,7 @@ class mlsMpmSimulator {
             // eventHorizon 32 ensures floor particles (~22 units away) feel real pull
             const riftEventHorizon = float(32.0);
             const riftGravity = riftEventHorizon.div(riftDist).pow(2.0)
-                .clamp(float(0.0), float(10.0))
+                .clamp(float(0.0), float(4.0))
                 .toConst("riftGravity");
             const riftPull = this.uniforms.seamAbsorption
                 .mul(riftGravity)
@@ -696,6 +701,7 @@ class mlsMpmSimulator {
         this.uniforms.convergenceThermalExtinction.value = conf.convergenceThermalExtinction;
         this.uniforms.postFreezeSettleMix.value = conf.postFreezeSettleMix;
         this.uniforms.seamAbsorption.value = conf.seamAbsorption || 0;
+        this.uniforms.collapseMix.value = conf.collapseMix || 0;
         this.uniforms.seamPocketCaptureRadius.value = conf.seamPocketCaptureRadius;
         this.uniforms.seamPocketCullRadius.value = conf.seamPocketCullRadius;
 

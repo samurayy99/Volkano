@@ -42,16 +42,14 @@ export class FlowEngineBridge implements FlowEngineApi {
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
-  private static readonly POST_FREEZE_PROOF_HOLD = 0.72;
+  private static readonly POST_FREEZE_PROOF_HOLD = 5.0; // must exceed full collapse+quiet chain
   private static readonly RENDERER_SEAM_DURATION = 0.35;
-  private static readonly AUTHORED_TAKEOVER_THRESHOLD = 0.62;
-  private static readonly AUTHORED_TAKEOVER_DURATION = 0.58;
-  private static readonly RECLAIM_DELAY = 0.42;
-  private static readonly RECLAIM_DURATION = 1.8;
-  private static readonly QUIET_CHAMBER_TRIGGER = 0.85;
-  private static readonly QUIET_CHAMBER_DELAY = 0.12;
-  private static readonly QUIET_CHAMBER_DURATION = 0.42;
-  private static readonly QUIET_CHAMBER_PROOF_HOLD = 0.35;
+  // Pacing: Hold (monument) → Collapse (implosion) → Quiet (verdict space)
+  private static readonly COLLAPSE_HOLD = 0.4;       // brief frozen monument — just enough to register stillness
+  private static readonly COLLAPSE_DURATION = 2.4;    // three phases: compact (1s) → core (0.8s) → extinction (0.6s)
+  private static readonly QUIET_CHAMBER_DELAY = 0.08;
+  private static readonly QUIET_CHAMBER_DURATION = 0.5;
+  private static readonly QUIET_CHAMBER_PROOF_HOLD = 0.8; // silence before proof
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
@@ -473,6 +471,12 @@ export class FlowEngineBridge implements FlowEngineApi {
     return THREE.MathUtils.smoothstep(this.clamp01(v), 0, 1);
   }
 
+  /** Ease-out: strong start, decelerating finish. Collapse reads immediately. */
+  private easeOut01(v: number): number {
+    const t = this.clamp01(v);
+    return 1 - (1 - t) * (1 - t); // quadratic ease-out — 75% of motion in first 50%
+  }
+
   private applyConvergenceSignals(): void {
     const convergenceSignals = mapProgressToEngineSignals(this.convergenceProgress);
     const slowdownMix = convergenceSignals.slowdownMix;
@@ -494,6 +498,7 @@ export class FlowEngineBridge implements FlowEngineApi {
       conf.condensationMix = 0;
       conf.seamSettleMix = 0;
       conf.seamAbsorption = 0;
+      conf.collapseMix = 0;
       conf.quietChamberMix = 0;
       conf.authoredTakeoverMix = 0;
       conf.authoredTakeoverTriggered = false;
@@ -521,18 +526,18 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.convergenceThermalExtinction = thermalExtinctionMix;
     conf.freshnessDecayRate = THREE.MathUtils.lerp(0.044, 0.004, heatRetentionMix);
 
-    // Reclaim is a POST-FREEZE event. Settle/wave tail must complete first.
-    // postFreezeElapsed starts counting after freeze + FREEZE_SETTLE_DELAY.
-    const reclaimActiveElapsed = this.postFreezeActive
-      ? Math.max(0, this.postFreezeElapsed - FlowEngineBridge.RECLAIM_DELAY)
+    // === COLLAPSE ARCHITECTURE (replaces Floor Reclaim) ===
+    // Post-freeze: mass stays suspended in space. No settle, no carpet, no reclaim.
+    // Collapse force will be added in Pass 2. For now, mass just hangs.
+    const collapseElapsed = this.postFreezeActive
+      ? Math.max(0, this.postFreezeElapsed - FlowEngineBridge.COLLAPSE_HOLD)
       : 0;
-    const environmentalReclaimMix = this.ease01(
-      reclaimActiveElapsed / FlowEngineBridge.RECLAIM_DURATION,
+    const collapseMix = this.easeOut01(
+      collapseElapsed / FlowEngineBridge.COLLAPSE_DURATION,
     );
-    if (
-      !this.quietChamberStarted &&
-      environmentalReclaimMix >= FlowEngineBridge.QUIET_CHAMBER_TRIGGER
-    ) {
+
+    // Quiet chamber triggers when collapse nears completion
+    if (!this.quietChamberStarted && collapseMix >= 0.95) {
       this.quietChamberStarted = true;
       this.quietChamberElapsed = 0;
     }
@@ -546,25 +551,24 @@ export class FlowEngineBridge implements FlowEngineApi {
         )
       : 0;
 
-    // Solver settle owns the floor until reclaim takes over — then fully releases.
-    conf.postFreezeSettleMix = settleMix * THREE.MathUtils.lerp(1, 0.0, environmentalReclaimMix);
-
-    // Renderer: no convergence-driven position work. Solver owns the floor motion.
-    conf.condensationMix = 0;
-    let rendererSeamSettle = 0;
-    if (this.postFreezeActive) {
-      rendererSeamSettle = this.ease01(
-        this.postFreezeElapsed / FlowEngineBridge.RENDERER_SEAM_DURATION,
-      );
+    // Debug: log collapse progress at 10% intervals
+    if (collapseMix > 0 && Math.floor(collapseMix * 10) > Math.floor(((this as any)._lastLoggedCollapse || 0) * 10)) {
+      console.log(`[COLLAPSE] mix=${collapseMix.toFixed(2)} elapsed=${collapseElapsed.toFixed(2)}s`);
+      (this as any)._lastLoggedCollapse = collapseMix;
     }
-    conf.seamSettleMix = rendererSeamSettle;
+
+    // Settle is dead. Mass stays where convergence left it — suspended in space.
+    conf.postFreezeSettleMix = 0;
+    conf.seamSettleMix = 0;
+    conf.seamAbsorption = 0;
+    conf.condensationMix = 0;
     conf.proofLockMix = 0;
+    conf.collapseMix = collapseMix;
 
-    // Gravity: downward (1) during settle, back to centered attractor (2) during reclaim
-    // so gravity stops fighting the upward rift pull
-    conf.gravity = (settleMix > 0.3 && environmentalReclaimMix < 0.4) ? 1 : 2;
+    // Gravity: always centered attractor. No downward pull post-freeze.
+    conf.gravity = 2;
 
-    // Noise calms gently during settle, then more during slowdown
+    // Noise calms during convergence
     let noise = THREE.MathUtils.lerp(1.08, 0.62, settleMix * 0.4);
     noise = THREE.MathUtils.lerp(noise, 0.42, slowdownMix);
     let speed = THREE.MathUtils.lerp(
@@ -583,8 +587,12 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.pointerWake = THREE.MathUtils.lerp(0.76, 0.18, slowdownMix);
     conf.gridVelocityScale = THREE.MathUtils.lerp(0.92, 0.76, densifyMix);
 
-    // Broad post-wave reclamation toward the rift replaces the discrete authored object for this prototype.
-    conf.seamAbsorption = environmentalReclaimMix;
+    // Simulation stays FROZEN during collapse. The renderer owns the entire visual.
+    // Unfreezing reactivates grid momentum which pushes particles into the wall.
+    conf.convergenceFreeze = freezeMix; // stays at 1.0 — sim is still
+    // speed stays at frozen level — no sim motion
+    // noise stays at frozen level
+
     conf.quietChamberMix = quietChamberMix;
     this.authoredTakeoverStarted = false;
     this.authoredTakeoverElapsed = 0;
@@ -618,6 +626,15 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.freezeSettled = true;
     this.postFreezeActive = true;
     this.postFreezeElapsed = 0;
+
+    // Pass 1 verification: log where convergenceCenter sits vs. ventCenter
+    // Remove after confirming collapse center is visually correct.
+    const cc = conf.sourceFieldCenter.clone()
+      .lerp(conf.sourceFieldSecondaryCenter, 0.42);
+    console.log(
+      `[COLLAPSE] Freeze handoff. convergenceCenter=(${cc.x.toFixed(1)}, ${cc.y.toFixed(1)}, ${cc.z.toFixed(1)}) ventCenter=(${conf.ventCenter.x.toFixed(1)}, ${conf.ventCenter.y.toFixed(1)}, ${conf.ventCenter.z.toFixed(1)})`,
+    );
+
     this.options.onConvergenceFreeze?.();
   }
 

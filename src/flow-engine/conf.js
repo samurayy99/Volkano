@@ -100,6 +100,7 @@ class Conf {
     condensationMix = 0.0; // 0..1 condensation pull to seam
     seamSettleMix = 0.0; // 0..1 seam settle / quiet hold before proof
     seamAbsorption = 0.0; // 0..1 seam absorption pull — consumes floor mass into crack
+    collapseMix = 0.0; // 0..1 whole-mass collapse progress (hold → implosion → gone)
     seamPocketOffset = new THREE.Vector3(0.0, 10.5, -8.5); // hidden reservoir behind/above the readable seam
     seamPocketCaptureRadius = 3.2; // local seam-zone capture trigger
     seamPocketCullRadius = 2.8; // renderer-only local hide radius for the hidden seam reservoir

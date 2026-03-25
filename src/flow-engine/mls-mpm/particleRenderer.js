@@ -185,6 +185,7 @@ class ParticleRenderer {
     this.uniforms.quietChamber = uniform(0);
     this.uniforms.seamAbsorption = uniform(0);
     this.uniforms.ventCenter = uniform(new THREE.Vector3());
+    this.uniforms.collapseMix = uniform(0);
     this.uniforms.debugVis = uniform(0);
     const vDebugSettledFooting = varying(float(0), "vDebugSettledFooting");
     const vDebugSeamDist = varying(float(0), "vDebugSeamDist");
@@ -307,20 +308,126 @@ class ParticleRenderer {
       const riftDz = particlePosition.z.sub(this.uniforms.ventCenter.z);
       const riftDistSq = riftDx.mul(riftDx).add(riftDy.mul(riftDy)).add(riftDz.mul(riftDz));
       const riftDist = riftDistSq.pow(0.5).max(float(0.01));
-      const absorptionProximity = this.uniforms.seamAbsorption
-        .mul(smoothstep(float(18.0), float(2.0), riftDist))
+      // Expanding shrink wave (legacy — seamAbsorption=0 in collapse architecture, kept for compat)
+      const shrinkWaveFront = this.uniforms.seamAbsorption.mul(30.0);
+      const absorptionProximity = shrinkWaveFront
+        .sub(riftDist)
+        .div(float(6.0))
         .clamp(0, 1)
+        .mul(this.uniforms.seamAbsorption)
         .toConst("absorptionProximity");
       vAbsorptionProximity.assign(absorptionProximity);
       const absorptionShrink = mix(
         float(1),
-        float(0.1),
-        pow(absorptionProximity, 2.2),
+        float(0.0),
+        pow(absorptionProximity, 1.8),
       ).toConst("absorptionShrink");
+
+      // === COLLAPSE: "The Rift Drinks the Mass" ===
+      // Two waves sweep from outer shell inward toward the rift:
+      //   1. Thermal death wave (fast) — color goes to coal, outside-in
+      //   2. Consumption wave (slower, trails behind) — particles pulled into rift
+      // Sim stays frozen. Renderer owns all motion, shrink, and color.
+
+      const cMix = this.uniforms.collapseMix;
+
+      // Per-particle hash for organic edge jitter
+      const particleHash = float(instanceIndex).add(1.0).mul(0.6180339887).fract()
+        .toConst("particleHash");
+
+      // Soft target spread: feed into a small spatial volume (crack area) instead of a singularity
+      // This eliminates the "VFX traffic jam/funnel" at a single mathematical pixel.
+      const targetSpreadX = particleHash.sub(0.5).mul(6.0); // ±3 units wide along the crack
+      const targetSpreadY = particleHash.mul(17.3).fract().sub(0.5).mul(1.5); // ±0.75 units high
+      const riftTarget = vec3(
+        this.uniforms.ventCenter.x.add(targetSpreadX),
+        this.uniforms.ventCenter.y.add(float(1.5)).add(targetSpreadY),
+        this.uniforms.ventCenter.z.add(float(4.0))
+      ).toConst("riftTarget");
+
+      // Distance from rift (the drain)
+      const toRift = riftTarget.sub(particlePosition);
+      const riftDistC = toRift.length().max(float(0.5)).toConst("riftDistC");
+
+      // Rift proximity: 1 = at rift, 0 = at outer shell (~28 units away)
+      const riftProximity = float(1).sub(riftDistC.div(float(28.0)).clamp(0, 1))
+        .toConst("riftProximity");
+
+      // Safety gate: nothing happens at cMix=0
+      const collapseGate = smoothstep(float(0.0), float(0.03), cMix)
+        .toConst("collapseGate");
+
+      // --- Wave 1: Thermal death (color only, fast) ---
+      // Sweeps OUTSIDE→IN. Leads consumption slightly.
+      const thermalWaveMix = cMix.mul(1.6).clamp(0, 1).toConst("thermalWaveMix");
+      const thermalBand = float(8.0);
+      // Wave must start at 65.0 to cover the furthest particles in the chamber.
+      const thermalWaveFront = mix(float(65.0), thermalBand.negate(), thermalWaveMix)
+        .toConst("thermalWaveFront");
+      // Particle is thermally dead when riftDist > waveFront
+      const thermalDeath = riftDistC.sub(thermalWaveFront)
+        .add(particleHash.mul(3.0))  // ±3 unit jitter for organic edge
+        .div(thermalBand)
+        .clamp(0, 1)
+        .mul(collapseGate)
+        .toConst("thermalDeath");
+
+      // --- Wave 2: Consumption (position + scale, slower) ---
+      // Sweeps INSIDE→OUT (Erosion/Drain). Starts at cMix≈0.12, fully consumes at cMix=1.0
+      // Linearize the cMix slightly to counteract the external ease-out (less whip-crack)
+      const linearMix = pow(cMix, 1.5);
+      const consumeWaveMix = linearMix.sub(0.12).mul(1.14).clamp(0, 1)
+        .toConst("consumeWaveMix");
+      
+      // Distance-proportional suction: Far particles take much longer to be consumed.
+      // This kills the "machine-gun" effect by giving outer particles a massive travel window,
+      // equalizing the travel speed so all particles flow elegantly at the same pace.
+      const baseBand = float(10.0);
+      const consumeBand = baseBand.add(riftDistC.mul(1.2)).toConst("consumeBand");
+      
+      // Expanding from the rift (-baseBand) out to the farthest required distance (~120.0)
+      const consumeWaveFront = mix(baseBand.negate(), float(130.0), consumeWaveMix)
+        .toConst("consumeWaveFront");
+      
+      // consumeProgress: 0 = untouched, 1 = fully consumed (at rift)
+      const consumeProgress = consumeWaveFront.sub(riftDistC)
+        .add(particleHash.mul(4.0))  // subtle jitter for clean but organic stagger
+        .div(consumeBand)
+        .clamp(0, 1)
+        .mul(collapseGate)
+        .toConst("consumeProgress");
+
+      // Scale: FULL SIZE during flight. Swallowed softly at the rift mouth.
+      // Eased from 0.85 to 1.0 so particles don't all shoot in as massive blocks.
+      const collapseShrink = float(1).sub(
+        smoothstep(float(0.85), float(1.0), consumeProgress),
+      ).toConst("collapseShrink");
+
+      // Wave-front heat: particles briefly re-ignite as the wave grabs them.
+      // Peaks at mid-consume (cp=0.5), creating a visible sweeping heat line.
+      const waveFrontHeat = consumeProgress
+        .mul(float(1).sub(consumeProgress)).mul(4.0)
+        .clamp(0, 1).toConst("waveFrontHeat");
+
+      // Fragment signal: alive-at-rift core + wave-front heat flash
+      vAbsorptionProximity.assign(
+        riftProximity.mul(float(1).sub(consumeProgress)).mul(cMix)
+          .add(waveFrontHeat.mul(0.3).mul(collapseGate)),
+      );
+
+      // Position: softened ease-OUT.
+      // Less brutal front-load than cp^2, giving thermal wave time to read visually.
+      const oneMinusCp = float(1).sub(consumeProgress);
+      const travelProgress = float(1).sub(pow(oneMinusCp, 1.6))
+        .toConst("travelProgress");
+      const collapseSqueezeBlend = travelProgress
+        .toConst("collapseSqueezeBlend");
+
       const renderScale = seamScale
         .mul(float(1).sub(particleCaptured.clamp(0, 1)))
         .mul(pow(float(1).sub(quietUncaptured), 2.6))
         .mul(absorptionShrink)
+        .mul(collapseShrink)
         .toConst("renderScale");
       const quietPocketTarget = vec3(
         this.uniforms.seamPocketCenter.x.add(
@@ -334,8 +441,16 @@ class ParticleRenderer {
         ),
       ).toConst("quietPocketTarget");
       const basePosition = vec3(seamX, seamY, seamZ).toConst("basePosition");
-      const renderPosition = mix(
+      
+      // We removed the Tornado Arc because particleHash disrupted the fluid body.
+      // Reverted to a clean, straight positional ease towards the floating riftTarget.
+      const collapsedPosition = mix(
         basePosition,
+        riftTarget,
+        collapseSqueezeBlend,
+      ).toConst("collapsedPosition");
+      const renderPosition = mix(
+        collapsedPosition,
         quietPocketTarget,
         quietUncaptured.mul(0.92).clamp(0, 0.92),
       ).toConst("renderPosition");
@@ -397,6 +512,34 @@ class ParticleRenderer {
       .add(this.uniforms.seamSettle.mul(vSettled).mul(0.06))
       .clamp(0, 1)
       .toConst("proofDarken");
+    // Collapse fragment: two-wave color system
+    // vAbsorptionProximity = core alive signal + wave-front heat flash
+    //   high = near rift alive OR at wave front (brief re-ignition)
+    //   low = consumed or far from action
+    const riftAliveSignal = vAbsorptionProximity;
+    // Thermal death: outer particles darken to coal. Core resists strongly.
+    const thermalDarken = smoothstep(float(0.0), float(0.4), this.uniforms.collapseMix)
+      .mul(float(1).sub(riftAliveSignal.mul(0.7)))
+      .clamp(0, 1)
+      .toConst("thermalDarken");
+    // Base re-heat + wave-front flash: visible heat during the consumption sweep
+    const baseReHeat = riftAliveSignal
+      .mul(smoothstep(float(0.1), float(0.35), this.uniforms.collapseMix))
+      .mul(float(1).sub(smoothstep(float(0.85), float(1.0), this.uniforms.collapseMix)))
+      .mul(0.6)
+      .clamp(0, 0.6);
+      
+    // Signature re-ignition flash (Grok's must-have): late intense burst right before extinction
+    const signatureFlash = riftAliveSignal
+      .mul(smoothstep(float(0.78), float(0.92), this.uniforms.collapseMix))
+      .mul(float(1).sub(smoothstep(float(0.93), float(1.0), this.uniforms.collapseMix)))
+      .mul(1.8)
+      .clamp(0, 1.0);
+
+    const coreReHeat = baseReHeat.add(signatureFlash).clamp(0, 1.0).toConst("coreReHeat");
+    // Final extinction: everything to coal at the very end
+    const collapseExtinction = smoothstep(float(0.88), float(1.0), this.uniforms.collapseMix)
+      .toConst("collapseExtinction");
     const darkenedColor = mix(particleColor, coal, proofDarken).toConst(
       "darkenedColor",
     );
@@ -438,7 +581,12 @@ class ParticleRenderer {
     const w3 = smoothstep(float(2.5), float(3.0), dv);
     const debugColor = debugSettledColor.mul(w1).add(debugHeatColor.mul(w2)).add(debugSeamColor.mul(w3));
     const debugMix = smoothstep(float(0.3), float(0.7), dv);
-    this.material.colorNode = mix(surfaceColor, debugColor, debugMix);
+    // Apply collapse: shell death → ember re-heat → final extinction
+    const emberCore = vec3(0.58, 0.11, 0.025);
+    const thermallyDead = mix(surfaceColor, coal, thermalDarken);
+    const reheated = mix(thermallyDead, emberCore, coreReHeat);
+    const collapsedColor = mix(reheated, coal, collapseExtinction).toConst("collapsedColor");
+    this.material.colorNode = mix(collapsedColor, debugColor, debugMix);
     // Gentle glow suppression — only for settled particles during final cleanup.
     const glowSuppression = vGrounding
       .mul(0.24)
@@ -487,14 +635,22 @@ class ParticleRenderer {
       .mul(0.06)
       .toConst("crustEmber");
     // Rift absorption glow — faint ember as particles approach the rift, readability aid not beauty
-    const absorptionGlow = vAbsorptionProximity
-      .mul(0.06)
+    const absorptionGlow = pow(vAbsorptionProximity, 2.0)
+      .mul(0.12)
       .toConst("absorptionGlow");
     const normalEmissive = surfaceColor
       .mul(glowFactor)
       .mul(0.34)
       .add(ember.mul(seamGlow.add(bodyEmber).add(crustEmber).add(absorptionGlow)));
-    this.material.emissiveNode = mix(normalEmissive, vec3(0), debugMix);
+    // Quiet Afterglow: faint lingering heat after collapse (Grok)
+    const quietAfterglow = this.uniforms.quietChamber
+      .mul(0.25)
+      .toConst("quietAfterglow");
+
+    // Kill emissive during collapse, but leave faint residual chamber heat
+    const collapseEmissive = mix(normalEmissive, vec3(0), collapseExtinction)
+      .add(ember.mul(quietAfterglow.mul(0.15)));
+    this.material.emissiveNode = mix(collapseEmissive, vec3(0), debugMix);
     const heatBloom = smoothstep(float(0.62), float(0.82), particleHeat);
     this._bloomIntensityNode = heatBloom;
     this.material.aoNode = vAo;
@@ -564,6 +720,7 @@ class ParticleRenderer {
     this.uniforms.seamPocketCenter.value.copy(conf.ventCenter).add(conf.seamPocketOffset);
     this.uniforms.quietChamber.value = conf.quietChamberMix || 0;
     this.uniforms.seamAbsorption.value = conf.seamAbsorption || 0;
+    this.uniforms.collapseMix.value = conf.collapseMix || 0;
     this.uniforms.ventCenter.value.copy(conf.ventCenter);
     const debugMap = { settled: 1, heat: 2, seamPull: 3 };
     this.uniforms.debugVis.value = debugMap[conf.particleDebugMode] || 0;
