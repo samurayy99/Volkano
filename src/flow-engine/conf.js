@@ -24,7 +24,6 @@ class Conf {
     targetFieldCenter = new THREE.Vector2(32, 32);
     targetFieldSpan = new THREE.Vector2(60, 60);
     fieldFade = 0;         // 0 = all particles visible, 1 = distance-based fade active
-    gridVelocityScale = 1.0;  // 1.0 = full MLS-MPM, 0.05 = field-dominant
     convergenceScale = 1.0;    // 1.0 = play size, 0.35 = locked (particle shrink)
     convergenceDepthScale = 1.0; // 1.0 = full rod depth, <1 compresses rod depth for clearer glyphs
     colorSaturation = 1.0;     // 1.0 = full color, 0.08 = near-monochrome
@@ -48,11 +47,7 @@ class Conf {
     trailStretch = 0.0;        // 0 = normal rods, 0..1.2 = velocity-proportional streak elongation
     backgroundDarkness = 0.0;  // 0 = no effect, 1 = scene bg fully dark (#0a0a0c)
     pointerWake = 0.0;         // 0 = old directional push, 1 = radial push + wake swirl
-    particleDebugMode = "off"; // off|source|freshness|binding|hover|walls
-    craterUV = new THREE.Vector2(0.488, 0.714); // authoritative crater anchor, bottom-origin backplate UV
-    ventDepthOffset = 0.042; // chamber-local distance in front of the backplate
-    ventRadiiLocal = new THREE.Vector3(0.042, 0.066, 0.024); // backplate/vessel-local source footprint
-    ventAxisLocal = new THREE.Vector3(0.012, 0.978, -0.208); // chamber-local eruption axis
+    particleDebugMode = "off"; // off|source|heat
     ventCenter = new THREE.Vector3(23.2, 30.6, 18.4); // derived sim-space source center
     ventRadii = new THREE.Vector3(4.2, 3.2, 2.8); // derived sim-space source radii
     ventAxis = new THREE.Vector3(-0.16, 0.94, 0.3); // derived sim-space source axis
@@ -95,18 +90,9 @@ class Conf {
     convergenceFreeze = 0.0; // 0..1 terminal stillness mix
     convergenceHeatRetention = 0.0; // 0..1 thermal memory retention during convergence
     convergenceThermalExtinction = 0.0; // 0..1 pre-freeze heat extinction for dark pressure lock
-    proofLockMix = 0.0; // 0..1 post-freeze pressure lock
-    postFreezeSettleMix = 0.0; // 0..1 sim-side post-freeze settle field
-    condensationMix = 0.0; // 0..1 condensation pull to seam
-    seamSettleMix = 0.0; // 0..1 seam settle / quiet hold before proof
-    seamAbsorption = 0.0; // 0..1 seam absorption pull — consumes floor mass into crack
     collapseMix = 0.0; // 0..1 whole-mass collapse progress (hold → implosion → gone)
-    seamPocketOffset = new THREE.Vector3(0.0, 10.5, -8.5); // hidden reservoir behind/above the readable seam
-    seamPocketCaptureRadius = 3.2; // local seam-zone capture trigger
-    seamPocketCullRadius = 2.8; // renderer-only local hide radius for the hidden seam reservoir
+    postFreezeSimLock = 0.0; // 0..1 hard gate: solver motion/capture disabled, renderer owns post-freeze
     quietChamberMix = 0.0; // 0..1 late renderer-owned quiet chamber handoff
-    authoredTakeoverMix = 0.0; // 0..1 authored post-wave takeover beat
-    authoredTakeoverTriggered = false; // one-shot latch once settleMix crosses the handoff threshold
 
 
     diagOverrideOpacity = false; // T-key diagnostic

@@ -1,5 +1,3 @@
-'use client';
-
 import { SpatialChamber } from './SpatialChamber';
 
 export default function Home() {

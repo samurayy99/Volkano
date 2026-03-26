@@ -7,7 +7,6 @@ import type {
   FlowEngineBridgeOptions,
   FlowEngineDebugView,
   FlowEngineFrontRailMetrics,
-  FlowEnginePhase,
 } from "./types";
 
 export class FlowEngineBridge implements FlowEngineApi {
@@ -17,7 +16,6 @@ export class FlowEngineBridge implements FlowEngineApi {
   private app: any | null = null;
   private clock = new THREE.Clock();
   private rafId = 0;
-  private phase: FlowEnginePhase = "play";
   private debugView: FlowEngineDebugView = "composite";
   private disposed = false;
   private interactiveEnabled = true;
@@ -37,12 +35,9 @@ export class FlowEngineBridge implements FlowEngineApi {
   private postFreezeElapsed = 0;
   private quietChamberStarted = false;
   private quietChamberElapsed = 0;
-  private authoredTakeoverStarted = false;
-  private authoredTakeoverElapsed = 0;
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
-  private static readonly POST_FREEZE_PROOF_HOLD = 5.0; // must exceed full collapse+quiet chain
   private static readonly RENDERER_SEAM_DURATION = 0.35;
   // Pacing: Hold (monument) → Collapse (implosion) → Quiet (verdict space)
   private static readonly COLLAPSE_HOLD = 0.4;       // brief frozen monument — just enough to register stillness
@@ -97,18 +92,10 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.resetIdleMaturation();
     this.app.setConvergenceProgress?.(this.convergenceProgress);
     this.app.setDebugView?.(this.debugView);
-
-    this.options.onPhaseChange?.("play");
     document.addEventListener("visibilitychange", this.onVisibilityChange);
 
     this.clock.start();
     this.rafId = requestAnimationFrame(this.animate);
-  }
-
-  setPhase(phase: FlowEnginePhase): void {
-    if (this.disposed) return;
-    this.phase = phase;
-    this.options.onPhaseChange?.(phase);
   }
 
   setConvergenceProgress(progress: number): void {
@@ -138,10 +125,6 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.quietChamberStarted = false;
       this.quietChamberElapsed = 0;
       conf.quietChamberMix = 0;
-      this.authoredTakeoverStarted = false;
-      this.authoredTakeoverElapsed = 0;
-      conf.authoredTakeoverMix = 0;
-      conf.authoredTakeoverTriggered = false;
     }
   }
 
@@ -279,9 +262,6 @@ export class FlowEngineBridge implements FlowEngineApi {
       if (this.quietChamberStarted) {
         this.quietChamberElapsed += delta;
       }
-      if (this.authoredTakeoverStarted) {
-        this.authoredTakeoverElapsed += delta;
-      }
       this.applyConvergenceSignals();
       await this.app.update(delta, elapsed);
       this.updateFreezeSettlement(delta);
@@ -341,10 +321,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.bloom = true;
     conf.colorSaturation = 0.9;
     conf.particleDebugMode = "off";
-    conf.craterUV.set(0.488, 0.714);
-    conf.ventDepthOffset = 0.042;
-    conf.ventRadiiLocal.set(0.042, 0.066, 0.024);
-    conf.ventAxisLocal.set(0.012, 0.978, -0.208).normalize();
     conf.ventCenter.set(23.2, 30.6, 18.4);
     conf.ventRadii.set(4.2, 3.2, 2.8);
     conf.ventAxis.set(-0.16, 0.94, 0.3).normalize();
@@ -394,7 +370,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.wallBounceStrength = 0.0;
     conf.wallSplashStrength = 0.0;
     conf.emissiveIntensity = 0.88;
-    conf.gridVelocityScale = 0.68;
     conf.sourceDepthScale = 1.82;
 
     this.app?.setPointerInfluence?.(0.08);
@@ -428,7 +403,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.wallBounceStrength = 0.03;
     conf.wallSplashStrength = 0.02;
     conf.emissiveIntensity = 1.08;
-    conf.gridVelocityScale = 0.92;
     conf.sourceDepthScale = 1.18;
     conf.sourceFieldRadii.set(12.8, 10.2, 10.6);
     conf.sourceFieldSecondaryRadii.set(7.8, 7.2, 8.1);
@@ -493,22 +467,14 @@ export class FlowEngineBridge implements FlowEngineApi {
       conf.convergenceFreeze = 0;
       conf.convergenceHeatRetention = 0;
       conf.convergenceThermalExtinction = 0;
-      conf.proofLockMix = 0;
-      conf.postFreezeSettleMix = 0;
-      conf.condensationMix = 0;
-      conf.seamSettleMix = 0;
-      conf.seamAbsorption = 0;
       conf.collapseMix = 0;
+      conf.postFreezeSimLock = 0;
       conf.quietChamberMix = 0;
-      conf.authoredTakeoverMix = 0;
-      conf.authoredTakeoverTriggered = false;
       conf.freshnessDecayRate = 0.044;
       this.currentPointerInfluence = 1;
       this.app?.setPointerInfluence?.(this.interactiveEnabled ? this.currentPointerInfluence : 0);
       this.quietChamberStarted = false;
       this.quietChamberElapsed = 0;
-      this.authoredTakeoverStarted = false;
-      this.authoredTakeoverElapsed = 0;
       return;
     }
 
@@ -526,9 +492,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.convergenceThermalExtinction = thermalExtinctionMix;
     conf.freshnessDecayRate = THREE.MathUtils.lerp(0.044, 0.004, heatRetentionMix);
 
-    // === COLLAPSE ARCHITECTURE (replaces Floor Reclaim) ===
-    // Post-freeze: mass stays suspended in space. No settle, no carpet, no reclaim.
-    // Collapse force will be added in Pass 2. For now, mass just hangs.
+    // Post-freeze remains renderer-owned. The bridge only drives timing and gates.
     const collapseElapsed = this.postFreezeActive
       ? Math.max(0, this.postFreezeElapsed - FlowEngineBridge.COLLAPSE_HOLD)
       : 0;
@@ -551,19 +515,8 @@ export class FlowEngineBridge implements FlowEngineApi {
         )
       : 0;
 
-    // Debug: log collapse progress at 10% intervals
-    if (collapseMix > 0 && Math.floor(collapseMix * 10) > Math.floor(((this as any)._lastLoggedCollapse || 0) * 10)) {
-      console.log(`[COLLAPSE] mix=${collapseMix.toFixed(2)} elapsed=${collapseElapsed.toFixed(2)}s`);
-      (this as any)._lastLoggedCollapse = collapseMix;
-    }
-
-    // Settle is dead. Mass stays where convergence left it — suspended in space.
-    conf.postFreezeSettleMix = 0;
-    conf.seamSettleMix = 0;
-    conf.seamAbsorption = 0;
-    conf.condensationMix = 0;
-    conf.proofLockMix = 0;
     conf.collapseMix = collapseMix;
+    conf.postFreezeSimLock = this.postFreezeActive ? 1 : 0;
 
     // Gravity: always centered attractor. No downward pull post-freeze.
     conf.gravity = 2;
@@ -571,7 +524,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     // Noise calms during convergence
     let noise = THREE.MathUtils.lerp(1.08, 0.62, settleMix * 0.4);
     noise = THREE.MathUtils.lerp(noise, 0.42, slowdownMix);
-    let speed = THREE.MathUtils.lerp(
+    const speed = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(1.02, 0.82, slowdownMix),
       0.12,
       freezeMix,
@@ -585,7 +538,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.wallSplashStrength = THREE.MathUtils.lerp(0.02, 0.0, freezeMix);
     conf.trailStretch = THREE.MathUtils.lerp(0.28, 0.18, slowdownMix);
     conf.pointerWake = THREE.MathUtils.lerp(0.76, 0.18, slowdownMix);
-    conf.gridVelocityScale = THREE.MathUtils.lerp(0.92, 0.76, densifyMix);
 
     // Simulation stays FROZEN during collapse. The renderer owns the entire visual.
     // Unfreezing reactivates grid momentum which pushes particles into the wall.
@@ -594,10 +546,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     // noise stays at frozen level
 
     conf.quietChamberMix = quietChamberMix;
-    this.authoredTakeoverStarted = false;
-    this.authoredTakeoverElapsed = 0;
-    conf.authoredTakeoverTriggered = false;
-    conf.authoredTakeoverMix = 0;
 
     conf.noise = noise;
     conf.speed = speed;
@@ -627,14 +575,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.postFreezeActive = true;
     this.postFreezeElapsed = 0;
 
-    // Pass 1 verification: log where convergenceCenter sits vs. ventCenter
-    // Remove after confirming collapse center is visually correct.
-    const cc = conf.sourceFieldCenter.clone()
-      .lerp(conf.sourceFieldSecondaryCenter, 0.42);
-    console.log(
-      `[COLLAPSE] Freeze handoff. convergenceCenter=(${cc.x.toFixed(1)}, ${cc.y.toFixed(1)}, ${cc.z.toFixed(1)}) ventCenter=(${conf.ventCenter.x.toFixed(1)}, ${conf.ventCenter.y.toFixed(1)}, ${conf.ventCenter.z.toFixed(1)})`,
-    );
-
     this.options.onConvergenceFreeze?.();
   }
 
@@ -642,18 +582,14 @@ export class FlowEngineBridge implements FlowEngineApi {
     if (this.proofReadyEmitted || !this.externalFreezeSettled) return;
     if (!this.postFreezeActive) return;
 
-    if (
-      this.quietChamberStarted &&
-      this.quietChamberElapsed <
-        FlowEngineBridge.QUIET_CHAMBER_DELAY +
-          FlowEngineBridge.QUIET_CHAMBER_DURATION +
-          FlowEngineBridge.QUIET_CHAMBER_PROOF_HOLD
-    ) {
-      this.proofReadyHoldFrames = 0;
-      return;
-    }
+    const targetElapsed =
+      FlowEngineBridge.COLLAPSE_HOLD +
+      FlowEngineBridge.COLLAPSE_DURATION +
+      FlowEngineBridge.QUIET_CHAMBER_DELAY +
+      FlowEngineBridge.QUIET_CHAMBER_DURATION +
+      FlowEngineBridge.QUIET_CHAMBER_PROOF_HOLD;
 
-    if (this.postFreezeElapsed < FlowEngineBridge.POST_FREEZE_PROOF_HOLD) {
+    if (this.postFreezeElapsed < targetElapsed) {
       this.proofReadyHoldFrames = 0;
       return;
     }

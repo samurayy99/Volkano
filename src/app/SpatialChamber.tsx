@@ -22,14 +22,12 @@ import {
 import { FlowEngineHost } from "../flow-engine";
 import type {
   FlowEngineApi,
-  FlowEngineDebugView,
   FlowEngineFrontRailMetrics,
 } from "../flow-engine/types";
 
 type RoomPhase = "source" | "rotating" | "back";
-type ChamberPreview = "source" | "proof" | "back" | null;
-const FREEZE_FALLBACK_MS = 420;
-const PROOF_READY_FALLBACK_MS = 1320;
+const FREEZE_FALLBACK_MS = 2500;
+const PROOF_READY_FALLBACK_MS = 8000;
 const PROOF_HOLD_MS = 1800;
 const TRIGGER_HEIGHT_RATIO = 0.72;
 const TRIGGER_WIDTH_RATIO = 0.115;
@@ -37,8 +35,6 @@ const TRIGGER_VERTICAL_BIAS_RATIO = 0.02;
 
 export function SpatialChamber() {
   const reducedMotion = useReducedMotionPreference();
-  const chamberPreview = useChamberPreview();
-  const vesselDebugView = useVesselDebugView();
   const backScrollRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const engineBridgeRef = useRef<ReturnType<
@@ -59,62 +55,34 @@ export function SpatialChamber() {
     controller.getSnapshot,
   );
 
-  const proofPreview = chamberPreview === "proof";
-  const previewView: RoomPhase | null =
-    chamberPreview === "back"
-      ? "back"
-      : chamberPreview === "source" || proofPreview
-        ? "source"
-        : null;
   const roomPhase = getRoomPhase(snapshot);
   const view: RoomPhase =
-    previewView ??
-    (reducedMotion && snapshot.rotationComplete ? "back" : roomPhase);
-  const proofVisible = proofPreview || getProofVisible(snapshot);
-  const rotationActive =
-    chamberPreview === null ? snapshot.rotationActive : false;
-  const rotationComplete =
-    chamberPreview === "back" ? true : snapshot.rotationComplete;
-  const heroLanded = chamberPreview === "back" ? true : snapshot.heroLanded;
-  const interfaceActive =
-    chamberPreview === "back" ? true : snapshot.interfaceActive;
-  const effectivePhase =
-    chamberPreview === "back"
-      ? "hero_landed"
-      : proofPreview
-        ? "proof"
-        : snapshot.phase;
+    reducedMotion && snapshot.rotationComplete ? "back" : roomPhase;
+  const proofVisible = getProofVisible(snapshot);
+  const rotationActive = snapshot.rotationActive;
+  const rotationComplete = snapshot.rotationComplete;
+  const heroLanded = snapshot.heroLanded;
+  const interfaceActive = snapshot.interfaceActive;
   const isFrontPointerActive =
     !reducedMotion &&
-    previewView === null &&
     view === "source" &&
     getSourceInteractive(snapshot);
   const isBackPointerActive = view === "back" && interfaceActive;
-  const shouldMountEngine =
-    chamberPreview === null
-      ? !reducedMotion && !engineFailed
-      : chamberPreview !== "back" && !engineFailed;
-  const showVesselDebug =
-    process.env.NODE_ENV !== "production" &&
-    view === "source" &&
-    snapshot.phase === "source" &&
-    !proofVisible;
-  const rotationAllowed =
-    chamberPreview === null && getRotationAllowed(snapshot);
+  const shouldMountEngine = !reducedMotion && !engineFailed;
+  const rotationAllowed = getRotationAllowed(snapshot);
 
   useEffect(() => {
-    if (!snapshot.proofReady || snapshot.proofVisible || proofPreview) {
+    if (!snapshot.proofReady || snapshot.proofVisible) {
       return;
     }
 
     controller.showProof();
-  }, [controller, proofPreview, snapshot.proofReady, snapshot.proofVisible]);
+  }, [controller, snapshot.proofReady, snapshot.proofVisible]);
 
   useEffect(() => {
     if (
       !snapshot.freezeSettled ||
       snapshot.proofReady ||
-      chamberPreview ||
       (shouldMountEngine && !engineFailed && engineReady)
     ) {
       return;
@@ -128,7 +96,6 @@ export function SpatialChamber() {
       window.clearTimeout(timeoutId);
     };
   }, [
-    chamberPreview,
     controller,
     engineReady,
     engineFailed,
@@ -141,7 +108,6 @@ export function SpatialChamber() {
     if (
       snapshot.progress < 100 ||
       snapshot.freezeSettled ||
-      chamberPreview ||
       (!reducedMotion && shouldMountEngine && !engineFailed && engineReady)
     ) {
       return;
@@ -155,7 +121,6 @@ export function SpatialChamber() {
       window.clearTimeout(timeoutId);
     };
   }, [
-    chamberPreview,
     controller,
     engineReady,
     engineFailed,
@@ -192,7 +157,7 @@ export function SpatialChamber() {
   }, [controller, reducedMotion, rotationAllowed]);
 
   useEffect(() => {
-    if (!snapshot.heroLanded || snapshot.interfaceActive || chamberPreview) {
+    if (!snapshot.heroLanded || snapshot.interfaceActive) {
       return;
     }
 
@@ -203,12 +168,7 @@ export function SpatialChamber() {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [
-    chamberPreview,
-    controller,
-    snapshot.heroLanded,
-    snapshot.interfaceActive,
-  ]);
+  }, [controller, snapshot.heroLanded, snapshot.interfaceActive]);
 
   useEffect(() => {
     engineBridgeRef.current?.sync(snapshot);
@@ -248,17 +208,10 @@ export function SpatialChamber() {
       className="site-root"
       ref={rootRef}
       data-phase={view}
-      data-convergence-phase={effectivePhase}
-      data-proof-visible={proofVisible ? "true" : "false"}
-      data-rotation-active={rotationActive ? "true" : "false"}
-      data-rotation-complete={rotationComplete ? "true" : "false"}
-      data-hero-landed={heroLanded ? "true" : "false"}
-      data-interface-active={interfaceActive ? "true" : "false"}
       data-front-interactive={isFrontPointerActive ? "true" : "false"}
       data-back-interactive={isBackPointerActive ? "true" : "false"}
       data-view={view}
       data-engine-ready={engineReady ? "true" : undefined}
-      data-vessel-debug={vesselDebugView}
     >
       <div className="cube-wrapper">
         <div className="chamber-stage">
@@ -281,16 +234,13 @@ export function SpatialChamber() {
                 controller={controller}
                 interactive={isFrontPointerActive}
                 mountEngine={shouldMountEngine && !engineFailed}
-                debugView={vesselDebugView}
                 proofVisible={proofVisible}
-                proofSettled={snapshot.proofSettled || proofPreview}
-                proofPreview={proofPreview}
+                proofSettled={snapshot.proofSettled}
                 triggerVisible={
                   shouldMountEngine &&
                   !engineFailed &&
                   view === "source" &&
-                  !proofVisible &&
-                  chamberPreview === null
+                  !proofVisible
                 }
                 triggerDisabled={rotationActive || rotationComplete}
                 onProofSettled={() => {
@@ -329,12 +279,6 @@ export function SpatialChamber() {
             </div>
           </div>
         </div>
-
-        <VesselDebugControls
-          visible={showVesselDebug}
-          value={vesselDebugView}
-          onChange={setVesselDebugView}
-        />
       </div>
     </div>
   );
@@ -344,10 +288,8 @@ function FrontFace({
   controller,
   interactive,
   mountEngine,
-  debugView,
   proofVisible,
   proofSettled,
-  proofPreview,
   triggerVisible,
   triggerDisabled,
   onProofSettled,
@@ -359,10 +301,8 @@ function FrontFace({
   controller: ConvergenceController;
   interactive: boolean;
   mountEngine: boolean;
-  debugView: FlowEngineDebugView;
   proofVisible: boolean;
   proofSettled: boolean;
-  proofPreview: boolean;
   triggerVisible: boolean;
   triggerDisabled: boolean;
   onProofSettled: () => void;
@@ -405,10 +345,7 @@ function FrontFace({
         <div className="front-source-host">
           {mountEngine ? (
             <FlowEngineHost
-              className={`flow-engine-host front-flow-host ${
-                interactive ? "is-interactive" : ""
-              }`}
-              debugView={debugView}
+              className="flow-engine-host front-flow-host"
               onReady={onEngineReady}
               onFrontRailMetricsChange={(metrics) => {
                 latestTriggerMetricsRef.current = metrics;
@@ -440,7 +377,6 @@ function FrontFace({
             </div>
           ) : null}
           <ProofOverlay
-            preview={proofPreview}
             settled={proofSettled}
             visible={proofVisible}
             onSettled={onProofSettled}
@@ -506,26 +442,23 @@ function writeFrontRailAnchorStyle(
 function ProofOverlay({
   visible,
   settled,
-  preview,
   onSettled,
 }: {
   visible: boolean;
   settled: boolean;
-  preview: boolean;
   onSettled: () => void;
 }) {
   return (
     <div
       className={`proof-front-overlay ${visible ? "is-visible" : ""} ${
-        settled || preview ? "is-settled" : ""
+        settled ? "is-settled" : ""
       }`}
       onAnimationEnd={(event: ReactAnimationEvent<HTMLDivElement>) => {
         if (
           event.currentTarget !== event.target ||
           event.animationName !== "proof-front-reveal" ||
           !visible ||
-          settled ||
-          preview
+          settled
         ) {
           return;
         }
@@ -563,7 +496,7 @@ function BackFace({
 }) {
   return (
     <section
-      className={`cube-face cube-face-back ${interactive ? "is-interactive" : ""}`}
+      className="cube-face cube-face-back"
       aria-label="Hero wall"
     >
       <div className="back-surface">
@@ -640,42 +573,6 @@ function WallFace({ className }: { className: string }) {
   return <div className={className} aria-hidden="true" />;
 }
 
-function VesselDebugControls({
-  visible,
-  value,
-  onChange,
-}: {
-  visible: boolean;
-  value: FlowEngineDebugView;
-  onChange: (value: FlowEngineDebugView) => void;
-}) {
-  return (
-    <div className={`vessel-debug ${visible ? "is-visible" : ""}`}>
-      <button
-        className={value === "composite" ? "is-active" : ""}
-        type="button"
-        onClick={() => onChange("composite")}
-      >
-        Composite
-      </button>
-      <button
-        className={value === "geometry" ? "is-active" : ""}
-        type="button"
-        onClick={() => onChange("geometry")}
-      >
-        Geometry
-      </button>
-      <button
-        className={value === "particles" ? "is-active" : ""}
-        type="button"
-        onClick={() => onChange("particles")}
-      >
-        Particles
-      </button>
-    </div>
-  );
-}
-
 function useReducedMotionPreference() {
   return useSyncExternalStore(
     subscribeToReducedMotion,
@@ -706,78 +603,6 @@ function getReducedMotionServerSnapshot() {
   return false;
 }
 
-function getChamberPreview(value: string | null): ChamberPreview {
-  if (value === "source" || value === "front") return "source";
-  if (value === "proof") return "proof";
-  if (value === "hero") return "back";
-  if (value === "back" || value === "interface") return "back";
-  return null;
-}
-
-function useChamberPreview() {
-  return useSyncExternalStore(
-    subscribeToLocationSearch,
-    getChamberPreviewSnapshot,
-    getChamberPreviewServerSnapshot,
-  );
-}
-
-function subscribeToLocationSearch(onChange: () => void) {
-  if (typeof window === "undefined") {
-    return () => {};
-  }
-
-  window.addEventListener("popstate", onChange);
-  return () => {
-    window.removeEventListener("popstate", onChange);
-  };
-}
-
-function getChamberPreviewSnapshot(): ChamberPreview {
-  if (typeof window === "undefined") return null;
-  const params = new URLSearchParams(window.location.search);
-  return getChamberPreview(params.get("chamber"));
-}
-
-function getChamberPreviewServerSnapshot(): ChamberPreview {
-  return null;
-}
-
-function getVesselDebugView(value: string | null): FlowEngineDebugView {
-  if (value === "geometry") return "geometry";
-  if (value === "particles") return "particles";
-  return "composite";
-}
-
-function useVesselDebugView() {
-  return useSyncExternalStore(
-    subscribeToLocationSearch,
-    getVesselDebugViewSnapshot,
-    getVesselDebugViewServerSnapshot,
-  );
-}
-
-function getVesselDebugViewSnapshot(): FlowEngineDebugView {
-  if (typeof window === "undefined") return "composite";
-  const params = new URLSearchParams(window.location.search);
-  return getVesselDebugView(params.get("vesselDebug"));
-}
-
-function getVesselDebugViewServerSnapshot(): FlowEngineDebugView {
-  return "composite";
-}
-
-function setVesselDebugView(value: FlowEngineDebugView) {
-  if (typeof window === "undefined") return;
-  const url = new URL(window.location.href);
-  if (value === "composite") {
-    url.searchParams.delete("vesselDebug");
-  } else {
-    url.searchParams.set("vesselDebug", value);
-  }
-  window.history.replaceState({}, "", url);
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
 
 function getRoomPhase(snapshot: ConvergenceSnapshot): RoomPhase {
   if (snapshot.rotationActive) return "rotating";

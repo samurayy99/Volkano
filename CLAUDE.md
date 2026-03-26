@@ -1,4 +1,4 @@
-# VOLKANO — Compact Creative + Engineering Brief
+# VOLKANO — Creative + Engineering Brief
 
 ## What This Is
 
@@ -10,11 +10,28 @@ VOLKANO is a personal website that must work at the same time as:
 
 It must not feel like a demo, a toy slider, a portfolio cliché, or a design experiment without purpose.
 
-**Leitprinzip**
-
 > The volcano is the source.  
 > The sentence is the proof.  
 > The interface is what remains.
+
+---
+
+## Current Status
+
+The source stage is solved enough to stop reopening it.
+
+The current bottleneck is the Post-Enter / Pre-Proof sequence.
+
+Important:
+
+- Cleanup Phase 1/2 has already removed major ownership conflicts, dead paths, and fallback interference.
+- The experience is **not** considered final or award-level yet.
+- Current work is focused on making the post-freeze beat read as one authored material event:
+  **freeze monument → controlled clearing / erosion → quiet chamber → DOM proof**
+
+Do not assume the current visual result is correct just because the architecture is cleaner.
+
+The browser read is the final authority.
 
 ---
 
@@ -26,21 +43,20 @@ We already proved one important thing:
 
 We also proved what does **not** work:
 
-- particles morphing letter-by-letter into typography (too fragile, weak staging)
+- particles morphing letter-by-letter into typography
 - particles becoming logo
 - overbuilt sequence engines
 - fragile transform theater
 - mathematically correct motion with weak staging
 - endless scalar tuning without structural change
+- decorative VFX used to rescue a weak material read
 
-The current direction is locked:
+Additional current truth:
 
-- **particles are living matter that converges, freezes, and hands off to DOM**
-- **DOM owns proof text, brand, and UI**
-- **CSS owns chamber motion**
-- **the chamber is the carrier**
-- **scene dominance matters more than geometric purity**
-- **thermal ramp is LOCKED — do not reopen color tuning**
+- cleanup and ownership are necessary, but do not automatically create a strong visual read
+- the current failure mode is no longer primarily architecture chaos, but weak material read
+- if the mass reads as furry, ribbon-like, dusty, or like a particle blob feeding a crack, the sequence is still wrong
+- the post-freeze event must read as matter being staged and cleared, not as a particle effect doing tricks
 
 If something is technically correct but emotionally weak, it is wrong.
 
@@ -51,81 +67,108 @@ If something is technically correct but emotionally weak, it is wrong.
 This is a staged chamber experience with a strict dominance sequence:
 
 1. **Source-dominant**
-2. **Proof-dominant**
-3. **Hero-wall-dominant**
-4. **Interface-dominant**
+2. **Freeze-monument-dominant**
+3. **Quiet-proof-dominant**
+4. **Hero-wall-dominant**
+5. **Interface-dominant**
 
 That order is non-negotiable.
 
 ### Meaning of each stage
 
-**Source**
-Live, pressurized matter inside a shared chamber. Thermal ramp locked (coal → deepRed → ember → flareRed → fireGold → hotWhite). Temporal heat memory with source-proximity accumulation.
+**Source**  
+Live, pressurized matter inside a shared chamber. Thermal ramp locked.
 
-**Convergence** (transition from Source to Proof)
-Internal progress 0–100. Particles gradually slow, organize, and freeze. At 100: particles are still, DOM text “I BUILD SUPA STUFF” appears over/through the frozen mass. This is NOT particles forming letters — particles freeze as a mass, DOM text takes over.
+**Convergence**  
+Internal progress 0–100. Particles gradually slow, organize, compress, and freeze.
 
-**Proof**
-“I BUILD SUPA STUFF” as a full readable verdict. DOM-owned. Visible on the front face together with frozen particles.
+**Freeze Monument**  
+At the end of convergence, the mass must hold as a readable, heavy, authored form.  
+This is not yet proof. This is the last material verdict before clearing.
 
-**180° rotation** → reveals Hero/Interface on the back face
+**Post-Freeze Clearing / Erosion**  
+The frozen mass is cleared by a controlled authored beat.
 
-**Hero wall**
-The volcano world revealed as a cinematic destination.
+This beat must not read as:
 
-**Interface**
-The business surface that remains after the reveal.
+- particles forming letters
+- a gimmick implosion
+- a tornado
+- a crack vacuum
+- dust fade
+- a particle blob shrinking into nothing
 
-Note: Legacy convergence code (2×90° rotation, old sequence engine) exists in the codebase. It must be replaced, not extended.
+It must read as the chamber taking the material out of the way with dignity.
+
+**Quiet Proof**  
+Only after the chamber is genuinely cleared does DOM proof text take over:
+
+# I BUILD SUPA STUFF
+
+**180° rotation**  
+After the proof moment has landed cleanly, the chamber rotates to reveal the hero wall / interface world.
 
 ---
 
 ## Current Highest Priority
 
-### Convergence Pipeline
+### Post-Enter / Pre-Proof Sequence
 
-The source stage is solved — thermal ramp locked, particle look finalized, pushed to GitHub.
+The current bottleneck is no longer the source stage.  
+It is the authored beat between freeze and proof.
 
-The next bottleneck is the **convergence pipeline**: the transition from living source to frozen proof.
+### The task
 
-**Pipeline spec:**
-- Internal progress value 0–100 (driven by Enter button or scroll or timer — TBD)
-- 0–70: particles gradually slow down, turbulence reduces, mass compresses
-- 70–95: particles organize into a denser, calmer formation
-- 95–100: particles freeze to stillness
-- At 100: DOM text "I BUILD SUPA STUFF" fades in over/through the frozen mass
-- After convergence: proof text appears on front face over frozen particles
-- After proof moment: 180° chamber rotation reveals hero wall on back face
+Build a post-freeze sequence that reads as:
 
-**Constraints:**
-- Particles do NOT form letter shapes — they freeze as a natural mass
-- The slowdown must feel like cooling lava, not a pause button
-- The proof text must feel like it was always there, revealed by stillness
-- The freeze must be reversible if the user hasn't triggered rotation yet
-- Do not touch the thermal ramp — color is locked
+- heavy
+- sculptural
+- controlled
+- authored
+- expensive
+- quiet enough to support proof
+- strong enough to feel unforgettable
+
+### The sequence must avoid these failure reads
+
+- furry / hairy / ribbon-like particle mass
+- dusty erosion
+- particle blob shrinking into a smaller particle blob
+- feeding the crack
+- funnel singularity
+- fake luxury VFX
+- mathematically correct motion with weak scene dominance
+
+### The target read
+
+The frozen mass should hold as a real form, then be cleared in a way that preserves macro-read as long as possible, and only then yield the chamber to proof.
+
+The question is not “is the math elegant?”  
+The question is “does the browser show one strong material sentence?”
 
 ---
 
 ## Ownership Rules
 
-| Concern              | Owner                  |
-| -------------------- | ---------------------- |
-| live matter + freeze | WebGPU particle engine |
-| convergence progress | engine bridge / JS     |
-| proof text           | DOM/CSS                |
-| brand text           | DOM/CSS                |
-| UI                   | DOM/CSS                |
-| chamber motion       | CSS 3D transforms      |
-| hero wall image      | DOM/CSS                |
-| stage dominance      | layout + motion logic  |
+| Concern                         | Owner                              |
+| ------------------------------ | ---------------------------------- |
+| live source behavior           | MLS-MPM simulator                  |
+| convergence progress           | outer shell + engine bridge        |
+| freeze completion              | engine bridge                      |
+| post-freeze clearing / erosion | particle renderer (renderer-owned) |
+| proof-ready authority          | engine bridge                      |
+| proof text                     | DOM/CSS                            |
+| chamber/product flow           | SpatialChamber / shell logic       |
+| chamber transforms             | DOM/CSS / shell motion layer       |
+| hero wall image                | DOM/CSS                            |
+| stage dominance                | layout + authored timing           |
 
-### Hard rule
+### Hard rules
 
-Do not ask the particle system to do DOM’s job.  
-Do not ask DOM to fake the particle system.  
-Do not ask CSS motion to solve weak staging by itself.
-
-Each layer must own the thing it is best at.
+Do not ask the simulator to own the post-freeze clearing beat.  
+Do not ask the DOM to fake particle authority.  
+Do not let the shell interrupt the inner beat with impatient fallback timing.  
+Do not let more than one layer own the same dramatic moment.
 
 ---
 
@@ -133,7 +176,7 @@ Each layer must own the thing it is best at.
 
 The chamber is not a toy cube and not a literal CodePen clone.
 
-It is a **dark spatial carrier** that supports the four dominance states.
+It is a **dark spatial carrier** that supports the full dominance sequence.
 
 ### Chamber goals
 
@@ -192,8 +235,18 @@ It must feel like:
 
 ### Source palette (LOCKED)
 
-6-stop volcanic thermal ramp: coal → deepRed → ember → flareRed → fireGold → hotWhite.
-Temporal heat memory with source-proximity accumulation. Do not modify.
+6-stop volcanic thermal ramp:
+
+- coal
+- deepRed
+- ember
+- flareRed
+- fireGold
+- hotWhite
+
+Temporal heat memory with source-proximity accumulation.
+
+Do not modify.
 
 ---
 
@@ -202,10 +255,6 @@ Temporal heat memory with source-proximity accumulation. Do not modify.
 The proof is:
 
 # I BUILD SUPA STUFF
-
-This is not decorative copy.  
-This is not a label.  
-This is not a subtitle block.
 
 It is the verdict.
 
@@ -296,45 +345,60 @@ If the active stage does not take over perception, the implementation is wrong.
 
 ### 3. Proof must become readable as a true moment
 
-Whether achieved through geometry, staging, timing, or composition, the user must experience the proof as a real moment of authority.
+The user must experience the proof as a real moment of authority.
 
 ### 4. Hero must land before interface density
 
 The first arrival is cinematic.  
 The interface comes after.
 
+### 5. Cleanup is not the finish line
+
+A cleaner architecture is necessary but not sufficient.  
+If the final beat still reads as a particle trick instead of material authority, the implementation is still wrong.
+
 ---
 
 ## Particle Engine Policy
 
-The particle engine owns source + convergence + freeze.
+The simulator owns:
 
-### Locked (do not touch)
+- live source behavior
+- convergence
+- slowdown
+- compression
+- freeze
+
+The renderer owns:
+
+- post-freeze clearing / erosion / disappearance logic
+- visibility shaping
+- material death during the final authored beat
+
+### Locked (do not reopen casually)
 
 - thermal ramp (color stops, accumulation rates, decay)
-- velocity-stretch
-- particle geometry (rounded box)
-- MLS-MPM simulation core
+- particle geometry unless a direct visual audit proves the geometry itself is causing the wrong read
+- MLS-MPM core simulation
+- source-stage tuning unless a regression is proven
 
 ### Allowed
 
-- convergence pipeline: slowdown, compression, freeze driven by progress 0–100
-- reading progress uniform to modulate simulation speed / turbulence / gravity
-- minimal hooks to signal freeze-complete to DOM layer
+- narrowing ownership boundaries
+- deleting dead paths
+- removing legacy reclaim / seam / capture logic
+- decoupling overloaded renderer signals
+- restructuring post-freeze renderer logic for a cleaner material read
+- emitting one clean proof-ready signal at the end of the authored beat
 
 ### Not allowed
 
-- particles forming letter shapes or logos
-- field switching between different attractor targets
-- giant transform state machines
+- particles forming typography or logo
+- simulator-driven implosion during the post-freeze beat
+- ornamental vortex / tornado / corkscrew motion
+- plasma flashes / luxury pulses / decorative afterglows
+- reopening thermal-ramp color tuning as a substitute for weak staging
 - hidden second choreography systems
-- reopening thermal ramp tuning
-
-### Important
-
-The primary convergence read should remain a controlled cooldown, not fake choreography.
-Particles should slow and compress under physics through the strongest part of the event.
-If the late-stage aftermath becomes visually weak or structurally stuck, a narrow hybrid handoff is allowed to clear the chamber and support proof dominance.
 
 ---
 
@@ -408,14 +472,14 @@ They notice:
 ## Non-Negotiable Rules
 
 1. **Particles are matter** — they must not be asked to form typography, logos, or decorative symbolic shapes.
-   They may, however, hand off to a controlled late-stage clearing / staging layer if that preserves stronger scene dominance and a cleaner proof moment.
 2. **DOM owns proof, brand, and interface**
-3. **CSS owns chamber motion**
-4. **Active stage must take over perception**
-5. **Proof must be fully legible**
-6. **Hero lands before interface density**
-7. **No overengineering**
-8. **Trust what renders, not what theory promises**
+3. **The shell / CSS motion layer owns chamber presentation and product-facing stage transitions**
+4. **The simulator does not own the post-freeze clearing beat**
+5. **Active stage must take over perception**
+6. **Proof must be fully legible**
+7. **Hero lands before interface density**
+8. **No overengineering**
+9. **Trust what renders, not what theory promises**
 
 ---
 
@@ -423,10 +487,10 @@ They notice:
 
 When implementing:
 
-1. ~~solve the source stage first~~ DONE — locked
-2. build convergence pipeline (slowdown → freeze → text reveal)
-3. verify proof is truly readable after freeze
-4. build chamber rotation (180° reveal)
+1. source stage stays locked unless regression is proven
+2. improve the post-enter / pre-proof sequence
+3. verify proof lands only after genuine chamber clearing
+4. preserve clean 180° reveal to hero wall
 5. verify hero landing feels cinematic
 6. then layer interface density carefully
 
@@ -444,8 +508,9 @@ When judging quality:
 This is correct if the experience feels like:
 
 - the source was alive
-- the matter cooled and settled
-- the proof landed with authority
+- the matter cooled and held as a final monument
+- the chamber cleared that monument with authority
+- the proof landed with legibility and force
 - the world behind it was revealed
 - the interface remained as the disciplined consequence
 

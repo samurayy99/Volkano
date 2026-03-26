@@ -1,4 +1,3 @@
-export type FlowEnginePhase = "play";
 export type FlowEngineDebugView = "composite" | "geometry" | "particles";
 
 export interface FlowEngineFrontRailMetrics {
@@ -12,7 +11,6 @@ export interface FlowEngineFrontRailMetrics {
 }
 
 export interface FlowEngineApi {
-  setPhase: (phase: FlowEnginePhase) => void;
   setConvergenceProgress: (progress: number) => void;
   setFreezeSettled: (settled: boolean) => void;
   setInteractiveEnabled: (enabled: boolean) => void;
@@ -22,7 +20,6 @@ export interface FlowEngineApi {
 }
 
 export interface FlowEngineBridgeOptions {
-  onPhaseChange?: (phase: FlowEnginePhase) => void;
   onError?: (error: unknown) => void;
   onConvergenceFreeze?: () => void;
   onProofReady?: () => void;
@@ -32,7 +29,6 @@ export interface FlowEngineBridgeOptions {
 
 export interface FlowEngineHostProps {
   onReady?: (api: FlowEngineApi) => void;
-  onPhaseChange?: (phase: FlowEnginePhase) => void;
   onConvergenceFreeze?: () => void;
   onProofReady?: () => void;
   onFrontRailMetricsChange?: (metrics: FlowEngineFrontRailMetrics) => void;

@@ -6,7 +6,6 @@ import type { FlowEngineFrontRailMetrics, FlowEngineHostProps } from "./types";
 
 export function FlowEngineHost({
   onReady,
-  onPhaseChange,
   onConvergenceFreeze,
   onProofReady,
   onFrontRailMetricsChange,
@@ -19,7 +18,6 @@ export function FlowEngineHost({
   const pointerDownRef = useRef(false);
   const callbacksRef = useRef({
     onReady,
-    onPhaseChange,
     onConvergenceFreeze,
     onProofReady,
     onFrontRailMetricsChange,
@@ -29,7 +27,6 @@ export function FlowEngineHost({
   useEffect(() => {
     callbacksRef.current = {
       onReady,
-      onPhaseChange,
       onConvergenceFreeze,
       onProofReady,
       onFrontRailMetricsChange,
@@ -37,7 +34,6 @@ export function FlowEngineHost({
     };
   }, [
     onReady,
-    onPhaseChange,
     onConvergenceFreeze,
     onProofReady,
     onFrontRailMetricsChange,
@@ -49,9 +45,6 @@ export function FlowEngineHost({
     if (!host) return;
 
     const bridge = new FlowEngineBridge(host, {
-      onPhaseChange: (phase) => {
-        callbacksRef.current.onPhaseChange?.(phase);
-      },
       onConvergenceFreeze: () => {
         callbacksRef.current.onConvergenceFreeze?.();
       },

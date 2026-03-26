@@ -2,10 +2,7 @@ import * as THREE from "three/webgpu";
 import {
   Fn,
   attribute,
-  triNoise3D,
-  time,
   vec3,
-  vec4,
   float,
   varying,
   instanceIndex,
@@ -15,14 +12,17 @@ import {
   mat3,
   normalLocal,
   transformNormalToView,
-  mx_hsvtorgb,
   mrt,
   uniform,
   smoothstep,
   pow,
+  fract,
+  sin,
+  step,
 } from "three/tsl";
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { conf } from "../conf";
+import { PREENTER_VESSEL, PREENTER_SOURCE_ANCHOR } from "../vesselDescriptors";
 
 export const calcLookAtMatrix = /*#__PURE__*/ Fn(([target_immutable]) => {
   const target = vec3(target_immutable).toVar();
@@ -134,18 +134,12 @@ class ParticleRenderer {
   mlsMpmSim = null;
   object = null;
   bloom = false;
+  freezeDescriptor = null;
   uniforms = {};
 
   constructor(mlsMpmSim) {
     this.mlsMpmSim = mlsMpmSim;
 
-    /*const box = new THREE.BoxGeometry(0.7, 0.7,3);
-        const cone = new THREE.ConeGeometry( 0.5, 3.0, 8 );
-        cone.applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI* 0.5, 0, 0)))
-        this.geometry =  new THREE.InstancedBufferGeometry().copy(cone);
-        console.log(this.geometry);*/
-
-    //const sphereGeometry = BufferGeometryUtils.mergeVertices(new THREE.IcosahedronGeometry(0.5, 1));
     const boxGeometry = BufferGeometryUtils.mergeVertices(
       new THREE.BoxGeometry(7, 7, 30),
       3.0,
@@ -168,314 +162,319 @@ class ParticleRenderer {
     this.geometry.instanceCount = this.mlsMpmSim.numParticles;
 
     this.material = new THREE.MeshStandardNodeMaterial({
-      metalness: 0.08,
-      roughness: 0.85,
+      metalness: 0.015,
+      roughness: 0.96,
     });
 
     this.uniforms.size = uniform(1);
     const vAo = varying(0, "vAo");
     const vNormal = varying(vec3(0), "v_normalView");
-    this.uniforms.proofLock = uniform(0);
-    this.uniforms.condensation = uniform(0);
-    this.uniforms.seamSettle = uniform(0);
-    this.uniforms.convergenceSettle = uniform(0);
-    this.uniforms.seamCenterX = uniform(27.0);
-    this.uniforms.seamCenterZ = uniform(22.0);
-    this.uniforms.seamPocketCenter = uniform(new THREE.Vector3());
     this.uniforms.quietChamber = uniform(0);
-    this.uniforms.seamAbsorption = uniform(0);
-    this.uniforms.ventCenter = uniform(new THREE.Vector3());
     this.uniforms.collapseMix = uniform(0);
+    this.uniforms.convergenceFreeze = uniform(0);
     this.uniforms.debugVis = uniform(0);
-    const vDebugSettledFooting = varying(float(0), "vDebugSettledFooting");
-    const vDebugSeamDist = varying(float(0), "vDebugSeamDist");
-    const vAbsorptionProximity = varying(float(0), "vAbsorptionProximity");
-    const vSeamY = varying(float(0), "vSeamY");
-    const vSettled = varying(float(0), "vSettled");
-    const vGrounding = varying(float(0), "vGrounding");
-    const vCrustBody = varying(float(0), "vCrustBody");
-    const vCrustHeat = varying(float(0), "vCrustHeat");
-    const vCrustShadow = varying(float(0), "vCrustShadow");
+    this.uniforms.freezeCenter = uniform(new THREE.Vector3());
+    this.uniforms.freezeBoundsMin = uniform(new THREE.Vector3());
+    this.uniforms.freezeBoundsMax = uniform(new THREE.Vector3());
+    this.uniforms.chamberMin = uniform(new THREE.Vector3());
+    this.uniforms.chamberMax = uniform(new THREE.Vector3());
+    const vCompressionT = varying(float(0), "vCompressionT");
+    const vBurstT = varying(float(0), "vBurstT");
+    const vSurfaceHoldT = varying(float(0), "vSurfaceHoldT");
     const particle = this.mlsMpmSim.particleBuffer.element(instanceIndex);
     this.material.positionNode = Fn(() => {
+      // ─── PARTICLE DATA ───────────────────────────────
       const particlePosition = particle.get("position");
       const particleDensity = particle.get("density");
       const particleDirection = particle.get("direction");
-      const particleCaptured = particle.get("captured");
-
       const localPos = attribute("position").xyz;
       const particleVelocity = particle.get("velocity");
       const speed = particleVelocity.length();
 
-      // --- Floor resolve: solver owns the descent. Renderer only does minimal vertical cleanup. ---
-      const seamFloorY = float(3.0);
-      const floorBind = smoothstep(float(12.0), float(4.5), particlePosition.y);
-      const finishY = this.uniforms.seamSettle
-        .mul(floorBind)
-        .mul(0.1)
-        .clamp(0, 0.16);
-      const convergenceGrounding = this.uniforms.convergenceSettle
-        .mul(smoothstep(float(20.0), float(6.0), particlePosition.y))
-        .clamp(0, 1);
-      const materialSettle = convergenceGrounding
-        .mul(0.42)
-        .add(this.uniforms.seamSettle.mul(floorBind).mul(0.3))
-        .clamp(0, 1);
-      const settledFooting = materialSettle
-        .mul(floorBind)
-        .toConst("settledFooting");
-
-      // Keep only slight organic variance. The floor body should read as settled matter,
-      // not as a procedural lava terrain.
-      const surfaceFieldPos = vec3(
-        particlePosition.x.mul(0.046).add(4.1),
-        particlePosition.z.mul(0.044).add(6.4),
-        particlePosition.x.sub(particlePosition.z).mul(0.018).add(2.3),
-      ).toConst("surfaceFieldPos");
-      const surfaceNoise = triNoise3D(surfaceFieldPos, float(0), float(0))
-        .sub(float(0.285))
-        .toConst("surfaceNoise");
-      const crustBody = smoothstep(float(-0.03), float(0.12), surfaceNoise)
-        .mul(settledFooting)
-        .toConst("crustBody");
-      const crustHeat = smoothstep(float(0.11), float(0.17), surfaceNoise)
-        .mul(crustBody)
-        .toConst("crustHeat");
-      const crustShadow = smoothstep(
-        float(-0.02),
-        float(0.1),
-        surfaceNoise.negate(),
-      )
-        .mul(settledFooting)
-        .toConst("crustShadow");
-      const crustLift = crustBody
-        .mul(0.028)
-        .add(crustHeat.mul(0.018))
-        .sub(crustShadow.mul(0.014))
-        .toConst("crustLift");
-      const crustBurial = settledFooting
-        .mul(0.085)
-        .add(crustShadow.mul(0.022))
-        .sub(crustHeat.mul(0.01))
-        .toConst("crustBurial");
-      const seamY = mix(particlePosition.y, seamFloorY, finishY)
-        .add(crustLift)
-        .sub(crustBurial);
-
-      // Velocity-stretch: settled particles become shorter, chunkier and more coherent.
+      // ─── BASE STRETCH ────────────────────────────────
       const stretchT = smoothstep(float(1.2), float(3.5), speed);
       const stretch = stretchT.mul(1.2).add(1.0);
       const thinning = pow(stretch, -0.4);
-      const crustCompression = settledFooting
-        .mul(0.96)
-        .toConst("crustCompression");
-      const widthScale = mix(
+      const monumentMix = this.uniforms.convergenceFreeze;
+      const crustCompression = monumentMix.toConst("crustCompression");
+      const monumentWidth = mix(
         thinning,
-        float(1.04).add(crustBody.mul(0.05)),
+        float(2.08),
         crustCompression,
-      ).toConst("widthScale");
-      const heightScale = mix(
+      ).toConst("monumentWidth");
+      const monumentHeight = mix(
         thinning,
-        float(0.34).add(crustHeat.mul(0.03)).sub(crustShadow.mul(0.02)),
+        float(1.26),
         crustCompression,
-      ).toConst("heightScale");
-      const lengthScale = mix(
+      ).toConst("monumentHeight");
+      const monumentLength = mix(
         stretch,
-        float(0.6).add(crustBody.mul(0.05)).add(crustHeat.mul(0.03)),
+        float(0.62),
         crustCompression,
-      ).toConst("lengthScale");
-      const stretchedPos = vec3(
-        localPos.x.mul(widthScale),
-        localPos.y.mul(heightScale),
-        localPos.z.mul(lengthScale),
-      );
+      ).toConst("monumentLength");
 
-      // No horizontal pull — particles stay where they land
-      const seamX = particlePosition.x;
-      const seamZ = particlePosition.z;
-
-      // Minimal straggler fade — only very high outliers
-      const stragglerFade = this.uniforms.seamSettle
-        .mul(smoothstep(float(24.0), float(34.0), particlePosition.y))
-        .mul(0.12);
-      const seamScale = float(1).sub(stragglerFade);
-      const quietUncaptured = this.uniforms.quietChamber
-        .mul(float(1).sub(particleCaptured.clamp(0, 1)))
-        .toConst("quietUncaptured");
-      // Rift absorption proximity — particles compress toward zero as they approach the vent
-      const riftDx = particlePosition.x.sub(this.uniforms.ventCenter.x);
-      const riftDy = particlePosition.y.sub(this.uniforms.ventCenter.y.sub(float(4.0)));
-      const riftDz = particlePosition.z.sub(this.uniforms.ventCenter.z);
-      const riftDistSq = riftDx.mul(riftDx).add(riftDy.mul(riftDy)).add(riftDz.mul(riftDz));
-      const riftDist = riftDistSq.pow(0.5).max(float(0.01));
-      // Expanding shrink wave (legacy — seamAbsorption=0 in collapse architecture, kept for compat)
-      const shrinkWaveFront = this.uniforms.seamAbsorption.mul(30.0);
-      const absorptionProximity = shrinkWaveFront
-        .sub(riftDist)
-        .div(float(6.0))
-        .clamp(0, 1)
-        .mul(this.uniforms.seamAbsorption)
-        .toConst("absorptionProximity");
-      vAbsorptionProximity.assign(absorptionProximity);
-      const absorptionShrink = mix(
-        float(1),
-        float(0.0),
-        pow(absorptionProximity, 1.8),
-      ).toConst("absorptionShrink");
-
-      // === COLLAPSE: "The Rift Drinks the Mass" ===
-      // Two waves sweep from outer shell inward toward the rift:
-      //   1. Thermal death wave (fast) — color goes to coal, outside-in
-      //   2. Consumption wave (slower, trails behind) — particles pulled into rift
-      // Sim stays frozen. Renderer owns all motion, shrink, and color.
-
+      // ─── TIMING + HASHES ─────────────────────────────
       const cMix = this.uniforms.collapseMix;
-
-      // Per-particle hash for organic edge jitter
-      const particleHash = float(instanceIndex).add(1.0).mul(0.6180339887).fract()
+      const particleHash = fract(float(instanceIndex).add(1.0).mul(0.6180339887))
         .toConst("particleHash");
+      const freezeCenter = this.uniforms.freezeCenter;
+      const freezeBoundsMin = this.uniforms.freezeBoundsMin;
+      const freezeBoundsMax = this.uniforms.freezeBoundsMax;
+      const cMin = this.uniforms.chamberMin;
+      const cMax = this.uniforms.chamberMax;
 
-      // Soft target spread: feed into a small spatial volume (crack area) instead of a singularity
-      // This eliminates the "VFX traffic jam/funnel" at a single mathematical pixel.
-      const targetSpreadX = particleHash.sub(0.5).mul(6.0); // ±3 units wide along the crack
-      const targetSpreadY = particleHash.mul(17.3).fract().sub(0.5).mul(1.5); // ±0.75 units high
-      const riftTarget = vec3(
-        this.uniforms.ventCenter.x.add(targetSpreadX),
-        this.uniforms.ventCenter.y.add(float(1.5)).add(targetSpreadY),
-        this.uniforms.ventCenter.z.add(float(4.0))
-      ).toConst("riftTarget");
+      const basePosition = particlePosition.xyz.toConst("basePosition");
+      const monumentPosition = basePosition.toConst("monumentPosition");
 
-      // Distance from rift (the drain)
-      const toRift = riftTarget.sub(particlePosition);
-      const riftDistC = toRift.length().max(float(0.5)).toConst("riftDistC");
+      const preloadT = smoothstep(float(0.0), float(0.08), cMix)
+        .mul(float(1).sub(smoothstep(float(0.10), float(0.18), cMix)))
+        .toConst("preloadT");
+      const releaseT = smoothstep(float(0.08), float(0.24), cMix)
+        .toConst("releaseT");
 
-      // Rift proximity: 1 = at rift, 0 = at outer shell (~28 units away)
-      const riftProximity = float(1).sub(riftDistC.div(float(28.0)).clamp(0, 1))
-        .toConst("riftProximity");
+      // Distance-weighted stagger: outer particles release slightly earlier
+      const distFromCenter = monumentPosition.sub(freezeCenter).length();
+      const chamberDiag = cMax.sub(cMin).length();
+      const normalizedDist = distFromCenter.div(chamberDiag.max(float(0.001)));
+      const releaseStagger = particleHash.mul(0.14).add(normalizedDist.mul(0.06));
+      const burstParticleT = releaseT.sub(releaseStagger)
+        .div(float(1).sub(releaseStagger)).clamp(0, 1).toConst("burstParticleT");
 
-      // Safety gate: nothing happens at cMix=0
-      const collapseGate = smoothstep(float(0.0), float(0.03), cMix)
-        .toConst("collapseGate");
+      // ─── BURST DIRECTION (form memory blend) ─────────
+      const hashX = fract(sin(instanceIndex.toFloat().mul(127.1)).mul(43758.5453)).mul(2.0).sub(1.0);
+      const hashY = fract(sin(instanceIndex.toFloat().mul(269.5)).mul(18642.3721)).mul(2.0).sub(1.0);
+      const hashZ = fract(sin(instanceIndex.toFloat().mul(419.2)).mul(29517.8134)).mul(2.0).sub(1.0);
+      const hashDir = normalize(vec3(hashX, hashY, hashZ));
 
-      // --- Wave 1: Thermal death (color only, fast) ---
-      // Sweeps OUTSIDE→IN. Leads consumption slightly.
-      const thermalWaveMix = cMix.mul(1.6).clamp(0, 1).toConst("thermalWaveMix");
-      const thermalBand = float(8.0);
-      // Wave must start at 65.0 to cover the furthest particles in the chamber.
-      const thermalWaveFront = mix(float(65.0), thermalBand.negate(), thermalWaveMix)
-        .toConst("thermalWaveFront");
-      // Particle is thermally dead when riftDist > waveFront
-      const thermalDeath = riftDistC.sub(thermalWaveFront)
-        .add(particleHash.mul(3.0))  // ±3 unit jitter for organic edge
-        .div(thermalBand)
-        .clamp(0, 1)
-        .mul(collapseGate)
-        .toConst("thermalDeath");
+      // 65% radial outward + 35% particle freeze-direction (monument form memory)
+      const radialDir = normalize(monumentPosition.sub(freezeCenter).add(hashDir.mul(0.001)));
+      const formDir = particleDirection.xyz;
+      const rawBurst = mix(radialDir, formDir, float(0.35)).add(hashDir.mul(0.12));
+      const burstDir = normalize(rawBurst).toConst("burstDir");
 
-      // --- Wave 2: Consumption (position + scale, slower) ---
-      // Sweeps INSIDE→OUT (Erosion/Drain). Starts at cMix≈0.12, fully consumes at cMix=1.0
-      // Linearize the cMix slightly to counteract the external ease-out (less whip-crack)
-      const linearMix = pow(cMix, 1.5);
-      const consumeWaveMix = linearMix.sub(0.12).mul(1.14).clamp(0, 1)
-        .toConst("consumeWaveMix");
-      
-      // Distance-proportional suction: Far particles take much longer to be consumed.
-      // This kills the "machine-gun" effect by giving outer particles a massive travel window,
-      // equalizing the travel speed so all particles flow elegantly at the same pace.
-      const baseBand = float(10.0);
-      const consumeBand = baseBand.add(riftDistC.mul(1.2)).toConst("consumeBand");
-      
-      // Expanding from the rift (-baseBand) out to the farthest required distance (~120.0)
-      const consumeWaveFront = mix(baseBand.negate(), float(130.0), consumeWaveMix)
-        .toConst("consumeWaveFront");
-      
-      // consumeProgress: 0 = untouched, 1 = fully consumed (at rift)
-      const consumeProgress = consumeWaveFront.sub(riftDistC)
-        .add(particleHash.mul(4.0))  // subtle jitter for clean but organic stagger
-        .div(consumeBand)
-        .clamp(0, 1)
-        .mul(collapseGate)
-        .toConst("consumeProgress");
+      // ─── FREEZE-SPACE FACE CHOICE ───────────────────
+      // Freeze-space chooses the chamber face; in-face placement is authored separately.
+      const faceHash = fract(sin(instanceIndex.toFloat().mul(78.233)).mul(43758.5453));
+      const uvA = fract(sin(instanceIndex.toFloat().mul(391.7)).mul(28461.6231));
+      const uvB = fract(sin(instanceIndex.toFloat().mul(547.3)).mul(63517.1847));
 
-      // Scale: FULL SIZE during flight. Swallowed softly at the rift mouth.
-      // Eased from 0.85 to 1.0 so particles don't all shoot in as massive blocks.
-      const collapseShrink = float(1).sub(
-        smoothstep(float(0.85), float(1.0), consumeProgress),
-      ).toConst("collapseShrink");
+      const spanX = cMax.x.sub(cMin.x);
+      const spanY = cMax.y.sub(cMin.y);
+      const spanZ = cMax.z.sub(cMin.z);
+      const freezeSpan = freezeBoundsMax.sub(freezeBoundsMin);
+      const freezeFrac = vec3(
+        monumentPosition.x.sub(freezeBoundsMin.x).div(freezeSpan.x.max(float(0.001))),
+        monumentPosition.y.sub(freezeBoundsMin.y).div(freezeSpan.y.max(float(0.001))),
+        monumentPosition.z.sub(freezeBoundsMin.z).div(freezeSpan.z.max(float(0.001))),
+      ).clamp(0, 1).toConst("freezeFrac");
+      const freezeCentered = freezeFrac.mul(2.0).sub(1.0).toConst("freezeCentered");
 
-      // Wave-front heat: particles briefly re-ignite as the wave grabs them.
-      // Peaks at mid-consume (cp=0.5), creating a visible sweeping heat line.
-      const waveFrontHeat = consumeProgress
-        .mul(float(1).sub(consumeProgress)).mul(4.0)
-        .clamp(0, 1).toConst("waveFrontHeat");
+      const xReach = freezeCentered.x.abs().toConst("xReach");
+      const yReach = freezeCentered.y.abs().toConst("yReach");
+      const negativeX = freezeCentered.x.negate().mul(0.5).add(0.5).toConst("negativeX");
+      const positiveX = freezeCentered.x.mul(0.5).add(0.5).toConst("positiveX");
+      const positiveY = freezeCentered.y.mul(0.5).add(0.5).toConst("positiveY");
+      const negativeY = freezeCentered.y.negate().mul(0.5).add(0.5).toConst("negativeY");
+      const xFamilyBoost = formDir.x.abs().mul(0.04).add(hashX.abs().mul(0.02)).toConst("xFamilyBoost");
+      const yFamilyBoost = formDir.y.abs().mul(0.04).add(hashY.abs().mul(0.02)).toConst("yFamilyBoost");
+      const faceBase = float(0.18);
 
-      // Fragment signal: alive-at-rift core + wave-front heat flash
-      vAbsorptionProximity.assign(
-        riftProximity.mul(float(1).sub(consumeProgress)).mul(cMix)
-          .add(waveFrontHeat.mul(0.3).mul(collapseGate)),
+      const leftWeight = faceBase
+        .add(negativeX.mul(0.46))
+        .add(xReach.mul(0.18))
+        .add(xFamilyBoost)
+        .toConst("leftWeight");
+      const rightWeight = faceBase
+        .add(positiveX.mul(0.46))
+        .add(xReach.mul(0.18))
+        .add(xFamilyBoost)
+        .toConst("rightWeight");
+      const ceilingWeight = faceBase
+        .add(positiveY.mul(0.46))
+        .add(yReach.mul(0.18))
+        .add(yFamilyBoost)
+        .toConst("ceilingWeight");
+      const floorWeight = faceBase
+        .add(negativeY.mul(0.46))
+        .add(yReach.mul(0.18))
+        .add(yFamilyBoost)
+        .toConst("floorWeight");
+      const weightTotal = leftWeight
+        .add(rightWeight)
+        .add(ceilingWeight)
+        .add(floorWeight)
+        .toConst("weightTotal");
+      const cdfT1 = leftWeight.div(weightTotal).toConst("cdfT1");
+      const cdfT2 = leftWeight.add(rightWeight).div(weightTotal).toConst("cdfT2");
+      const cdfT3 = leftWeight.add(rightWeight).add(ceilingWeight).div(weightTotal).toConst("cdfT3");
+
+      const isLeft = float(1).sub(step(cdfT1, faceHash)).toConst("isLeft");
+      const isRight = step(cdfT1, faceHash)
+        .mul(float(1).sub(step(cdfT2, faceHash)))
+        .toConst("isRight");
+      const isCeiling = step(cdfT2, faceHash)
+        .mul(float(1).sub(step(cdfT3, faceHash)))
+        .toConst("isCeiling");
+      const isFloor = step(cdfT3, faceHash).toConst("isFloor");
+      const sideChosen = isLeft.add(isRight).toConst("sideChosen");
+      const topBottomChosen = isCeiling.add(isFloor).toConst("topBottomChosen");
+
+      // ─── AUTHORED FACE DISTRIBUTION ─────────────────
+      // Freeze-space only nudges the deposit inside a controlled chamber band.
+      const sideYCenter = float(0.5);
+      const sideYSpan = float(0.34);
+      const sideZCenter = float(0.56);
+      const sideZSpan = float(0.22);
+      const topBottomXCenter = float(0.5);
+      const topBottomXSpan = float(0.34);
+      const topBottomZCenter = float(0.56);
+      const topBottomZSpan = float(0.22);
+
+      const freezeYDelta = freezeFrac.y.sub(0.5).mul(sideYSpan.mul(0.65)).toConst("freezeYDelta");
+      const freezeXDelta = freezeFrac.x.sub(0.5).mul(topBottomXSpan.mul(0.65)).toConst("freezeXDelta");
+      const sideFreezeZDelta = freezeFrac.z.sub(0.5).mul(sideZSpan.mul(0.55)).toConst("sideFreezeZDelta");
+      const topFreezeZDelta = freezeFrac.z.sub(0.5).mul(topBottomZSpan.mul(0.55)).toConst("topFreezeZDelta");
+      const scatterA = uvA.sub(0.5).mul(0.18).toConst("scatterA");
+      const scatterB = uvB.sub(0.5).mul(0.16).toConst("scatterB");
+
+      const sidePrimaryUv = sideYCenter
+        .add(freezeYDelta)
+        .add(scatterA)
+        .clamp(0.18, 0.82)
+        .toConst("sidePrimaryUv");
+      const topPrimaryUv = topBottomXCenter
+        .add(freezeXDelta)
+        .add(scatterA)
+        .clamp(0.18, 0.82)
+        .toConst("topPrimaryUv");
+      const sideDepthUv = sideZCenter
+        .add(sideFreezeZDelta)
+        .add(scatterB)
+        .clamp(0.22, 0.84)
+        .toConst("sideDepthUv");
+      const topDepthUv = topBottomZCenter
+        .add(topFreezeZDelta)
+        .add(scatterB)
+        .clamp(0.22, 0.84)
+        .toConst("topDepthUv");
+      const depthUv = sideChosen.mul(sideDepthUv).add(topBottomChosen.mul(topDepthUv)).toConst("depthUv");
+
+      // Receive target: continuous position on assigned face
+      const zMargin = spanZ.mul(0.08);
+      const receiveZ = mix(cMin.z.add(zMargin), cMax.z.sub(zMargin), depthUv);
+      const receiveX = isLeft.mul(cMin.x)
+          .add(isRight.mul(cMax.x))
+          .add(topBottomChosen.mul(mix(cMin.x, cMax.x, topPrimaryUv)));
+      const receiveY = sideChosen.mul(mix(cMin.y, cMax.y, sidePrimaryUv))
+          .add(isCeiling.mul(cMax.y))
+          .add(isFloor.mul(cMin.y));
+      const receiveTarget = vec3(receiveX, receiveY, receiveZ).toConst("receiveTarget");
+
+      // Receive normal: outward from center toward wall surface
+      const receiveNormal = vec3(
+        isLeft.mul(-1).add(isRight),
+        isCeiling.sub(isFloor),
+        float(0),
+      ).toConst("receiveNormal");
+      const surfaceInset = this.uniforms.size.mul(2.4).toConst("surfaceInset");
+      const receiveSurfaceTarget = receiveTarget
+        .sub(receiveNormal.mul(surfaceInset))
+        .toConst("receiveSurfaceTarget");
+
+      // ─── THREE-PHASE POSITION ────────────────────────
+      const chamberSpanY = cMax.y.sub(cMin.y);
+
+      // Phase 1: Burst - outward expansion from monument
+      const burstMagnitude = chamberDiag.mul(0.12);
+      const burstEnvelope = smoothstep(float(0.0), float(0.15), burstParticleT)
+        .mul(float(1).sub(smoothstep(float(0.25), float(0.40), burstParticleT)))
+        .toConst("burstEnvelope");
+      const burstOffset = burstDir.mul(burstMagnitude.mul(burstEnvelope));
+
+      // Phase 2: Flight - arc toward receive target
+      const flightT = smoothstep(float(0.15), float(0.65), burstParticleT).toConst("flightT");
+      const arcHeight = chamberSpanY.mul(0.06).mul(sin(flightT.mul(3.14159)));
+      const arcOffset = vec3(float(0), arcHeight, float(0));
+
+      // Phase 3: Settle - final position at receive target, then a readable surface hold
+      const settleT = smoothstep(float(0.55), float(1.0), burstParticleT).toConst("settleT");
+      const surfaceHoldT = smoothstep(float(0.56), float(0.74), burstParticleT)
+        .mul(float(1).sub(smoothstep(float(0.94), float(1.0), burstParticleT)))
+        .toConst("surfaceHoldT");
+
+      // Combined: burst base -> flight toward target -> settle at target
+      const burstPos = monumentPosition.add(burstOffset);
+      const flightPos = mix(burstPos, receiveSurfaceTarget, pow(flightT, float(0.6))).add(arcOffset);
+      const renderPosition = mix(flightPos, receiveSurfaceTarget, settleT).toConst("renderPosition");
+
+      // ─── VELOCITY STRETCH (flight streak + impact squash) ──
+      const flightStretchT = smoothstep(float(0.1), float(0.25), burstParticleT)
+        .mul(float(1).sub(smoothstep(float(0.5), float(0.7), burstParticleT)))
+        .toConst("flightStretchT");
+      const impactT = smoothstep(float(0.55), float(0.85), burstParticleT)
+        .toConst("impactT");
+
+      // Monument -> flight streak: thin + long along flight direction
+      const flightWidth = mix(monumentWidth, float(0.5), flightStretchT);
+      const flightHeight = mix(monumentHeight, float(0.5), flightStretchT);
+      const flightLength = mix(monumentLength, float(2.5), flightStretchT);
+
+      // Flight -> impact squash: short + wide on surface
+      const postImpactWidth = mix(flightWidth, float(1.3), impactT);
+      const postImpactHeight = mix(flightHeight, float(1.3), impactT);
+      const postImpactLength = mix(flightLength, float(0.5), impactT);
+
+      // Blend from monument to burst phases based on releaseT
+      const finalWidth = mix(monumentWidth, postImpactWidth, releaseT).toConst("finalWidth");
+      const finalHeight = mix(monumentHeight, postImpactHeight, releaseT).toConst("finalHeight");
+      const finalLength = mix(monumentLength, postImpactLength, releaseT).toConst("finalLength");
+
+      const stretchedPos = vec3(
+        localPos.x.mul(finalWidth),
+        localPos.y.mul(finalHeight),
+        localPos.z.mul(finalLength),
       );
 
-      // Position: softened ease-OUT.
-      // Less brutal front-load than cp^2, giving thermal wave time to read visually.
-      const oneMinusCp = float(1).sub(consumeProgress);
-      const travelProgress = float(1).sub(pow(oneMinusCp, 1.6))
-        .toConst("travelProgress");
-      const collapseSqueezeBlend = travelProgress
-        .toConst("collapseSqueezeBlend");
+      // ─── SCALE ───────────────────────────────────────
+      const preloadScale = mix(float(1.0), float(1.08), preloadT).toConst("preloadScale");
+      const flightScale = mix(
+        float(1.0),
+        float(0.88),
+        smoothstep(float(0.3), float(0.7), burstParticleT),
+      ).toConst("flightScale");
+      const settledScale = mix(flightScale, float(0.62), settleT).toConst("settledScale");
+      const surfaceHoldScale = mix(settledScale, float(0.68), surfaceHoldT).toConst("surfaceHoldScale");
+      const quietFadeT = smoothstep(float(0.32), float(1.0), this.uniforms.quietChamber)
+        .toConst("quietFadeT");
+      const quietScale = mix(
+        surfaceHoldScale,
+        float(0),
+        quietFadeT,
+      ).toConst("quietScale");
+      const renderScale = mix(preloadScale, quietScale, releaseT).toConst("renderScale");
 
-      const renderScale = seamScale
-        .mul(float(1).sub(particleCaptured.clamp(0, 1)))
-        .mul(pow(float(1).sub(quietUncaptured), 2.6))
-        .mul(absorptionShrink)
-        .mul(collapseShrink)
-        .toConst("renderScale");
-      const quietPocketTarget = vec3(
-        this.uniforms.seamPocketCenter.x.add(
-          particlePosition.x.sub(this.uniforms.seamCenterX).mul(0.08),
-        ),
-        this.uniforms.seamPocketCenter.y.add(
-          particlePosition.y.sub(float(6.0)).mul(0.05),
-        ),
-        this.uniforms.seamPocketCenter.z.add(
-          particlePosition.z.sub(this.uniforms.seamCenterZ).mul(0.08),
-        ),
-      ).toConst("quietPocketTarget");
-      const basePosition = vec3(seamX, seamY, seamZ).toConst("basePosition");
-      
-      // We removed the Tornado Arc because particleHash disrupted the fluid body.
-      // Reverted to a clean, straight positional ease towards the floating riftTarget.
-      const collapsedPosition = mix(
-        basePosition,
-        riftTarget,
-        collapseSqueezeBlend,
-      ).toConst("collapsedPosition");
-      const renderPosition = mix(
-        collapsedPosition,
-        quietPocketTarget,
-        quietUncaptured.mul(0.92).clamp(0, 0.92),
-      ).toConst("renderPosition");
+      // ─── DIRECTION ───────────────────────────────────
+      vCompressionT.assign(preloadT);
+      vBurstT.assign(burstParticleT);
+      vSurfaceHoldT.assign(surfaceHoldT);
 
-      // Pass to fragment shader
-      vSeamY.assign(seamY);
-      vSettled.assign(materialSettle);
-      vGrounding.assign(convergenceGrounding);
-      vCrustBody.assign(crustBody);
-      vCrustHeat.assign(crustHeat);
-      vCrustShadow.assign(crustShadow);
-      vDebugSettledFooting.assign(settledFooting);
-      const debugSeamDx = particlePosition.x.sub(this.uniforms.seamCenterX);
-      const debugSeamDz = particlePosition.z.sub(this.uniforms.seamCenterZ);
-      vDebugSeamDist.assign(debugSeamDx.mul(debugSeamDx).add(debugSeamDz.mul(debugSeamDz)).pow(0.5));
-      const settledDirection = normalize(
-        vec3(surfaceNoise.mul(0.18), float(0.02), float(1.0)),
-      ).toConst("settledDirection");
-      const renderDirection = normalize(
+      const monumentDirection = normalize(mix(particleDirection.xyz, hashDir, float(0.08)));
+      const burstActive = releaseT;
+
+      // Monument -> flight direction -> settle toward receive normal
+      const flightDirection = normalize(mix(
         mix(
           particleDirection.xyz,
-          settledDirection,
-          crustCompression.mul(0.78),
+          monumentDirection,
+          monumentMix.mul(0.55).add(preloadT.mul(0.25)).clamp(0, 1),
         ),
+        burstDir,
+        burstActive,
+      ));
+      const renderDirection = normalize(
+        mix(flightDirection, receiveNormal, settleT.mul(0.6)),
       );
+
       const mat = calcLookAtMatrix(renderDirection);
       vNormal.assign(transformNormalToView(mat.mul(normalLocal)));
       vAo.assign(particlePosition.z.div(64));
@@ -483,176 +482,81 @@ class ParticleRenderer {
         vAo
           .mul(vAo)
           .oneMinus()
-          .mul(float(1).sub(crustShadow.mul(0.08)))
-          .add(crustBody.mul(0.03))
-          .add(crustHeat.mul(0.03)),
+          .add(monumentMix.mul(0.02)),
       );
-      const crustBulk = float(1)
-        .add(crustBody.mul(0.02))
-        .sub(crustShadow.mul(0.02))
-        .toConst("crustBulk");
       return mat
         .mul(stretchedPos.mul(this.uniforms.size.mul(1.08)))
-        .mul(crustBulk)
-        .mul(particleDensity.mul(0.4).add(0.5).clamp(0, 1))
+        .mul(mix(particleDensity.mul(0.28).add(0.72).clamp(0, 1), float(0.975), monumentMix))
         .mul(renderScale)
         .add(renderPosition);
     })();
     const particleColor = particle.get("color");
-    const particleDensity = particle.get("density");
     const particleHeat = particle.get("heat");
     const coal = vec3(0.012, 0.009, 0.008);
-    const crustBodyColor = vec3(0.22, 0.055, 0.026);
-    const crustEmberColor = vec3(0.42, 0.11, 0.035);
-    // Minimal renderer darkening — simulator thermal extinction handles the real cooling.
-    const proofDarken = vGrounding
-      .mul(0.04)
-      .add(vCrustShadow.mul(0.04))
-      .add(this.uniforms.condensation.mul(vSettled).mul(0.05))
-      .add(this.uniforms.seamSettle.mul(vSettled).mul(0.06))
+    const surfaceColor = particleColor.toConst("surfaceColor");
+    const releasePulse = smoothstep(float(0.05), float(0.12), this.uniforms.collapseMix)
+      .mul(float(1).sub(smoothstep(float(0.18), float(0.32), this.uniforms.collapseMix)))
+      .toConst("releasePulse");
+    const releaseHeat = releasePulse
+      .mul(mix(float(0.55), float(1.0), smoothstep(float(0.0), float(0.16), vBurstT)))
+      .mul(float(1).sub(smoothstep(float(0.42), float(0.84), vBurstT)))
       .clamp(0, 1)
-      .toConst("proofDarken");
-    // Collapse fragment: two-wave color system
-    // vAbsorptionProximity = core alive signal + wave-front heat flash
-    //   high = near rift alive OR at wave front (brief re-ignition)
-    //   low = consumed or far from action
-    const riftAliveSignal = vAbsorptionProximity;
-    // Thermal death: outer particles darken to coal. Core resists strongly.
-    const thermalDarken = smoothstep(float(0.0), float(0.4), this.uniforms.collapseMix)
-      .mul(float(1).sub(riftAliveSignal.mul(0.7)))
-      .clamp(0, 1)
-      .toConst("thermalDarken");
-    // Base re-heat + wave-front flash: visible heat during the consumption sweep
-    const baseReHeat = riftAliveSignal
-      .mul(smoothstep(float(0.1), float(0.35), this.uniforms.collapseMix))
-      .mul(float(1).sub(smoothstep(float(0.85), float(1.0), this.uniforms.collapseMix)))
-      .mul(0.6)
-      .clamp(0, 0.6);
-      
-    // Signature re-ignition flash (Grok's must-have): late intense burst right before extinction
-    const signatureFlash = riftAliveSignal
-      .mul(smoothstep(float(0.78), float(0.92), this.uniforms.collapseMix))
-      .mul(float(1).sub(smoothstep(float(0.93), float(1.0), this.uniforms.collapseMix)))
-      .mul(1.8)
-      .clamp(0, 1.0);
-
-    const coreReHeat = baseReHeat.add(signatureFlash).clamp(0, 1.0).toConst("coreReHeat");
-    // Final extinction: everything to coal at the very end
-    const collapseExtinction = smoothstep(float(0.88), float(1.0), this.uniforms.collapseMix)
-      .toConst("collapseExtinction");
-    const darkenedColor = mix(particleColor, coal, proofDarken).toConst(
-      "darkenedColor",
-    );
-    const crustToneLift = vCrustBody
-      .mul(0.1)
-      .add(vCrustHeat.mul(0.08))
-      .sub(vCrustShadow.mul(0.03))
-      .clamp(0, 0.14)
-      .toConst("crustToneLift");
-    const crustToneColor = mix(
-      crustBodyColor,
-      crustEmberColor,
-      vCrustHeat.clamp(0, 1),
-    ).toConst("crustToneColor");
-    const readableColor = mix(
-      darkenedColor,
-      crustToneColor,
-      crustToneLift,
-    ).toConst("readableColor");
-    const emberAccent = vCrustHeat
-      .mul(0.18)
-      .clamp(0, 0.18)
-      .toConst("emberAccent");
-    const surfaceColor = mix(
-      readableColor,
-      crustEmberColor,
-      emberAccent,
-    ).toConst("surfaceColor");
-    // Debug visualization using mix/smoothstep (select() breaks WGSL)
-    // debugVis: 0=off, 1=settledFooting, 2=raw heat, 3=seam proximity
-    const debugSettledColor = vec3(vDebugSettledFooting, float(0), float(1).sub(vDebugSettledFooting));
+      .toConst("releaseHeat");
+    // Progressive thermal ramp: No pink. Dark matter ember -> Fire Gold -> Bright Gold
+    const deepRed = vec3(0.10, 0.012, 0.0);
+    const reignEmber = vec3(0.24, 0.035, 0.0);
+    const flareRed = vec3(0.58, 0.11, 0.0);
+    const fireGold = vec3(0.92, 0.42, 0.0);
+    const hotWhite = vec3(1.0, 0.78, 0.24);
+    const rc1 = mix(coal, deepRed, smoothstep(float(0.0), float(0.22), releaseHeat));
+    const rc2 = mix(rc1, reignEmber, smoothstep(float(0.18), float(0.42), releaseHeat));
+    const rc3 = mix(rc2, flareRed, smoothstep(float(0.38), float(0.62), releaseHeat));
+    const rc4 = mix(rc3, fireGold, smoothstep(float(0.58), float(0.84), releaseHeat));
+    const releaseColor = mix(rc4, hotWhite, smoothstep(float(0.90), float(0.985), releaseHeat))
+      .toConst("releaseColor");
+    // Debug visualization: only live heat debug remains.
     const debugHeatColor = vec3(particleHeat, particleHeat.mul(0.3), float(0));
-    const debugSeamProx = smoothstep(float(18.0), float(1.0), vDebugSeamDist);
-    const debugSeamColor = vec3(float(0), debugSeamProx, debugSeamProx.mul(0.5));
-    // Weights that peak at 1, 2, 3 respectively using smoothstep pairs
     const dv = this.uniforms.debugVis;
-    const w1 = smoothstep(float(0.5), float(1.0), dv).mul(smoothstep(float(1.5), float(1.0), dv));
-    const w2 = smoothstep(float(1.5), float(2.0), dv).mul(smoothstep(float(2.5), float(2.0), dv));
-    const w3 = smoothstep(float(2.5), float(3.0), dv);
-    const debugColor = debugSettledColor.mul(w1).add(debugHeatColor.mul(w2)).add(debugSeamColor.mul(w3));
-    const debugMix = smoothstep(float(0.3), float(0.7), dv);
-    // Apply collapse: shell death → ember re-heat → final extinction
-    const emberCore = vec3(0.58, 0.11, 0.025);
-    const thermallyDead = mix(surfaceColor, coal, thermalDarken);
-    const reheated = mix(thermallyDead, emberCore, coreReHeat);
-    const collapsedColor = mix(reheated, coal, collapseExtinction).toConst("collapsedColor");
-    this.material.colorNode = mix(collapsedColor, debugColor, debugMix);
-    // Gentle glow suppression — only for settled particles during final cleanup.
-    const glowSuppression = vGrounding
-      .mul(0.24)
-      .sub(vCrustBody.mul(0.04))
-      .sub(vCrustHeat.mul(0.1))
-      .add(vCrustShadow.mul(0.03))
-      .add(this.uniforms.condensation.mul(vSettled).mul(0.03))
-      .add(this.uniforms.seamSettle.mul(vSettled).mul(0.06))
-      .clamp(0, 1)
-      .toConst("glowSuppression");
-    const glowFactor = smoothstep(float(0.18), float(0.52), particleHeat).mul(
-      float(1).sub(glowSuppression),
-    );
-    // A faint late crack ember remains, but as a continuation of the same cooling curve.
+    const debugMix = smoothstep(float(0.5), float(1.0), dv);
+    const releaseSettle = smoothstep(float(0.42), float(0.96), vBurstT).toConst("releaseSettle");
+    const surfaceResidue = mix(
+      reignEmber,
+      fireGold,
+      vSurfaceHoldT.mul(0.38).add(float(0.18)).clamp(0, 1),
+    ).toConst("surfaceResidue");
+    const depositColor = mix(releaseColor, surfaceResidue, releaseSettle).toConst("depositColor");
+    const collapsedColor = mix(
+      surfaceColor,
+      depositColor,
+      smoothstep(float(0.04), float(0.18), this.uniforms.collapseMix),
+    ).toConst("collapsedColor");
+    this.material.colorNode = mix(collapsedColor, debugHeatColor, debugMix);
+    const glowFactor = smoothstep(float(0.18), float(0.52), particleHeat);
     const ember = vec3(0.82, 0.12, 0.02);
-    const seamProximity = smoothstep(float(10.0), float(4.0), vSeamY);
-    const seamGlowIntensity = smoothstep(
-      float(0.28),
-      float(0.82),
-      this.uniforms.convergenceSettle,
-    )
-      .mul(vGrounding)
-      .mul(0.16)
-      .add(vCrustHeat.mul(0.14))
-      .add(
-        smoothstep(float(0.6), float(1.0), this.uniforms.condensation).mul(
-          0.18,
-        ),
-      )
-      .add(this.uniforms.seamSettle.mul(0.12))
-      .mul(vSettled)
-      .clamp(0, 0.22);
-    const crackIntensity = pow(particleDensity.clamp(0.0, 1.0), float(3.0));
-    const seamGlow = seamProximity
-      .mul(crackIntensity)
-      .mul(seamGlowIntensity)
-      .mul(0.1);
-    const bodyEmber = vCrustBody
-      .mul(vGrounding)
-      .mul(float(1).sub(vCrustShadow.mul(0.65)))
-      .mul(0.03)
-      .toConst("bodyEmber");
-    const crustEmber = vCrustHeat
-      .mul(vSettled)
-      .mul(vGrounding)
-      .mul(0.06)
-      .toConst("crustEmber");
-    // Rift absorption glow — faint ember as particles approach the rift, readability aid not beauty
-    const absorptionGlow = pow(vAbsorptionProximity, 2.0)
-      .mul(0.12)
-      .toConst("absorptionGlow");
+    const emberLift = smoothstep(float(0.48), float(0.82), particleHeat).mul(0.06);
+    const preCollapseFade = float(1).sub(
+      smoothstep(float(0.0), float(0.05), this.uniforms.collapseMix)
+    ).toConst("preCollapseFade");
     const normalEmissive = surfaceColor
       .mul(glowFactor)
       .mul(0.34)
-      .add(ember.mul(seamGlow.add(bodyEmber).add(crustEmber).add(absorptionGlow)));
-    // Quiet Afterglow: faint lingering heat after collapse (Grok)
-    const quietAfterglow = this.uniforms.quietChamber
-      .mul(0.25)
-      .toConst("quietAfterglow");
-
-    // Kill emissive during collapse, but leave faint residual chamber heat
-    const collapseEmissive = mix(normalEmissive, vec3(0), collapseExtinction)
-      .add(ember.mul(quietAfterglow.mul(0.15)));
-    this.material.emissiveNode = mix(collapseEmissive, vec3(0), debugMix);
+      .add(ember.mul(emberLift))
+      .mul(preCollapseFade);
+    const releaseFlash = releasePulse
+      .mul(float(1).sub(smoothstep(float(0.30), float(0.72), vBurstT)))
+      .toConst("releaseFlash");
+    const surfaceEmber = smoothstep(float(0.14), float(0.68), vBurstT)
+      .mul(float(1).sub(smoothstep(float(0.88), float(1.0), vBurstT)))
+      .mul(float(1).sub(this.uniforms.quietChamber.mul(0.55)))
+      .toConst("surfaceEmber");
+    const releaseEmissive = releaseColor
+      .mul(releaseFlash.mul(0.95).add(surfaceEmber.mul(0.34)))
+      .toConst("releaseEmissive");
+    const collapseFade = smoothstep(float(0.04), float(0.16), this.uniforms.collapseMix);
+    const finalEmissive = mix(normalEmissive, releaseEmissive, collapseFade);
+    this.material.emissiveNode = mix(finalEmissive, vec3(0), debugMix);
     const heatBloom = smoothstep(float(0.62), float(0.82), particleHeat);
-    this._bloomIntensityNode = heatBloom;
+    this._bloomIntensityNode = heatBloom.max(releaseFlash.mul(releaseHeat).mul(1.2));
     this.material.aoNode = vAo;
 
     //this.material.fragmentNode = vec4(0,0,0,1);
@@ -704,25 +608,74 @@ class ParticleRenderer {
     return target;
   }
 
+  setFreezeDescriptor(descriptor) {
+    if (!descriptor) {
+      this.freezeDescriptor = null;
+      return;
+    }
+
+    this.freezeDescriptor = {
+      center: descriptor.center.clone(),
+      boundsMin: descriptor.boundsMin.clone(),
+      boundsMax: descriptor.boundsMax.clone(),
+    };
+  }
+
+  clearFreezeDescriptor() {
+    this.freezeDescriptor = null;
+  }
+
   update() {
     const { particles, bloom, actualSize } = conf;
     this.uniforms.size.value = actualSize;
-    this.uniforms.proofLock.value = conf.proofLockMix;
-    this.uniforms.condensation.value = conf.condensationMix;
-    this.uniforms.seamSettle.value = conf.seamSettleMix;
-    this.uniforms.convergenceSettle.value = conf.postFreezeSettleMix;
-    const cx =
-      (conf.sourceFieldCenter.x + conf.sourceFieldSecondaryCenter.x) * 0.5;
-    const cz =
-      (conf.sourceFieldCenter.z + conf.sourceFieldSecondaryCenter.z) * 0.5;
-    this.uniforms.seamCenterX.value = cx;
-    this.uniforms.seamCenterZ.value = cz;
-    this.uniforms.seamPocketCenter.value.copy(conf.ventCenter).add(conf.seamPocketOffset);
     this.uniforms.quietChamber.value = conf.quietChamberMix || 0;
-    this.uniforms.seamAbsorption.value = conf.seamAbsorption || 0;
     this.uniforms.collapseMix.value = conf.collapseMix || 0;
-    this.uniforms.ventCenter.value.copy(conf.ventCenter);
-    const debugMap = { settled: 1, heat: 2, seamPull: 3 };
+    this.uniforms.convergenceFreeze.value = conf.convergenceFreeze || 0;
+
+    const v = PREENTER_VESSEL;
+    const src = PREENTER_SOURCE_ANCHOR.originLocal;
+    const monumentCenter = new THREE.Vector3(
+      v.centerX + src.x,
+      v.centerY + src.y,
+      v.centerZ + src.z,
+    );
+    const wallMin = new THREE.Vector3(
+      v.centerX - v.apertureWidth / 2,
+      v.centerY - v.apertureHeight / 2,
+      v.centerZ,
+    );
+    const wallMax = new THREE.Vector3(
+      v.centerX + v.apertureWidth / 2,
+      v.centerY + v.apertureHeight / 2,
+      v.centerZ + v.depth,
+    );
+    this.worldPointToSimulation(wallMin, this.uniforms.chamberMin.value);
+    this.worldPointToSimulation(wallMax, this.uniforms.chamberMax.value);
+
+    const fallbackCenter = this.worldPointToSimulation(
+      monumentCenter,
+      this.uniforms.freezeCenter.value,
+    );
+    const chamberSpan = this.uniforms.chamberMax.value
+      .clone()
+      .sub(this.uniforms.chamberMin.value);
+    const fallbackExtents = new THREE.Vector3(
+      chamberSpan.x * 0.14,
+      chamberSpan.y * 0.22,
+      chamberSpan.z * 0.08,
+    );
+
+    if (this.freezeDescriptor) {
+      this.uniforms.freezeCenter.value.copy(this.freezeDescriptor.center);
+      this.uniforms.freezeBoundsMin.value.copy(this.freezeDescriptor.boundsMin);
+      this.uniforms.freezeBoundsMax.value.copy(this.freezeDescriptor.boundsMax);
+    } else {
+      this.uniforms.freezeCenter.value.copy(fallbackCenter);
+      this.uniforms.freezeBoundsMin.value.copy(fallbackCenter).sub(fallbackExtents);
+      this.uniforms.freezeBoundsMax.value.copy(fallbackCenter).add(fallbackExtents);
+    }
+
+    const debugMap = { heat: 1 };
     this.uniforms.debugVis.value = debugMap[conf.particleDebugMode] || 0;
     this.geometry.instanceCount = particles;
 

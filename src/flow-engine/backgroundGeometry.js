@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu";
 import { conf } from "./conf";
+import { PREENTER_SOURCE_ANCHOR, PREENTER_VESSEL } from "./vesselDescriptors";
 
 const NORMAL_MAP_URL = "/flow-assets/concrete_0016_normal_opengl_1k.png";
 const COLOR_MAP_URL = "/flow-assets/concrete_0016_color_1k.jpg";
@@ -7,24 +8,6 @@ const ROUGHNESS_MAP_URL = "/flow-assets/concrete_0016_roughness_1k.jpg";
 const BACK_PLATE_URL = "/images/rift-monolith.png";
 
 const textureLoader = new THREE.TextureLoader();
-
-export const PREENTER_VESSEL = Object.freeze({
-    aspect: 16 / 9,
-    apertureWidth: 1.84,
-    apertureHeight: 1.84 / (16 / 9),
-    frameSide: 0.18,
-    frameTop: 0.11,
-    frameDepth: 0.11,
-    linerThickness: 0.066,
-    linerDepth: 0.22,
-    depth: 1.18,
-    centerX: 0,
-    centerY: 0.43,
-    centerZ: 0.02,
-    lookAtX: 0,
-    lookAtY: 0.44,
-    lookAtZ: 0.46,
-});
 
 const loadTexture = (file, { repeat = true, colorSpace = null } = {}) =>
     new Promise(resolve => {
@@ -111,43 +94,26 @@ class BackgroundGeometry {
         this.debugView = view;
     }
 
-    getCraterAnchorLocal() {
-        const u = conf.craterUV?.x ?? 0.488;
-        const v = conf.craterUV?.y ?? 0.714;
-        return new THREE.Vector3(
-            (u - 0.5) * PREENTER_VESSEL.apertureWidth,
-            (v - 0.5) * PREENTER_VESSEL.apertureHeight,
-            this.backPlate?.position.z ?? (PREENTER_VESSEL.depth - 0.002),
-        );
-    }
-
-    getCraterSourceDescriptor() {
+    getSourceAnchorDescriptorWorld() {
         if (!this.object) {
             return null;
         }
 
         this.object.updateWorldMatrix(true, false);
 
-        const craterAnchorLocal = this.getCraterAnchorLocal();
-        const ventOriginLocal = craterAnchorLocal.clone().add(new THREE.Vector3(0, 0, -(conf.ventDepthOffset ?? 0.042)));
-        const transitionDepthOffset = Math.max(
-            (conf.ventDepthOffset ?? 0.042) * 3.5,
-            PREENTER_VESSEL.depth * 0.18,
-        );
-        const transitionOriginLocal = craterAnchorLocal.clone().add(new THREE.Vector3(0, 0, -transitionDepthOffset));
-        const ventAxisLocal = (conf.ventAxisLocal ?? new THREE.Vector3(0.012, 0.978, -0.208)).clone().normalize();
+        const originLocal = PREENTER_SOURCE_ANCHOR.originLocal.clone();
+        const axisLocal = PREENTER_SOURCE_ANCHOR.axisLocal.clone();
+        const rightLocal = new THREE.Vector3(1, 0, 0);
+        const upLocal = new THREE.Vector3(0, 1, 0);
 
         return {
-            craterAnchorLocal,
-            ventOriginLocal,
-            transitionOriginLocal,
-            ventAxisLocal,
-            craterAnchorWorld: this.object.localToWorld(craterAnchorLocal.clone()),
-            ventOriginWorld: this.object.localToWorld(ventOriginLocal.clone()),
-            transitionOriginWorld: this.object.localToWorld(transitionOriginLocal.clone()),
-            ventAxisWorld: ventAxisLocal.clone().transformDirection(this.object.matrixWorld).normalize(),
-            rightWorld: new THREE.Vector3(1, 0, 0).transformDirection(this.object.matrixWorld).normalize(),
-            upWorld: new THREE.Vector3(0, 1, 0).transformDirection(this.object.matrixWorld).normalize(),
+            originLocal,
+            axisLocal,
+            radiiLocal: PREENTER_SOURCE_ANCHOR.radiiLocal.clone(),
+            originWorld: this.object.localToWorld(originLocal.clone()),
+            axisWorld: axisLocal.clone().transformDirection(this.object.matrixWorld).normalize(),
+            rightWorld: rightLocal.transformDirection(this.object.matrixWorld).normalize(),
+            upWorld: upLocal.transformDirection(this.object.matrixWorld).normalize(),
         };
     }
 
@@ -164,15 +130,19 @@ class BackgroundGeometry {
             return;
         }
 
-        const descriptor = this.getCraterSourceDescriptor();
+        const descriptor = this.getSourceAnchorDescriptorWorld();
         if (!descriptor) {
             return;
         }
 
-        this.sourceDebugRing.position.copy(descriptor.craterAnchorLocal).add(new THREE.Vector3(0, 0, -0.0025));
-        this.sourceDebugArrow.position.copy(descriptor.ventOriginLocal);
-        this.sourceDebugArrow.setDirection(descriptor.ventAxisLocal);
-        this.sourceDebugArrow.setLength(Math.max(0.08, (conf.ventDepthOffset ?? 0.042) * 2.6), 0.028, 0.014);
+        this.sourceDebugRing.position.copy(descriptor.originLocal).add(new THREE.Vector3(0, 0, -0.0025));
+        this.sourceDebugArrow.position.copy(descriptor.originLocal);
+        this.sourceDebugArrow.setDirection(descriptor.axisLocal);
+        this.sourceDebugArrow.setLength(
+            Math.max(0.08, descriptor.radiiLocal.y * 2.6),
+            0.028,
+            0.014,
+        );
     }
 
     update(delta) {
@@ -196,9 +166,21 @@ class BackgroundGeometry {
         if (this.backWallMaterial) {
             this.backWallMaterial.emissiveIntensity = backWallBase + response * 0.008;
         }
-
         if (this.backPlateMaterial) {
-            this.backPlateMaterial.opacity = this.debugView === "geometry" ? 0.92 : 0.98;
+            const baseOpacity = this.debugView === "geometry" ? 0.92 : 0.98;
+            const collapseMix = conf.collapseMix || 0;
+            const quietMix = conf.quietChamberMix || 0;
+            const clearanceSuppression = THREE.MathUtils.smoothstep(collapseMix, 0.06, 0.16) * (1.0 - quietMix);
+
+            if (this.backWallMaterial) {
+                this.backWallMaterial.emissiveIntensity =
+                    backWallBase + response * 0.008 + clearanceSuppression * 0.018;
+            }
+
+            this.backPlateMaterial.opacity = THREE.MathUtils.lerp(baseOpacity, 0.18, clearanceSuppression);
+
+            const plateTint = THREE.MathUtils.lerp(1.0, 0.32, clearanceSuppression);
+            this.backPlateMaterial.color.setRGB(plateTint, plateTint, plateTint);
         }
 
         this.syncSourceDebug();
@@ -473,9 +455,12 @@ class BackgroundGeometry {
                 map: backPlateTexture,
                 side: THREE.DoubleSide,
                 toneMapped: false,
+                transparent: true,
+                opacity: 0.98,
+                depthWrite: false,
             }),
         );
-        backPlate.position.set(0, 0, depth - 0.002);
+        backPlate.position.set(0, 0, depth - 0.006);
         backPlate.renderOrder = 4;
         this.backPlate = backPlate;
         this.backPlateMaterial = backPlate.material;

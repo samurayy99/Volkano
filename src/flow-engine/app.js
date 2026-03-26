@@ -7,9 +7,9 @@ import {conf} from "./conf";
 import {Info} from "./info";
 import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
-import AuthoredTakeoverLayer from "./AuthoredTakeoverLayer";
-import BackgroundGeometry, { PREENTER_VESSEL } from "./backgroundGeometry";
+import BackgroundGeometry from "./backgroundGeometry";
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
+import { PREENTER_VESSEL } from "./vesselDescriptors";
 
 const HDRI_URL = "/flow-assets/autumn_field_puresky_1k.hdr";
 
@@ -36,11 +36,13 @@ class App {
     pointerNdc = new THREE.Vector2();
     pointerIntersect = new THREE.Vector3();
     debugView = "composite";
-    authoredTakeoverLayer = null;
     sourceFieldAnchorOffsets = null;
     startupSourceFieldAnchorOffsets = null;
     mode = "idle";
     idleParticlePresentation = "active";
+    freezeDescriptorCaptured = false;
+    freezeDescriptorRequest = null;
+    freezeDescriptorCycle = 0;
 
     constructor(renderer) {
         this.renderer = renderer;
@@ -76,8 +78,6 @@ class App {
         this.backgroundGeometry = new BackgroundGeometry();
         await this.backgroundGeometry.init();
         this.scene.add(this.backgroundGeometry.object);
-        this.authoredTakeoverLayer = new AuthoredTakeoverLayer();
-        this.backgroundGeometry.object.add(this.authoredTakeoverLayer.object);
 
         this.lights = new Lights();
         this.scene.add(this.lights.object);
@@ -165,7 +165,7 @@ class App {
             };
         }
         this.backgroundGeometry?.update?.(0, 0);
-        this.syncSourceMapping("startup");
+        this.syncSourceAnchors("startup");
     }
 
     promoteIdlePopulation() {
@@ -176,11 +176,11 @@ class App {
             };
         }
         this.backgroundGeometry?.update?.(0, 0);
-        this.syncSourceMapping("mature-idle");
+        this.syncSourceAnchors("mature-idle");
     }
 
-    syncSourceMapping(reseedMode = false) {
-        if (!this.backgroundGeometry?.getCraterSourceDescriptor || !this.particleRenderer?.worldPointToSimulation) {
+    syncSourceAnchors(reseedMode = false) {
+        if (!this.backgroundGeometry?.getSourceAnchorDescriptorWorld || !this.particleRenderer?.worldPointToSimulation) {
             return;
         }
 
@@ -197,23 +197,23 @@ class App {
             };
         }
 
-        const source = this.backgroundGeometry.getCraterSourceDescriptor();
+        const source = this.backgroundGeometry.getSourceAnchorDescriptorWorld();
         if (!source) {
             return;
         }
 
-        const ventCenterSim = this.particleRenderer.worldPointToSimulation(source.ventOriginWorld, new THREE.Vector3());
-        const ventAxisSim = this.particleRenderer.worldDirectionToSimulation(source.ventAxisWorld, new THREE.Vector3());
+        const ventCenterSim = this.particleRenderer.worldPointToSimulation(source.originWorld, new THREE.Vector3());
+        const ventAxisSim = this.particleRenderer.worldDirectionToSimulation(source.axisWorld, new THREE.Vector3());
         const simRightPoint = this.particleRenderer.worldPointToSimulation(
-            source.ventOriginWorld.clone().addScaledVector(source.rightWorld, conf.ventRadiiLocal.x),
+            source.originWorld.clone().addScaledVector(source.rightWorld, source.radiiLocal.x),
             new THREE.Vector3(),
         );
         const simUpPoint = this.particleRenderer.worldPointToSimulation(
-            source.ventOriginWorld.clone().addScaledVector(source.upWorld, conf.ventRadiiLocal.z),
+            source.originWorld.clone().addScaledVector(source.upWorld, source.radiiLocal.z),
             new THREE.Vector3(),
         );
         const simAxisPoint = this.particleRenderer.worldPointToSimulation(
-            source.ventOriginWorld.clone().addScaledVector(source.ventAxisWorld, conf.ventRadiiLocal.y),
+            source.originWorld.clone().addScaledVector(source.axisWorld, source.radiiLocal.y),
             new THREE.Vector3(),
         );
 
@@ -268,7 +268,12 @@ class App {
     }
 
     setConvergenceProgress(progress) {
-        // Progress is read from conf by the simulator each frame — no-op here.
+        if (progress < 100 && (this.freezeDescriptorCaptured || this.freezeDescriptorRequest)) {
+            this.freezeDescriptorCaptured = false;
+            this.freezeDescriptorCycle++;
+            this.freezeDescriptorRequest = null;
+            this.particleRenderer?.clearFreezeDescriptor?.();
+        }
     }
 
     clearPointer(x, y) {
@@ -336,10 +341,41 @@ class App {
         this.backgroundGeometry?.update?.(delta, elapsed);
         this.lights.update(elapsed);
 
-        this.syncSourceMapping();
+        this.syncSourceAnchors();
         await this.mlsMpmSim.update(delta, elapsed);
+
+        if (conf.postFreezeSimLock > 0.5) {
+            if (!this.freezeDescriptorCaptured && !this.freezeDescriptorRequest) {
+                const requestCycle = this.freezeDescriptorCycle;
+                this.freezeDescriptorRequest = this.mlsMpmSim.captureFreezeDescriptor()
+                    .then((descriptor) => {
+                        if (
+                            descriptor &&
+                            requestCycle === this.freezeDescriptorCycle &&
+                            conf.postFreezeSimLock > 0.5
+                        ) {
+                            this.particleRenderer?.setFreezeDescriptor?.(descriptor);
+                            this.freezeDescriptorCaptured = true;
+                        }
+                    })
+                    .finally(() => {
+                        if (requestCycle === this.freezeDescriptorCycle) {
+                            this.freezeDescriptorRequest = null;
+                        }
+                    });
+            }
+
+            if (this.freezeDescriptorRequest) {
+                await this.freezeDescriptorRequest;
+            }
+        } else if (this.freezeDescriptorCaptured || this.freezeDescriptorRequest) {
+            this.freezeDescriptorCaptured = false;
+            this.freezeDescriptorCycle++;
+            this.freezeDescriptorRequest = null;
+            this.particleRenderer?.clearFreezeDescriptor?.();
+        }
+
         this.particleRenderer.update();
-        this.authoredTakeoverLayer?.update(delta, elapsed);
         this.applyDebugView();
 
         if (conf.bloom) {
@@ -352,7 +388,6 @@ class App {
     }
 
     dispose() {
-        this.authoredTakeoverLayer?.dispose?.();
         this.info?.dispose?.();
         conf.dispose();
     }
@@ -361,34 +396,21 @@ class App {
         const params = typeof window !== "undefined"
             ? new URLSearchParams(window.location.search)
             : null;
-        const urlView = params?.get("vesselDebug");
         const particleDebug = params?.get("particleDebug");
-        const resolvedDebugView = urlView === "geometry" || urlView === "particles"
-            ? urlView
-            : this.debugView;
         const resolvedParticleDebug = particleDebug === "source"
-            || particleDebug === "freshness"
-            || particleDebug === "binding"
-            || particleDebug === "hover"
-            || particleDebug === "walls"
-            || particleDebug === "settled"
             || particleDebug === "heat"
-            || particleDebug === "seamPull"
             ? particleDebug
             : "off";
 
         if (this.particleRenderer?.object) {
             this.particleRenderer.object.visible =
-                resolvedDebugView !== "geometry" && this.idleParticlePresentation !== "hidden";
-        }
-        if (this.authoredTakeoverLayer?.object) {
-            this.authoredTakeoverLayer.object.visible = resolvedDebugView !== "geometry";
+                this.debugView !== "geometry" && this.idleParticlePresentation !== "hidden";
         }
         if (this.backgroundGeometry?.object) {
-            this.backgroundGeometry.object.visible = resolvedDebugView !== "particles";
+            this.backgroundGeometry.object.visible = this.debugView !== "particles";
         }
         conf.particleDebugMode = resolvedParticleDebug;
-        this.backgroundGeometry?.setDebugView?.(resolvedDebugView);
+        this.backgroundGeometry?.setDebugView?.(this.debugView);
     }
 
     applyCameraFraming(width = window.innerWidth, height = window.innerHeight) {

@@ -30,9 +30,6 @@
   --backwall-seat-top: clamp(0.9rem, 1.3vh, 1.2rem);
   --backwall-seat-side: clamp(0.9rem, 1.4vw, 1.2rem);
   --backwall-seat-bottom: clamp(0.95rem, 1.5vh, 1.25rem);
-  --backwall-source-top: clamp(2.8rem, 4vh, 3.7rem);
-  --backwall-source-side: clamp(9.5rem, 12.6vw, 13rem);
-  --backwall-source-bottom: clamp(2.2rem, 3.2vh, 2.9rem);
   /* Architectural edge seam color */
   --seam-light: rgba(247, 241, 231, 0.12);
   --seam-warm: rgba(255, 200, 140, 0.08);
@@ -77,6 +74,8 @@ textarea,
 select {
   font: inherit;
 }
+
+/* ── Chamber shell / cube container ─────────────────────────────────────── */
 
 .site-root {
   position: relative;
@@ -152,21 +151,7 @@ select {
   transform: rotateY(0deg) translateX(0vw) translateZ(0vw);
 }
 
-.site-root[data-phase="rotating"] .cube {
-  animation: chamber-rotate var(--rotation-duration) var(--rotation-ease)
-    forwards;
-  will-change: transform;
-}
-
-.site-root[data-view="proof"] .cube {
-  transform: rotateY(-90deg) translateX(calc(var(--cube-depth) * -0.5))
-    translateZ(calc(var(--cube-depth) * 0.5));
-}
-
-.site-root[data-view="back"] .cube,
-.site-root[data-phase="back"] .cube {
-  transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
-}
+/* ── Structural faces ────────────────────────────────────────────────────── */
 
 .cube-face {
   position: absolute;
@@ -215,10 +200,6 @@ select {
   pointer-events: none;
 }
 
-.cube-face-back.is-interactive {
-  pointer-events: auto;
-}
-
 .cube-face-right {
   transform: rotateY(-270deg) translateX(var(--cube-depth));
   transform-origin: top right;
@@ -228,6 +209,8 @@ select {
   transform: rotateY(270deg) translateX(calc(var(--cube-depth) * -1));
   transform-origin: top left;
 }
+
+/* ── Static chamber materials ───────────────────────────────────────────── */
 
 .cube-face-left,
 .cube-face-right {
@@ -562,6 +545,8 @@ select {
   isolation: isolate;
 }
 
+/* ── Front / source host ────────────────────────────────────────────────── */
+
 .front-source-host,
 .front-engine-fallback {
   position: absolute;
@@ -589,20 +574,6 @@ select {
   pointer-events: none;
 }
 
-.front-flow-host.is-interactive {
-  pointer-events: auto;
-}
-
-.site-root[data-front-interactive="false"] .cube-face-front,
-.site-root[data-front-interactive="false"] .front-source,
-.site-root[data-front-interactive="false"] .front-flow-host {
-  pointer-events: none;
-}
-
-.site-root[data-front-interactive="true"] .front-flow-host {
-  pointer-events: auto;
-}
-
 .front-flow-host canvas {
   display: block;
   width: 100%;
@@ -621,73 +592,7 @@ select {
   opacity: 0.58;
 }
 
-.site-root[data-phase="rotating"] .front-source {
-  animation: front-yield var(--rotation-duration) linear forwards;
-}
-
-.site-root[data-view="proof"] .front-source,
-.site-root[data-view="back"] .front-source,
-.site-root[data-phase="back"] .front-source {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.proof-surface {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: clamp(2rem, 7vh, 6rem) clamp(2rem, 6vw, 5rem);
-}
-
-.proof-surface::before {
-  content: none;
-}
-
-.site-root[data-phase="rotating"] .proof-surface::before,
-.site-root[data-view="proof"] .proof-surface::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 50% 46%, rgba(0, 0, 0, 0.22), transparent 28%),
-    linear-gradient(
-      180deg,
-      rgba(0, 0, 0, 0.12),
-      rgba(0, 0, 0, 0.04) 34%,
-      rgba(0, 0, 0, 0.16) 100%
-    );
-  opacity: 1;
-}
-
-.proof-headline {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-  font-family: var(--font-display);
-  font-size: var(--proof-size);
-  font-weight: 700;
-  line-height: 0.84;
-  letter-spacing: -0.06em;
-  text-transform: uppercase;
-  color: var(--text-main);
-  text-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
-  opacity: 0;
-  transform: translateY(1rem);
-}
-
-.site-root[data-phase="rotating"] .proof-headline {
-  animation: proof-copy-reveal var(--rotation-duration) linear forwards;
-}
-
-.site-root[data-view="proof"] .proof-headline {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* ── Proof-front overlay (appears on front face BEFORE rotation) ── */
+/* ── Proof front overlay ────────────────────────────────────────────────── */
 
 .proof-front-overlay {
   position: absolute;
@@ -727,6 +632,8 @@ select {
     0 2px 12px rgba(0, 0, 0, 0.6),
     0 6px 28px rgba(0, 0, 0, 0.35);
 }
+
+/* ── Backface / hero wall ───────────────────────────────────────────────── */
 
 .back-surface {
   position: relative;
@@ -838,82 +745,6 @@ select {
       rgba(247, 241, 231, 0.03)
     );
   opacity: 0.95;
-}
-
-.site-root[data-view="source"] {
-  --backwall-seat-top: var(--backwall-source-top);
-  --backwall-seat-side: var(--backwall-source-side);
-  --backwall-seat-bottom: var(--backwall-source-bottom);
-}
-
-.site-root[data-view="source"] .cube-face-left,
-.site-root[data-view="source"] .cube-face-right,
-.site-root[data-view="source"] .cube-face-top,
-.site-root[data-view="source"] .cube-face-bottom {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.site-root[data-view="source"] .cube-face-back {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.site-root[data-view="source"] .back-scene-media {
-  background-position: center 50%;
-  filter: brightness(0.82) saturate(0.8) contrast(0.9);
-  transform: scale(0.985);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.36),
-    inset 0 0 0 1px rgba(247, 241, 231, 0.018),
-    inset 0 -2rem 3rem rgba(0, 0, 0, 0.2);
-}
-
-.site-root[data-view="source"] .back-scene-haze {
-  background:
-    radial-gradient(
-      ellipse 34% 42% at var(--source-focus-x) var(--source-focus-y),
-      rgba(6, 6, 6, 0.28) 0%,
-      rgba(6, 6, 6, 0.10) 50%,
-      transparent 78%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(3, 3, 3, 0.14) 0%,
-      rgba(3, 3, 3, 0.06) 26%,
-      rgba(3, 3, 3, 0.10) 100%
-    );
-}
-
-.site-root[data-view="source"] .back-surface {
-  opacity: 1;
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.site-root[data-view="source"] .back-scene-media {
-  opacity: 0;
-}
-
-.site-root[data-view="source"] .chamber-stage {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.site-root[data-view="source"][data-engine-ready="true"] .chamber-stage {
-  opacity: 1;
-  pointer-events: auto;
-  transition: opacity 0.3s ease-out;
-}
-
-.site-root[data-view="source"] .back-scene-haze {
-  opacity: 0;
-}
-
-.site-root[data-view="source"] .back-surface::before,
-.site-root[data-view="source"] .back-surface::after {
-  opacity: 0;
 }
 
 .back-chrome {
@@ -1033,20 +864,92 @@ select {
   border-bottom: 1px solid rgba(247, 241, 231, 0.16);
 }
 
+.back-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.back-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.back-scroll::-webkit-scrollbar-thumb {
+  background: rgba(247, 241, 231, 0.14);
+}
+
+/* ── State gates ────────────────────────────────────────────────────────── */
+
+.site-root[data-phase="rotating"] .cube {
+  animation: chamber-rotate var(--rotation-duration) var(--rotation-ease)
+    forwards;
+  will-change: transform;
+}
+
+.site-root[data-view="back"] .cube {
+  transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
+}
+
+.site-root[data-front-interactive="false"] .cube-face-front,
+.site-root[data-front-interactive="false"] .front-source,
+.site-root[data-front-interactive="false"] .front-flow-host {
+  pointer-events: none;
+}
+
+.site-root[data-front-interactive="true"] .front-flow-host {
+  pointer-events: auto;
+}
+
+.site-root[data-phase="rotating"] .front-source {
+  animation: front-yield var(--rotation-duration) linear forwards;
+}
+
+.site-root[data-view="back"] .front-source {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.site-root[data-view="source"] .cube-face-left,
+.site-root[data-view="source"] .cube-face-right,
+.site-root[data-view="source"] .cube-face-top,
+.site-root[data-view="source"] .cube-face-bottom {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.site-root[data-view="source"] .cube-face-back {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.site-root[data-view="source"] .back-scene-media {
+  opacity: 0;
+}
+
+.site-root[data-view="source"] .chamber-stage {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.site-root[data-view="source"][data-engine-ready="true"] .chamber-stage {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.3s ease-out;
+}
+
+.site-root[data-view="source"] .back-scene-haze {
+  opacity: 0;
+}
+
 .site-root[data-phase="rotating"] .back-chrome,
 .site-root[data-phase="rotating"] .back-hero {
   animation: hero-copy-reveal var(--rotation-duration) linear forwards;
 }
 
 .site-root[data-view="back"] .back-chrome,
-.site-root[data-view="back"] .back-hero,
-.site-root[data-phase="back"] .back-chrome,
-.site-root[data-phase="back"] .back-hero {
+.site-root[data-view="back"] .back-hero {
   opacity: 1;
 }
 
-.site-root[data-view="back"] .back-scroll,
-.site-root[data-phase="back"] .back-scroll {
+.site-root[data-view="back"] .back-scroll {
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(247, 241, 231, 0.16) transparent;
@@ -1070,104 +973,7 @@ select {
   overflow: hidden;
 }
 
-.back-scroll::-webkit-scrollbar {
-  width: 10px;
-}
-
-.back-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.back-scroll::-webkit-scrollbar-thumb {
-  background: rgba(247, 241, 231, 0.14);
-}
-
-.enter-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 7;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0 clamp(1rem, 4vw, 3rem) clamp(2rem, 6vh, 4rem);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 180ms linear;
-}
-
-.vessel-debug {
-  position: absolute;
-  top: clamp(1rem, 2vw, 1.4rem);
-  left: clamp(1rem, 2vw, 1.4rem);
-  z-index: 8;
-  display: flex;
-  gap: 0.45rem;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 160ms linear;
-}
-
-.vessel-debug.is-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.vessel-debug button {
-  appearance: none;
-  min-width: 6.9rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid rgba(247, 241, 231, 0.12);
-  background: rgba(10, 10, 10, 0.42);
-  color: rgba(247, 241, 231, 0.78);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-}
-
-.vessel-debug button.is-active {
-  border-color: rgba(247, 241, 231, 0.28);
-  background: rgba(247, 241, 231, 0.08);
-  color: rgba(247, 241, 231, 0.96);
-}
-
-.enter-overlay.is-visible {
-  opacity: 1;
-}
-
-.enter-button {
-  appearance: none;
-  min-width: 9.2rem;
-  padding: 0.92rem 1.3rem;
-  border: 1px solid var(--line-strong);
-  background: rgba(10, 10, 10, 0.6);
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  cursor: pointer;
-  pointer-events: auto;
-  transform: translateX(calc(var(--cube-width) * 0.28));
-  transition:
-    border-color 160ms linear,
-    background-color 160ms linear,
-    transform 160ms linear;
-}
-
-.enter-button:hover {
-  border-color: var(--line-bright);
-  background: rgba(14, 14, 14, 0.78);
-  transform: translateX(calc(var(--cube-width) * 0.28)) translateY(-1px);
-}
-
-.enter-button:disabled {
-  cursor: default;
-  pointer-events: none;
-}
+/* ── Animations ─────────────────────────────────────────────────────────── */
 
 @keyframes chamber-rotate {
   0% {
@@ -1208,25 +1014,6 @@ select {
   }
 }
 
-@keyframes proof-copy-reveal {
-  0%,
-  18% {
-    opacity: 0;
-    transform: translateY(1rem);
-  }
-
-  36%,
-  64% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(-0.35rem);
-  }
-}
-
 @keyframes hero-copy-reveal {
   0%,
   70% {
@@ -1251,15 +1038,14 @@ select {
   }
 }
 
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
 @media (max-width: 1040px) {
   :root {
     --cube-perspective: 1480px;
     --cube-width: min(1000px, calc(100vw - 4rem));
     --cube-height: min(720px, calc(100vh - 4.5rem));
     --cube-depth: min(calc(var(--cube-width) * 1.14), 1120px);
-    --backwall-source-side: clamp(5.8rem, 9.4vw, 8rem);
-    --backwall-source-top: clamp(2.1rem, 3.2vh, 2.7rem);
-    --backwall-source-bottom: clamp(1.7rem, 2.8vh, 2.2rem);
     --proof-size: clamp(4rem, 10vw, 7.8rem);
   }
 
@@ -1285,9 +1071,6 @@ select {
     --backwall-seat-side: clamp(0.55rem, 1.8vw, 0.75rem);
     --backwall-seat-top: clamp(0.55rem, 1.2vh, 0.8rem);
     --backwall-seat-bottom: clamp(0.6rem, 1.3vh, 0.85rem);
-    --backwall-source-side: clamp(2.3rem, 6.6vw, 3.3rem);
-    --backwall-source-top: clamp(1.35rem, 2.6vh, 1.75rem);
-    --backwall-source-bottom: clamp(1.25rem, 2.4vh, 1.65rem);
     --proof-size: clamp(3.2rem, 13vw, 5.8rem);
   }
 
@@ -1299,25 +1082,8 @@ select {
     padding: 1rem 1.1rem;
   }
 
-  .vessel-debug {
-    top: 0.8rem;
-    left: 0.8rem;
-    gap: 0.35rem;
-  }
-
-  .vessel-debug button {
-    min-width: 5.75rem;
-    padding: 0.55rem 0.65rem;
-    font-size: 0.62rem;
-  }
-
   .back-scroll {
     padding: 4.9rem 1.1rem 1.4rem;
-  }
-
-  .enter-button,
-  .enter-button:hover {
-    transform: translateX(clamp(4rem, 18vw, 7rem));
   }
 
   .back-hero {
@@ -1331,14 +1097,15 @@ select {
   }
 }
 
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+
 @media (prefers-reduced-motion: reduce) {
   .cube {
     transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
   }
 
   .cube-face-front,
-  .cube-face-right,
-  .enter-overlay {
+  .cube-face-right {
     display: none;
   }
 

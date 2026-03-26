@@ -12,11 +12,7 @@ export type ConvergencePhase =
   | 'interface_active';
 
 export type ConvergenceInputSource =
-  | 'control'
   | 'enter'
-  | 'scroll'
-  | 'gesture'
-  | 'autoplay'
   | 'programmatic';
 
 export interface ConvergenceSnapshot {
