@@ -40,11 +40,11 @@ export class FlowEngineBridge implements FlowEngineApi {
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
   private static readonly RENDERER_SEAM_DURATION = 0.35;
   // Pacing: Hold (monument) → Collapse (implosion) → Quiet (verdict space)
-  private static readonly COLLAPSE_HOLD = 0.4;       // brief frozen monument — just enough to register stillness
-  private static readonly COLLAPSE_DURATION = 2.4;    // three phases: compact (1s) → core (0.8s) → extinction (0.6s)
-  private static readonly QUIET_CHAMBER_DELAY = 0.08;
-  private static readonly QUIET_CHAMBER_DURATION = 0.5;
-  private static readonly QUIET_CHAMBER_PROOF_HOLD = 0.8; // silence before proof
+  private static readonly COLLAPSE_HOLD = 1.15;       // let the frozen monument land before the event starts
+  private static readonly COLLAPSE_DURATION = 7.2;    // slow enough to read the flight, not just the state changes
+  private static readonly QUIET_CHAMBER_DELAY = 0.55;
+  private static readonly QUIET_CHAMBER_DURATION = 1.35;
+  private static readonly QUIET_CHAMBER_PROOF_HOLD = 1.05; // silence before proof
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
@@ -125,6 +125,7 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.quietChamberStarted = false;
       this.quietChamberElapsed = 0;
       conf.quietChamberMix = 0;
+      conf.clearFieldMix = 0;
     }
   }
 
@@ -360,15 +361,11 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.edgeOrganicBreakup = 0.036;
     conf.trailStretch = 0.16;
     conf.pointerWake = 0.02;
-    conf.wallGlideStrength = 0.0;
     conf.startupDuration = 1.18;
     conf.freshnessReleaseStart = 0.82;
     conf.freshnessReleaseEnd = 0.42;
     conf.sourceConfinementStrength = 0.0;
     conf.chamberFlowStrength = 0.0;
-    conf.chamberReturnStrength = 0.0;
-    conf.wallBounceStrength = 0.0;
-    conf.wallSplashStrength = 0.0;
     conf.emissiveIntensity = 0.88;
     conf.sourceDepthScale = 1.82;
 
@@ -394,14 +391,10 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.edgeOrganicBreakup = 0.068;
     conf.trailStretch = 0.28;
     conf.pointerWake = 0.76;
-    conf.wallGlideStrength = 0.2;
     conf.freshnessReleaseStart = 0.72;
     conf.freshnessReleaseEnd = 0.28;
     conf.sourceConfinementStrength = 0.62;
     conf.chamberFlowStrength = 0.14;
-    conf.chamberReturnStrength = 0.2;
-    conf.wallBounceStrength = 0.03;
-    conf.wallSplashStrength = 0.02;
     conf.emissiveIntensity = 1.08;
     conf.sourceDepthScale = 1.18;
     conf.sourceFieldRadii.set(12.8, 10.2, 10.6);
@@ -470,6 +463,7 @@ export class FlowEngineBridge implements FlowEngineApi {
       conf.collapseMix = 0;
       conf.postFreezeSimLock = 0;
       conf.quietChamberMix = 0;
+      conf.clearFieldMix = 0;
       conf.freshnessDecayRate = 0.044;
       this.currentPointerInfluence = 1;
       this.app?.setPointerInfluence?.(this.interactiveEnabled ? this.currentPointerInfluence : 0);
@@ -514,6 +508,10 @@ export class FlowEngineBridge implements FlowEngineApi {
           quietActiveElapsed / FlowEngineBridge.QUIET_CHAMBER_DURATION,
         )
       : 0;
+    const clearFieldMix =
+      THREE.MathUtils.smoothstep(collapseMix, 0.14, 0.30) *
+      (1 - THREE.MathUtils.smoothstep(collapseMix, 0.82, 0.98)) *
+      (1 - THREE.MathUtils.smoothstep(quietChamberMix, 0.0, 0.28));
 
     conf.collapseMix = collapseMix;
     conf.postFreezeSimLock = this.postFreezeActive ? 1 : 0;
@@ -533,9 +531,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.dynamicViscosity = THREE.MathUtils.lerp(0.034, 0.058, densifyMix);
     conf.sourceConfinementStrength = THREE.MathUtils.lerp(0.62, 0.98, compressionMix);
     conf.chamberFlowStrength = THREE.MathUtils.lerp(0.14, 0.08, slowdownMix);
-    conf.chamberReturnStrength = THREE.MathUtils.lerp(0.2, 0.32, compressionMix);
-    conf.wallBounceStrength = THREE.MathUtils.lerp(0.03, 0.0, freezeMix);
-    conf.wallSplashStrength = THREE.MathUtils.lerp(0.02, 0.0, freezeMix);
     conf.trailStretch = THREE.MathUtils.lerp(0.28, 0.18, slowdownMix);
     conf.pointerWake = THREE.MathUtils.lerp(0.76, 0.18, slowdownMix);
 
@@ -546,6 +541,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     // noise stays at frozen level
 
     conf.quietChamberMix = quietChamberMix;
+    conf.clearFieldMix = clearFieldMix;
 
     conf.noise = noise;
     conf.speed = speed;

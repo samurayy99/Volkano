@@ -154,32 +154,40 @@ class BackgroundGeometry {
         const frameBase = this.debugView === "geometry" ? 0.014 : 0.018;
         const linerBase = this.debugView === "geometry" ? 0.004 : 0.006;
         const backWallBase = this.debugView === "geometry" ? 0.003 : 0.004;
+        const collapseMix = conf.collapseMix || 0;
+        const quietMix = conf.quietChamberMix || 0;
+        const clearFieldMix = conf.clearFieldMix || 0;
 
         if (this.frameMaterial) {
-            this.frameMaterial.emissiveIntensity = frameBase + response * 0.035;
+            this.frameMaterial.emissiveIntensity =
+                frameBase + response * 0.035 - clearFieldMix * 0.0035;
         }
 
         if (this.linerMaterial) {
-            this.linerMaterial.emissiveIntensity = linerBase + response * 0.012;
+            this.linerMaterial.emissiveIntensity =
+                linerBase + response * 0.012 - clearFieldMix * 0.0025;
         }
 
         if (this.backWallMaterial) {
-            this.backWallMaterial.emissiveIntensity = backWallBase + response * 0.008;
+            this.backWallMaterial.emissiveIntensity =
+                backWallBase + response * 0.008 - clearFieldMix * 0.002;
         }
         if (this.backPlateMaterial) {
             const baseOpacity = this.debugView === "geometry" ? 0.92 : 0.98;
-            const collapseMix = conf.collapseMix || 0;
-            const quietMix = conf.quietChamberMix || 0;
-            const clearanceSuppression = THREE.MathUtils.smoothstep(collapseMix, 0.06, 0.16) * (1.0 - quietMix);
+            const calmDim = Math.max(
+                THREE.MathUtils.smoothstep(collapseMix, 0.08, 0.22) * 0.35,
+                THREE.MathUtils.smoothstep(quietMix, 0.0, 0.50) * 0.55,
+            );
+            const carrierDim = Math.min(1, calmDim + clearFieldMix * 0.12);
 
             if (this.backWallMaterial) {
                 this.backWallMaterial.emissiveIntensity =
-                    backWallBase + response * 0.008 + clearanceSuppression * 0.018;
+                    backWallBase + response * 0.008 - carrierDim * 0.004;
             }
 
-            this.backPlateMaterial.opacity = THREE.MathUtils.lerp(baseOpacity, 0.18, clearanceSuppression);
+            this.backPlateMaterial.opacity = baseOpacity;
 
-            const plateTint = THREE.MathUtils.lerp(1.0, 0.32, clearanceSuppression);
+            const plateTint = THREE.MathUtils.lerp(1.0, 0.84, carrierDim);
             this.backPlateMaterial.color.setRGB(plateTint, plateTint, plateTint);
         }
 

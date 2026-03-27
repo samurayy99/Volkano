@@ -1,85 +1,110 @@
 # VOLKANO Post-Freeze Handoff
 
-This document is the fast path for any new agent session working on the
+This is the current handoff for any new session working on the
 Post-Enter / Pre-Proof sequence.
 
 Read this after `CLAUDE.md`.
 
 ## What Matters Right Now
 
-The source stage is considered solved enough.
-
-The active bottleneck is the renderer-owned beat between:
+The active bottleneck is still the renderer-owned beat between:
 
 - freeze monument
-- post-freeze clearing / erosion
+- post-freeze clearing
 - quiet chamber
 - DOM proof
+
+But there is one important branch-health note:
+
+- a recent renderer pass caused a black pre-enter chamber because the particle
+  material exceeded the WebGPU vertex-varying limit
+- that hard blackout was fixed by removing two unused varyings in
+  `particleRenderer.js`
+- the source now renders again, but the current branch should still be sanity-
+  checked in a fresh browser session before any new visual pass is judged
+
+So:
+
+- primary creative bottleneck: post-freeze read
+- immediate safety check in any fresh session: pre-enter source is visible and
+  the chamber is not black
 
 The browser read is the final authority.
 
 ## Current Verified Truths
 
-These points were verified through code audit plus browser/video review.
+### 1. The renderer is the visible post-freeze owner
 
-### 1. The simulator is no longer the visible post-freeze owner
+This is still true.
 
-- `postFreezeSimLock` hard-stops the solver in
-  [mlsMpmSimulator.js](/Users/lenox27/my_project/src/flow-engine/mls-mpm/mlsMpmSimulator.js)
-- old capture / seam / pocket ownership was removed
-- the visible post-freeze problem is not a hidden simulator pull anymore
+- the simulator owns source, convergence, slowdown, compression, and freeze
+- the simulator does not own post-freeze choreography
+- `postFreezeSimLock` keeps the solver out of the visible post-freeze beat
+- the particle renderer now owns the post-freeze motion, visibility, and
+  material death
 
-### 2. Hidden legacy ownership was cleaned enough
-
-Already removed or reduced:
-
-- capture / seam / pocket legacy in the simulator
-- stale post-freeze conf signals
-- dead transition systems
-- duplicated flow-engine phase API
-- redundant CSS/app debug and preview paths
-- descriptor coupling where source came from backplate/crater semantics
-
-Do not restart the investigation from “there must still be a hidden second owner”
+Do not restart from "maybe the simulator is secretly still pulling the mass"
 unless a new codepath is found.
 
-### 3. Source and backplate were refactored apart
+### 2. The old wall-deposit / receiver-wall model is no longer the live branch
 
-Current descriptor ownership:
+This is the most important thing a fresh session must not get wrong.
 
-- chamber geometry lives in
-  [vesselDescriptors.js](/Users/lenox27/my_project/src/flow-engine/vesselDescriptors.js)
-- source anchor is explicit in the same module
-- `backgroundGeometry.js` is no longer the source-of-truth for source origin
-- `app.js` now syncs from explicit source anchor world data, not crater/backplate UV
+The current branch is not:
 
-This refactor was intentionally behavior-preserving for source placement.
+- receiver walls
+- deposit patches
+- ceiling/floor patch families
+- surface hold / wall flatten / residue pads
 
-### 4. The old “vacuum into the rift” read is now materially gone
+Those mental models are outdated.
 
-This was improved by:
+Current live branch:
 
-- removing centerward post-freeze translation in
-  [particleRenderer.js](/Users/lenox27/my_project/src/flow-engine/mls-mpm/particleRenderer.js)
-- stronger backplate suppression in
-  [backgroundGeometry.js](/Users/lenox27/my_project/src/flow-engine/backgroundGeometry.js)
+- volumetric clearing in `particleRenderer.js`
+- `core`, `fringe`, and `loss` populations
+- forward/sweep targets such as:
+  - `spearTarget`
+  - `fringeBandTarget`
+  - `fringeSweepTarget`
+  - `lossTarget`
+  - `lossSweepTarget`
+- chamber support through `clearFieldMix`
+- no `receiverImpactMix`
+- no receiver-specific lights
 
-This change is real and should not be accidentally regressed.
+If a new session starts proposing deposits, receives, wall wakes, or surface
+settling as if they are still current architecture, it is starting from stale
+context.
 
-### 5. The new primary failure mode is now different
+### 3. Chamber support is now neutral clearing support, not receiver drama
 
-Current visible failure read:
+Current support layer:
 
-- no more suction into the rift
-- but the “explosion” reads as a pop / interpolation event
-- deposits at walls/ceiling/floor are too few, too thin, too discrete
-- a rectangular / rail / frame-like read appears
-- the backplate suppression is useful but currently a bit too binary
+- `engineBridge.ts` emits `clearFieldMix`
+- `lights.js` uses `hemi`, `keyLight`, `rimLight`, and `frontVolumeLight`
+- `backgroundGeometry.js` only gives subtle carrier/silhouette response
 
-In other words:
+The chamber is supposed to support depth and clearing, not act like four walls
+are "receiving" matter.
 
-- old enemy: crack vacuum
-- new enemy: patch distribution / weak release / weak deposits
+### 4. Cleanup/ownership work was real, but did not solve the visual read
+
+The codebase is cleaner than before.
+
+That does not mean the current visual result is correct.
+
+Already true:
+
+- source anchor and chamber descriptors were separated from backplate semantics
+- duplicated ownership around old post-freeze systems was reduced
+- stale wall/receiver families were removed from the live branch
+
+Still true:
+
+- cleanup did not automatically produce an award-level material sentence
+- the branch is now failing more on composition and material read than on pure
+  architecture chaos
 
 ## Current Live Owners
 
@@ -106,35 +131,39 @@ Owner of:
 - freeze handoff
 - `collapseMix`
 - `quietChamberMix`
+- `clearFieldMix`
 - proof-ready timing
 
 Not owner of:
 
-- visible particle choreography
+- visible particle choreography details
 
 ### Particle renderer
 
-Current owner of:
+Primary owner of:
 
-- post-freeze release
-- deposit targeting
-- post-freeze scale
-- post-freeze color/emissive
+- post-freeze motion architecture
+- `core` / `fringe` / `loss` role behavior
+- front-pass visibility
+- near-camera shrink/separation
+- late cull / hard clear
+- post-freeze color/emissive shaping
 
-This is the main active problem area.
+This is still the main active problem area.
 
 ### Background geometry
 
 Owner of:
 
 - chamber carrier
-- WebGL back wall / backplate
-- source debug visualization
+- back wall / backplate visuals
+- subtle clearing support
 
 Not owner of:
 
 - source origin authority
 - particle motion
+- post-freeze deposits
 
 ### DOM/CSS
 
@@ -153,93 +182,135 @@ Not owner of:
 
 Primary:
 
-- [particleRenderer.js](/Users/lenox27/my_project/src/flow-engine/mls-mpm/particleRenderer.js)
-- [backgroundGeometry.js](/Users/lenox27/my_project/src/flow-engine/backgroundGeometry.js)
+- `/Users/lenox27/my_project/src/flow-engine/mls-mpm/particleRenderer.js`
 
 Supporting:
 
-- [engineBridge.ts](/Users/lenox27/my_project/src/flow-engine/engineBridge.ts)
-- [vesselDescriptors.js](/Users/lenox27/my_project/src/flow-engine/vesselDescriptors.js)
-- [OWNERSHIP.md](/Users/lenox27/my_project/docs/OWNERSHIP.md)
+- `/Users/lenox27/my_project/src/flow-engine/engineBridge.ts`
+- `/Users/lenox27/my_project/src/flow-engine/lights.js`
+- `/Users/lenox27/my_project/src/flow-engine/backgroundGeometry.js`
+- `/Users/lenox27/my_project/src/flow-engine/vesselDescriptors.js`
+- `/Users/lenox27/my_project/docs/OWNERSHIP.md`
+- `/Users/lenox27/my_project/CLAUDE.md`
 
 ## Current Renderer State
 
-Current post-freeze path is renderer-only and roughly:
+The current post-freeze branch is roughly:
 
-- frozen monument base position
-- release interpolation toward prepared deposit patches
-- patch families on side walls, ceiling, and floor
-- release color/emissive pulse
-- quiet chamber fade
+- frozen monument as base memory
+- distance-staggered release
+- `core` spear lane
+- `fringe` chamber bands plus sweep
+- `loss` peel/sweep and cull
+- near-camera separation/shrink
+- quiet-chamber hard clear
 
-This solved the suction read, but now exposes the next structural problem:
+Important consequences:
 
-- the movement still reads too much like target interpolation
-- not enough like material release → flight → impact → smear
+- this is not a wall-settle branch anymore
+- this is not a pure one-step forward wipe either
+- it is a layered volumetric clearing branch with staged motion families
 
-## Best Current Architectural Insight
+## Current Visible Strengths
 
-The next useful renderer refactor should likely move from:
+Compared with older branches:
 
-- `home -> target interpolation`
+- the old crack-vacuum / rift-suction read is not the main problem anymore
+- there is now a real forward volumetric read
+- there is now at least some front-pass / toward-viewer payoff
+- receiver-wall semantics are no longer dominating the chamber
 
-toward:
+These gains should not be casually thrown away.
 
-- `home`
-- plus additive `flight offset`
-- then `settle / deposit target`
+## Current Visible Failures
+
+This is the part a fresh session should trust most.
+
+### 1. The post-freeze beat is still not award-level
+
+Current failure reads still include:
+
+- too much central mound / volumetric body through the middle
+- too much dense screen coverage when too much material reaches the near pass
+- front-pass not yet selective/expensive enough
+- too much "effect improving itself" instead of one inevitable material sentence
+
+### 2. The source stage is currently not healthy enough to ignore
+
+Even though source is not the intended work area, this branch recently proved
+that renderer changes can break pre-enter badly.
+
+Current status:
+
+- black pre-enter bug: fixed
+- source visibility in pre-enter: restored
+- source quality: currently regressed and flatter / rod-heavier than desired
 
 Meaning:
 
-- keep frozen monument as home basis
-- create a real outward flight phase before deposits take over
-- only then settle to chamber surfaces
+- do not reopen source tuning casually
+- but do protect it
+- any fresh session should check source before judging a new renderer pass
 
-This idea was supported by both:
+### 3. The latest front-safety / hard-clear logic exists in code, but should not
+be treated as visually final
 
-- browser/video diagnosis of the current failure
-- logic cherry-picks from
-  [particle_examples.txt](/Users/lenox27/my_project/docs/particle_examples.txt)
+The live code contains:
 
-Important:
+- extra near-camera shrink for `fringe` / `loss`
+- front-fade gating
+- hard clear toward `quietChamber`
 
-- do not copy the examples literally
-- do not import demo aesthetics, bloom logic, black-hole logic, or disintegration style
-- only the motion architecture is relevant
+But the branch was interrupted by the pre-enter blackout bug.
 
-## What Is Explicitly Not Wanted
+So do not assume the newest front-safety pass is already a successful visual
+solution just because it is in code.
 
-Do not propose or reintroduce:
+## What A Fresh Session Must Not Do
 
+Do not restart from these stale assumptions:
+
+- "the current branch is still wall deposits"
+- "receiver walls are still the live owner"
+- "the simulator probably still owns the post-freeze beat"
+- "cleanup archaeology is the highest-value next move"
+- "source can be ignored completely even if renderer edits break pre-enter"
+
+Do not propose:
+
+- particle typography or logo formation
+- receiver-wall wake/drama as the main answer
 - simulator-owned post-freeze choreography
-- black hole / crack vacuum / seam capture logic
-- particle typography or particle logo formation
-- decorative luxury VFX as a substitute for material read
-- broad speculative rewrites of app/convergence/CSS when the active bug is renderer-side
-- endless scalar tuning without structural change
+- decorative luxury FX to hide weak form
+- broad app/shell rewrites when the active issue is renderer-side
 
-## Video Evidence
+## Best Current Working Method
 
-Recent videos worth checking:
+For the next session:
 
-- suction-removal pass:
-  `/Users/lenox27/my_project/frames/Screen Recording 2026-03-26 at 18.51.45.mp4`
-- prior state showing vacuum/rift dominance:
-  `/Users/lenox27/my_project/frames/Screen Recording 2026-03-26 at 18.40.23.mp4`
+1. Start with a fresh browser reload.
+2. Confirm pre-enter source/chamber are visible.
+3. Confirm there is no black WebGPU failure state lingering.
+4. Then judge the post-freeze beat.
+5. Keep passes narrow and renderer-owned unless a different owner is clearly
+   proven.
 
-Recent contact sheets:
+The right standard is still:
 
-- [freeze-to-release-contact.jpg](/Users/lenox27/my_project/output/video-review/2026-03-26-185145/freeze-to-release-contact.jpg)
-- [release-to-proof-contact.jpg](/Users/lenox27/my_project/output/video-review/2026-03-26-185145/release-to-proof-contact.jpg)
-- [freeze-to-burst-contact.jpg](/Users/lenox27/my_project/output/video-review/2026-03-26-184023/freeze-to-burst-contact.jpg)
-- [burst-to-tail-contact.jpg](/Users/lenox27/my_project/output/video-review/2026-03-26-184023/burst-to-tail-contact.jpg)
+- one meaningful hypothesis per pass
+- one real visual delta
+- no defending weak deltas
 
 ## If You Are Claude In a Fresh Session
 
 Start from these assumptions:
 
-- the codebase has already been heavily cleaned
-- the current bug is no longer primarily hidden legacy
-- the active issue is the live renderer/backplate read
-- the suction issue has been materially improved already
-- the next useful contribution is a disciplined renderer architecture plan, not a restart of cleanup archaeology
+- `CLAUDE.md` is the strategic brief
+- `OWNERSHIP.md` is still valid
+- older handoff notes about wall deposits are stale
+- the live post-freeze branch is volumetric clearing, not receiver-wall deposit
+- the main owner is `particleRenderer.js`
+- the branch recently had a renderer-caused pre-enter blackout, now fixed
+- source is visible again, but should be protected from further regression
+- the next useful contribution is a disciplined renderer read pass, not another
+  cleanup archaeology pass

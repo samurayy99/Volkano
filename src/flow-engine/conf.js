@@ -60,7 +60,6 @@ class Conf {
     throatHeight = 9.8;
     throatSpread = 1.18;
     throatLiftStrength = 1.04;
-    wallGlideStrength = 0.7;
     startupDelay = 0.18;
     startupDuration = 1.55;
     startupLatentVisibility = 0.05;
@@ -76,14 +75,10 @@ class Conf {
     sourceFieldSecondaryCenter = new THREE.Vector3(36.0, 29.0, 26.0);
     sourceFieldSecondaryRadii = new THREE.Vector3(10.5, 13.5, 10.0);
     chamberFlowStrength = 0.0; // room-scale circulation field for whole-chamber travel
-    chamberReturnStrength = 0.0; // soft recentering so particles return after wall travel
-    wallBounceStrength = 0.0; // normal-axis rebound energy when particles hit chamber bounds
-    wallSplashStrength = 0.0; // tangential rebound energy when particles hit chamber bounds
     chamberFlowCenter = new THREE.Vector3(32.0, 32.0, 30.0);
     chamberFlowRadii = new THREE.Vector3(27.0, 23.0, 23.0);
     sourceDepthScale = 1.0;    // additional play-state depth exaggeration for volumetric read
     activeFieldIndex = 0;      // index into interleaved field buffer (0=mountain, 1=hero, 2=logo)
-    eruptImpulse = 0.0;        // one-frame Y-velocity burst (unused in play, kept for shader compat)
     convergenceProgress = 0.0; // 0..100 production convergence core state
     convergenceSlowdown = 0.0; // 0..1 motion/turbulence reduction mix
     convergenceCompression = 0.0; // 0..1 spatial densification mix
@@ -93,6 +88,7 @@ class Conf {
     collapseMix = 0.0; // 0..1 whole-mass collapse progress (hold → implosion → gone)
     postFreezeSimLock = 0.0; // 0..1 hard gate: solver motion/capture disabled, renderer owns post-freeze
     quietChamberMix = 0.0; // 0..1 late renderer-owned quiet chamber handoff
+    clearFieldMix = 0.0; // 0..1 short forward-clearing support window; dies before quiet
 
 
     diagOverrideOpacity = false; // T-key diagnostic
