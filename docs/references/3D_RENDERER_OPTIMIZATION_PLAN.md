@@ -1,3 +1,5 @@
+> Archive note: This file is not authoritative for the current VOLKANO renderer or post-enter work. It documents unrelated or historical renderer research and should be ignored unless a task explicitly asks for it.
+
 # 3D Renderer Performance Optimization Plan
 
 > Based on Minecraft rendering best practices from Sodium, 0fps.net meshing articles, and Tomcc's cave culling algorithm.

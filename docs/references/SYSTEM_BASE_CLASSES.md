@@ -1,3 +1,5 @@
+> Archive note: This file is not authoritative for the current VOLKANO renderer or post-enter work. It documents unrelated ECS/system-base patterns and should be ignored unless a task explicitly asks for it.
+
 # System Base Classes
 
 > Reusable base classes that make performance optimizations opt-out instead of opt-in.

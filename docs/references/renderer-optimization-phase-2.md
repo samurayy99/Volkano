@@ -1,3 +1,5 @@
+> Archive note: This file is not authoritative for the current VOLKANO renderer or post-enter work. It documents unrelated renderer optimization research and should be ignored unless a task explicitly asks for it.
+
 # Renderer Optimization Phase 2 Plan
 
 ## Overview

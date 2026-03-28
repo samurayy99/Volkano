@@ -1,3 +1,5 @@
+> Archive note: This file is not authoritative for the current VOLKANO renderer or post-enter work. It documents unrelated worker-thread meshing work and should be ignored unless a task explicitly asks for it.
+
 # Worker Thread Meshing - Implementation Report
 
 **Date**: 2026-01-22

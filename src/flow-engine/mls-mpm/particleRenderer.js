@@ -134,7 +134,7 @@ class ParticleRenderer {
   mlsMpmSim = null;
   object = null;
   bloom = false;
-  freezeDescriptor = null;
+  freezeSnapshot = null;
   uniforms = {};
 
   constructor(mlsMpmSim) {
@@ -168,7 +168,6 @@ class ParticleRenderer {
 
     this.uniforms.size = uniform(1);
     const vAo = varying(0, "vAo");
-    const vNormal = varying(vec3(0), "v_normalView");
     this.uniforms.quietChamber = uniform(0);
     this.uniforms.collapseMix = uniform(0);
     this.uniforms.convergenceFreeze = uniform(0);
@@ -178,15 +177,6 @@ class ParticleRenderer {
     this.uniforms.freezeBoundsMax = uniform(new THREE.Vector3());
     this.uniforms.chamberMin = uniform(new THREE.Vector3());
     this.uniforms.chamberMax = uniform(new THREE.Vector3());
-    const vBurstT = varying(float(0), "vBurstT");
-    const vFrontPassT = varying(float(0), "vFrontPassT");
-    const vFringeFrontFade = varying(float(0), "vFringeFrontFade");
-    const vLossFrontFade = varying(float(0), "vLossFrontFade");
-    const vCoreRole = varying(float(0), "vCoreRole");
-    const vFringeRole = varying(float(0), "vFringeRole");
-    const vLossRole = varying(float(0), "vLossRole");
-    const vFringeKeep = varying(float(0), "vFringeKeep");
-    const vLossKeep = varying(float(0), "vLossKeep");
     const particle = this.mlsMpmSim.particleBuffer.element(instanceIndex);
     this.material.positionNode = Fn(() => {
       // ─── PARTICLE DATA ───────────────────────────────
@@ -219,10 +209,8 @@ class ParticleRenderer {
         crustCompression,
       ).toConst("monumentLength");
 
-      // ─── TIMING + HASHES ─────────────────────────────
+      // ─── TIMING + SPATIAL EROSION ───────────────────
       const cMix = this.uniforms.collapseMix;
-      const particleHash = fract(float(instanceIndex).add(1.0).mul(0.6180339887))
-        .toConst("particleHash");
       const freezeCenter = this.uniforms.freezeCenter;
       const freezeBoundsMin = this.uniforms.freezeBoundsMin;
       const freezeBoundsMax = this.uniforms.freezeBoundsMax;
@@ -231,375 +219,192 @@ class ParticleRenderer {
 
       const basePosition = particlePosition.xyz.toConst("basePosition");
       const monumentPosition = basePosition.toConst("monumentPosition");
-
       const preloadT = smoothstep(float(0.0), float(0.14), cMix)
         .mul(float(1).sub(smoothstep(float(0.18), float(0.34), cMix)))
         .toConst("preloadT");
-      const releaseT = smoothstep(float(0.14), float(0.72), cMix)
-        .toConst("releaseT");
 
-      // Distance-weighted stagger: outer particles release slightly earlier
-      const distFromCenter = monumentPosition.sub(freezeCenter).length();
-      const chamberDiag = cMax.sub(cMin).length();
-      const normalizedDist = distFromCenter.div(chamberDiag.max(float(0.001)));
-      const hashStagger = particleHash.mul(0.35).toConst("hashStagger");
-      const distanceStagger = normalizedDist.mul(0.20).toConst("distanceStagger");
-      const releaseStagger = hashStagger.add(distanceStagger).toConst("releaseStagger");
-      const burstParticleT = releaseT.sub(releaseStagger)
-        .div(float(1).sub(releaseStagger)).clamp(0, 1).toConst("burstParticleT");
-
-      // ─── BURST DIRECTION (form memory blend) ─────────
-      const hashX = fract(sin(instanceIndex.toFloat().mul(127.1)).mul(43758.5453)).mul(2.0).sub(1.0);
-      const hashY = fract(sin(instanceIndex.toFloat().mul(269.5)).mul(18642.3721)).mul(2.0).sub(1.0);
-      const hashZ = fract(sin(instanceIndex.toFloat().mul(419.2)).mul(29517.8134)).mul(2.0).sub(1.0);
-      const hashDir = normalize(vec3(hashX, hashY, hashZ));
-
-      // Keep the original burst class; target-depth tuning should not also replace the early motion grammar.
-      const radialDir = normalize(monumentPosition.sub(freezeCenter).add(hashDir.mul(0.001)));
-      const formDir = particleDirection.xyz;
-      const rawBurst = mix(radialDir, formDir, float(0.35)).add(hashDir.mul(0.12));
-      const burstDir = normalize(rawBurst).toConst("burstDir");
-      const shellT = smoothstep(float(0.16), float(0.58), normalizedDist).toConst("shellT");
-      const peelDir = normalize(
-        mix(radialDir, burstDir, float(0.55)).add(hashDir.mul(0.04)),
-      ).toConst("peelDir");
-
-      // ─── FREEZE-SPACE VOLUMETRIC CLEARING ───────────
-      const roleHash = fract(sin(instanceIndex.toFloat().mul(211.7)).mul(51234.7261))
-        .toConst("roleHash");
-      const coreRole = float(1).sub(step(float(0.18), roleHash)).toConst("coreRole");
-      const fringeRole = step(float(0.18), roleHash)
-        .mul(float(1).sub(step(float(0.52), roleHash)))
-        .toConst("fringeRole");
-      const lossRole = step(float(0.52), roleHash).toConst("lossRole");
+      const hashX = fract(
+        sin(instanceIndex.toFloat().mul(127.1)).mul(43758.5453),
+      )
+        .mul(2.0)
+        .sub(1.0);
+      const hashY = fract(
+        sin(instanceIndex.toFloat().mul(269.5)).mul(18642.3721),
+      )
+        .mul(2.0)
+        .sub(1.0);
+      const hashZ = fract(
+        sin(instanceIndex.toFloat().mul(419.2)).mul(29517.8134),
+      )
+        .mul(2.0)
+        .sub(1.0);
+      const hashDir = normalize(vec3(hashX, hashY, hashZ)).toConst("hashDir");
 
       const spanX = cMax.x.sub(cMin.x);
       const spanY = cMax.y.sub(cMin.y);
       const spanZ = cMax.z.sub(cMin.z);
+      const chamberDiag = cMax
+        .sub(cMin)
+        .length()
+        .max(float(0.001))
+        .toConst("chamberDiag");
       const chamberDepth = spanZ.max(float(0.001)).toConst("chamberDepth");
-      const freezeSpan = freezeBoundsMax.sub(freezeBoundsMin);
-      const freezeFrac = vec3(
-        monumentPosition.x.sub(freezeBoundsMin.x).div(freezeSpan.x.max(float(0.001))),
-        monumentPosition.y.sub(freezeBoundsMin.y).div(freezeSpan.y.max(float(0.001))),
-        monumentPosition.z.sub(freezeBoundsMin.z).div(freezeSpan.z.max(float(0.001))),
-      ).clamp(0, 1).toConst("freezeFrac");
-      const freezeCentered = freezeFrac.mul(2.0).sub(1.0).toConst("freezeCentered");
+      const freezeSpan = freezeBoundsMax.sub(freezeBoundsMin).toConst("freezeSpan");
+      const freezeHalfSpan = vec3(
+        freezeSpan.x.mul(0.5).max(float(0.001)),
+        freezeSpan.y.mul(0.5).max(float(0.001)),
+        freezeSpan.z.mul(0.5).max(float(0.001)),
+      ).toConst("freezeHalfSpan");
+      const freezeLocal = vec3(
+        monumentPosition.x.sub(freezeCenter.x).div(freezeHalfSpan.x),
+        monumentPosition.y.sub(freezeCenter.y).div(freezeHalfSpan.y),
+        monumentPosition.z.sub(freezeCenter.z).div(freezeHalfSpan.z),
+      ).toConst("freezeLocal");
+      const centerDistN = freezeLocal
+        .length()
+        .div(float(1.7320508))
+        .clamp(0, 1)
+        .toConst("centerDistN");
+      const innerN = float(1).sub(centerDistN).toConst("innerN");
+      const denseCoreT = float(1)
+        .sub(smoothstep(float(0.18), float(0.42), centerDistN))
+        .toConst("denseCoreT");
+      const forwardPrivilege = smoothstep(float(0.22), float(0.88), innerN)
+        .toConst("forwardPrivilege");
+      const shellPrivilege = smoothstep(float(0.24), float(0.92), centerDistN)
+        .toConst("shellPrivilege");
+      const heroPrivilege = smoothstep(float(0.62), float(0.96), forwardPrivilege)
+        .toConst("heroPrivilege");
+
       const clearForwardDir = vec3(0, 0, -1).toConst("clearForwardDir");
-      const bandHash = fract(sin(instanceIndex.toFloat().mul(91.13)).mul(24634.634))
-        .toConst("bandHash");
-      const rearBand = float(1).sub(step(float(0.34), bandHash)).toConst("rearBand");
-      const midBand = step(float(0.34), bandHash)
-        .mul(float(1).sub(step(float(0.78), bandHash)))
-        .toConst("midBand");
-      const nearBand = step(float(0.78), bandHash).toConst("nearBand");
-
-      const memoryX = freezeCentered.x.toConst("memoryX");
-      const memoryY = freezeCentered.y.toConst("memoryY");
-      const scatterX = hashX.toConst("scatterX");
-      const scatterY = hashY.toConst("scatterY");
-
-      const baseCoreSpreadX = mix(memoryX, scatterX, float(0.16))
-        .mul(spanX.mul(0.12))
-        .toConst("baseCoreSpreadX");
-      const baseCoreSpreadY = mix(memoryY, scatterY, float(0.16))
-        .mul(spanY.mul(0.14))
-        .toConst("baseCoreSpreadY");
-      const coreTargetZ = clearForwardDir.z.mul(chamberDepth.mul(1.95))
-        .add(hashZ.mul(chamberDepth.mul(0.08)))
-        .toConst("coreTargetZ");
-      const baseSpearTarget = freezeCenter.add(vec3(baseCoreSpreadX, baseCoreSpreadY, coreTargetZ))
-        .toConst("baseSpearTarget");
-
-      const fringeDepth = rearBand.mul(chamberDepth.mul(0.24))
-        .add(midBand.mul(chamberDepth.mul(0.42)))
-        .add(nearBand.mul(chamberDepth.mul(0.58)))
-        .toConst("fringeDepth");
-      const fringeSpanX = rearBand.mul(spanX.mul(0.18))
-        .add(midBand.mul(spanX.mul(0.28)))
-        .add(nearBand.mul(spanX.mul(0.36)))
-        .toConst("fringeSpanX");
-      const fringeSpanY = rearBand.mul(spanY.mul(0.20))
-        .add(midBand.mul(spanY.mul(0.30)))
-        .add(nearBand.mul(spanY.mul(0.34)))
-        .toConst("fringeSpanY");
-      const baseFringeSpreadX = mix(memoryX, scatterX, float(0.42))
-        .mul(fringeSpanX)
-        .toConst("baseFringeSpreadX");
-      const baseFringeSpreadY = mix(memoryY, scatterY, float(0.42))
-        .mul(fringeSpanY)
-        .toConst("baseFringeSpreadY");
-      const fringeTargetZ = clearForwardDir.z.mul(fringeDepth)
-        .add(hashZ.mul(chamberDepth.mul(0.10)))
-        .toConst("fringeTargetZ");
-      const baseFringeBandTarget = freezeCenter.add(vec3(baseFringeSpreadX, baseFringeSpreadY, fringeTargetZ))
-        .toConst("baseFringeBandTarget");
-
-      const baseLossSpreadX = mix(memoryX, scatterX, float(0.80))
-        .mul(spanX.mul(0.52))
-        .toConst("baseLossSpreadX");
-      const baseLossSpreadY = mix(memoryY, scatterY, float(0.80))
-        .mul(spanY.mul(0.42))
-        .toConst("baseLossSpreadY");
-      const lossTargetZ = clearForwardDir.z.mul(chamberDepth.mul(1.18))
-        .add(hashZ.mul(chamberDepth.mul(0.16)))
-        .toConst("lossTargetZ");
-      const baseLossTarget = freezeCenter.add(vec3(baseLossSpreadX, baseLossSpreadY, lossTargetZ))
-        .toConst("baseLossTarget");
-
-      // ─── THREE-PHASE POSITION ───────────────────────
-      const burstMagnitude = chamberDiag.mul(0.12);
-      const burstEnvelope = smoothstep(float(0.0), float(0.18), burstParticleT)
-        .mul(float(1).sub(smoothstep(float(0.42), float(0.96), burstParticleT)))
-        .toConst("burstEnvelope");
-      const centerReleaseT = smoothstep(float(0.04), float(0.34), burstParticleT)
-        .toConst("centerReleaseT");
-      const transferBase = mix(
-        monumentPosition,
-        monumentPosition.add(burstDir.mul(burstMagnitude.mul(0.35))),
-        centerReleaseT,
-      ).toConst("transferBase");
-      const burstPos = transferBase.add(burstDir.mul(burstMagnitude.mul(burstEnvelope)))
-        .toConst("burstPos");
-      const sheddingT = smoothstep(float(0.08), float(0.38), burstParticleT)
-        .toConst("sheddingT");
-      const fieldBuildT = smoothstep(float(0.30), float(0.88), burstParticleT)
-        .toConst("fieldBuildT");
-      const spearDriveT = smoothstep(float(0.40), float(0.98), burstParticleT)
-        .toConst("spearDriveT");
-      const lossDriftT = smoothstep(float(0.28), float(0.90), burstParticleT)
-        .toConst("lossDriftT");
-      const coreApexT = smoothstep(float(0.44), float(0.76), burstParticleT)
-        .mul(float(1).sub(smoothstep(float(0.80), float(0.96), burstParticleT)))
-        .mul(smoothstep(float(0.50), float(1.0), spearDriveT))
-        .toConst("coreApexT");
-      const fieldEase = float(1).sub(pow(float(1).sub(fieldBuildT), float(3)))
-        .toConst("fieldEase");
-      const spearEase = float(1).sub(pow(float(1).sub(spearDriveT), float(3)))
-        .toConst("spearEase");
-      const lossEase = float(1).sub(pow(float(1).sub(lossDriftT), float(3)))
-        .toConst("lossEase");
-      const forwardBase = mix(monumentPosition, burstPos, sheddingT).toConst("forwardBase");
-      const baseCorePosition = mix(forwardBase, baseSpearTarget, spearEase).toConst("baseCorePosition");
-      const baseFringePosition = mix(forwardBase, baseFringeBandTarget, fieldEase)
-        .toConst("baseFringePosition");
-      const baseLossPosition = mix(forwardBase, baseLossTarget, lossEase).toConst("baseLossPosition");
-      const baseRenderPosition = baseCorePosition.mul(coreRole)
-        .add(baseFringePosition.mul(fringeRole))
-        .add(baseLossPosition.mul(lossRole))
-        .toConst("baseRenderPosition");
-      const frontTravelBase = cMin.z.sub(baseRenderPosition.z).max(float(0)).toConst("frontTravelBase");
-      const nearPassT = smoothstep(
-        chamberDepth.mul(0.26),
-        chamberDepth.mul(1.18),
-        frontTravelBase,
-      ).toConst("nearPassT");
-      const coreNearT = nearPassT.mul(smoothstep(float(0.42), float(1.0), spearDriveT))
-        .toConst("coreNearT");
-      // Keep non-core selective near camera; broad front coverage breaks the read.
-      const fringeNearT = nearPassT.mul(smoothstep(float(0.60), float(1.0), fieldBuildT))
-        .toConst("fringeNearT");
-      const lossNearT = nearPassT.mul(smoothstep(float(0.52), float(1.0), lossDriftT))
-        .toConst("lossNearT");
-      const coreNearSpreadMul = mix(float(1.0), float(1.18), coreNearT)
-        .mul(mix(float(1.0), float(0.80), coreApexT))
-        .toConst("coreNearSpreadMul");
-      const fringeNearSpreadMul = mix(float(1.0), float(0.92), fringeNearT)
-        .toConst("fringeNearSpreadMul");
-      const lossNearSpreadMul = mix(float(1.0), float(0.70), lossNearT).toConst("lossNearSpreadMul");
-      const coreNearScaleMul = mix(float(1.0), float(0.78), coreNearT).toConst("coreNearScaleMul");
-      const fringeNearScaleMul = mix(float(1.0), float(0.24), fringeNearT)
-        .toConst("fringeNearScaleMul");
-      const lossNearScaleMul = mix(float(1.0), float(0.08), lossNearT).toConst("lossNearScaleMul");
-
-      const coreSpreadX = baseCoreSpreadX.mul(coreNearSpreadMul).toConst("coreSpreadX");
-      const coreSpreadY = baseCoreSpreadY.mul(coreNearSpreadMul).toConst("coreSpreadY");
-      const fringeSpreadX = baseFringeSpreadX.mul(fringeNearSpreadMul).toConst("fringeSpreadX");
-      const fringeSpreadY = baseFringeSpreadY.mul(fringeNearSpreadMul).toConst("fringeSpreadY");
-      const lossSpreadX = baseLossSpreadX.mul(lossNearSpreadMul).toConst("lossSpreadX");
-      const lossSpreadY = baseLossSpreadY.mul(lossNearSpreadMul).toConst("lossSpreadY");
-      const spearTarget = freezeCenter.add(vec3(coreSpreadX, coreSpreadY, coreTargetZ))
-        .toConst("spearTarget");
-      const fringeBandTarget = freezeCenter.add(vec3(fringeSpreadX, fringeSpreadY, fringeTargetZ))
-        .toConst("fringeBandTarget");
-      const lossTarget = freezeCenter.add(vec3(lossSpreadX, lossSpreadY, lossTargetZ))
-        .toConst("lossTarget");
-
+      const radialDir = normalize(
+        monumentPosition.sub(freezeCenter).add(hashDir.mul(0.001)),
+      ).toConst("radialDir");
       const chamberUp = vec3(0, 1, 0).toConst("chamberUp");
       const chamberRight = vec3(1, 0, 0).toConst("chamberRight");
-      const coreTravelDir = normalize(
-        spearTarget.sub(forwardBase).add(clearForwardDir.mul(0.001)),
-      ).toConst("coreTravelDir");
-      const fringeTravelDirBase = normalize(
-        fringeBandTarget.sub(forwardBase).add(clearForwardDir.mul(0.001)),
-      ).toConst("fringeTravelDirBase");
-      const lossTravelDirBase = normalize(
-        lossTarget.sub(forwardBase).add(clearForwardDir.mul(0.001)),
-      ).toConst("lossTravelDirBase");
-      const coreSideA = cross(coreTravelDir, chamberUp).toConst("coreSideA");
-      const fringeSideA = cross(fringeTravelDirBase, chamberUp).toConst("fringeSideA");
-      const lossSideA = cross(lossTravelDirBase, chamberUp).toConst("lossSideA");
-      const coreSideB = cross(coreTravelDir, chamberRight).toConst("coreSideB");
-      const fringeSideB = cross(fringeTravelDirBase, chamberRight).toConst("fringeSideB");
-      const lossSideB = cross(lossTravelDirBase, chamberRight).toConst("lossSideB");
-      const coreSideBasis = normalize(
-        mix(coreSideB, coreSideA, step(float(0.001), coreSideA.length())).add(hashDir.mul(0.001)),
-      ).toConst("coreSideBasis");
-      const fringeSideBasis = normalize(
-        mix(fringeSideB, fringeSideA, step(float(0.001), fringeSideA.length())).add(hashDir.mul(0.001)),
-      ).toConst("fringeSideBasis");
-      const lossSideBasis = normalize(
-        mix(lossSideB, lossSideA, step(float(0.001), lossSideA.length())).add(hashDir.mul(0.001)),
-      ).toConst("lossSideBasis");
-      const coreArcBell = float(4).mul(spearDriveT).mul(float(1).sub(spearDriveT))
-        .toConst("coreArcBell");
-      const coreArcOffset = coreSideBasis.mul(spanX.mul(0.05).mul(coreArcBell).mul(hashY))
-        .add(chamberUp.mul(spanY.mul(0.03).mul(coreArcBell).mul(hashX)))
-        .toConst("coreArcOffset");
-      const fringeSweepT = smoothstep(float(0.46), float(0.92), burstParticleT)
-        .toConst("fringeSweepT");
-      const lossSweepT = smoothstep(float(0.30), float(0.78), burstParticleT)
-        .toConst("lossSweepT");
-      const fringeSweepTarget = fringeBandTarget
-        .add(peelDir.mul(chamberDiag.mul(0.16).mul(shellT)))
-        .add(fringeTravelDirBase.mul(chamberDepth.mul(0.10)))
-        .add(fringeSideBasis.mul(spanX.mul(0.12).mul(hashY)))
-        .add(chamberUp.mul(spanY.mul(0.05).mul(hashX)))
-        .toConst("fringeSweepTarget");
-      const lossSweepTarget = lossTarget
-        .add(peelDir.mul(chamberDiag.mul(0.26).mul(shellT)))
-        .add(lossTravelDirBase.mul(chamberDepth.mul(0.12)))
-        .add(lossSideBasis.mul(spanX.mul(0.12).mul(hashY)))
-        .add(chamberUp.mul(spanY.mul(0.05).mul(hashX)))
-        .toConst("lossSweepTarget");
-      const fringeTravelDir = normalize(
-        mix(fringeBandTarget, fringeSweepTarget, fringeSweepT)
-          .sub(forwardBase)
-          .add(clearForwardDir.mul(0.001)),
-      ).toConst("fringeTravelDir");
-      const lossTravelDir = normalize(
-        mix(lossTarget, lossSweepTarget, lossSweepT)
-          .sub(forwardBase)
-          .add(clearForwardDir.mul(0.001)),
-      ).toConst("lossTravelDir");
+      const tangentA = cross(radialDir, chamberUp).toConst("tangentA");
+      const tangentB = cross(radialDir, chamberRight).toConst("tangentB");
+      const tangentDir = normalize(
+        mix(tangentB, tangentA, step(float(0.001), tangentA.length())).add(
+          hashDir.mul(0.001),
+        ),
+      ).toConst("tangentDir");
+      const peelDir = normalize(
+        mix(radialDir, tangentDir, float(0.34)).add(hashDir.mul(0.03)),
+      ).toConst("peelDir");
 
-      const corePosition = mix(forwardBase, spearTarget, spearEase).add(coreArcOffset)
-        .toConst("corePosition");
-      const fringeFieldPosition = mix(forwardBase, fringeBandTarget, fieldEase)
-        .toConst("fringeFieldPosition");
-      const fringePosition = mix(fringeFieldPosition, fringeSweepTarget, fringeSweepT)
-        .toConst("fringePosition");
-      const lossBasePosition = mix(forwardBase, lossTarget, lossEase).toConst("lossBasePosition");
-      const lossPosition = mix(lossBasePosition, lossSweepTarget, lossSweepT)
-        .toConst("lossPosition");
-      const renderPosition = corePosition.mul(coreRole)
-        .add(fringePosition.mul(fringeRole))
-        .add(lossPosition.mul(lossRole))
+      const erosionWaveT = smoothstep(float(0.16), float(0.84), cMix).toConst(
+        "erosionWaveT",
+      );
+      const releaseFront = erosionWaveT
+        .sub(float(1).sub(centerDistN))
+        .toConst("releaseFront");
+      const particleReleaseT = smoothstep(
+        float(-0.04),
+        float(0.14),
+        releaseFront,
+      ).toConst("particleReleaseT");
+      const heroPassT = smoothstep(float(0.68), float(0.94), cMix)
+        .mul(denseCoreT)
+        .toConst("heroPassT");
+      const survivalEnd = mix(float(0.28), float(1.10), denseCoreT).toConst(
+        "survivalEnd",
+      );
+      const particleAliveT = float(1)
+        .sub(smoothstep(float(0.10), survivalEnd, releaseFront))
+        .toConst("particleAliveT");
+
+      const peelDistance = chamberDiag
+        .mul(mix(float(0.03), float(0.16), shellPrivilege))
+        .mul(particleReleaseT)
+        .mul(smoothstep(float(0.14), float(0.36), cMix))
+        .mul(float(1).sub(denseCoreT.mul(0.65)))
+        .toConst("peelDistance");
+      const lateralDistance = spanX
+        .mul(0.05)
+        .mul(shellPrivilege)
+        .mul(particleReleaseT)
+        .mul(float(1).sub(denseCoreT.mul(0.75)))
+        .mul(hashY)
+        .toConst("lateralDistance");
+      const verticalDistance = spanY
+        .mul(0.03)
+        .mul(shellPrivilege)
+        .mul(particleReleaseT)
+        .mul(float(1).sub(denseCoreT.mul(0.75)))
+        .mul(hashX)
+        .toConst("verticalDistance");
+      const baseForwardDistance = chamberDepth
+        .mul(mix(float(0.04), float(0.52), forwardPrivilege))
+        .mul(particleReleaseT)
+        .toConst("baseForwardDistance");
+      const heroForwardDistance = chamberDepth
+        .mul(1.48)
+        .mul(heroPassT)
+        .toConst("heroForwardDistance");
+      const forwardDistance = baseForwardDistance
+        .add(heroForwardDistance)
+        .toConst("forwardDistance");
+
+      const renderPosition = monumentPosition
+        .add(peelDir.mul(peelDistance))
+        .add(tangentDir.mul(lateralDistance))
+        .add(chamberUp.mul(verticalDistance))
+        .add(clearForwardDir.mul(forwardDistance))
         .toConst("renderPosition");
-      const frontTravel = cMin.z.sub(renderPosition.z).max(float(0)).toConst("frontTravel");
-      const coreFrontPassT = smoothstep(
-        chamberDepth.mul(0.22),
-        chamberDepth.mul(1.02),
+      const frontTravel = cMin.z
+        .sub(renderPosition.z)
+        .max(float(0))
+        .toConst("frontTravel");
+      const nearZoneT = smoothstep(
+        chamberDepth.mul(0.18),
+        chamberDepth.mul(0.92),
         frontTravel,
-      ).toConst("coreFrontPassT");
-      const coreOccupancyGate = mix(
-        float(1.0),
-        float(0.64),
-        smoothstep(float(0.42), float(0.84), coreFrontPassT).mul(coreApexT),
-      ).toConst("coreOccupancyGate");
-      const fringeFrontFade = smoothstep(
-        chamberDepth.mul(0.24),
-        chamberDepth.mul(0.60),
-        frontTravel,
-      ).toConst("fringeFrontFade");
-      const lossFrontFade = smoothstep(
-        chamberDepth.mul(0.16),
-        chamberDepth.mul(0.42),
-        frontTravel,
-      ).toConst("lossFrontFade");
-      const nearShapeT = smoothstep(
-        chamberDepth.mul(0.34),
-        chamberDepth.mul(1.10),
-        frontTravel,
-      ).toConst("nearShapeT");
-      const coreNearShapeT = nearShapeT.mul(smoothstep(float(0.42), float(1.0), spearDriveT))
-        .toConst("coreNearShapeT");
-      const fringeNearShapeT = nearShapeT.mul(smoothstep(float(0.46), float(1.0), fieldBuildT))
-        .toConst("fringeNearShapeT");
-      const lossNearShapeT = nearShapeT.mul(smoothstep(float(0.38), float(1.0), lossDriftT))
-        .toConst("lossNearShapeT");
-      const lateCullHash = fract(sin(instanceIndex.toFloat().mul(53.17)).mul(15731.743))
-        .toConst("lateCullHash");
-      const fringeLateT = smoothstep(float(0.40), float(0.82), burstParticleT).toConst("fringeLateT");
-      const lossLateT = smoothstep(float(0.24), float(0.62), burstParticleT).toConst("lossLateT");
-      const fringeKeepMask = float(1)
-        .sub(step(mix(float(1.0), float(0.46), fringeLateT), lateCullHash))
-        .toConst("fringeKeepMask");
-      const lossKeepMask = float(1)
-        .sub(step(mix(float(1.0), float(0.18), lossLateT), lateCullHash))
-        .toConst("lossKeepMask");
+      ).toConst("nearZoneT");
+      const frontSurvival = mix(float(1).sub(nearZoneT), float(1), heroPrivilege)
+        .toConst("frontSurvival");
+      const quietFade = float(1)
+        .sub(smoothstep(float(0.28), float(0.88), this.uniforms.quietChamber))
+        .toConst("quietFade");
+      const visibilityT = particleAliveT
+        .mul(frontSurvival)
+        .toConst("visibilityT");
 
-      // ─── LAYERED FLIGHT SHAPE ───────────────────────
-      const flightStretchT = smoothstep(float(0.14), float(0.46), burstParticleT)
-        .mul(float(1).sub(smoothstep(float(0.70), float(0.92), burstParticleT)))
-        .toConst("flightStretchT");
-      const flightWidth = mix(monumentWidth, float(0.62), flightStretchT).toConst("flightWidth");
-      const flightHeight = mix(monumentHeight, float(0.62), flightStretchT).toConst("flightHeight");
-      const flightLength = mix(monumentLength, float(1.9), flightStretchT).toConst("flightLength");
-      const coreShapeT = spearDriveT.toConst("coreShapeT");
-      const fringeShapeT = fieldBuildT.toConst("fringeShapeT");
-      const lossShapeT = lossDriftT.toConst("lossShapeT");
-      const roleShapeT = coreRole.mul(coreShapeT)
-        .add(fringeRole.mul(fringeShapeT))
-        .add(lossRole.mul(lossShapeT))
-        .toConst("roleShapeT");
-      const coreClearWidthTarget = mix(float(0.30), float(0.22), coreApexT)
-        .toConst("coreClearWidthTarget");
-      const coreClearHeightTarget = mix(float(0.30), float(0.22), coreApexT)
-        .toConst("coreClearHeightTarget");
-      const coreClearLengthTarget = mix(float(0.84), float(0.78), coreApexT)
-        .toConst("coreClearLengthTarget");
-      const clearWidthTarget = coreRole.mul(coreClearWidthTarget)
-        .add(fringeRole.mul(float(0.28)))
-        .add(lossRole.mul(float(0.18)))
-        .toConst("clearWidthTarget");
-      const clearHeightTarget = coreRole.mul(coreClearHeightTarget)
-        .add(fringeRole.mul(float(0.28)))
-        .add(lossRole.mul(float(0.18)))
-        .toConst("clearHeightTarget");
-      const clearLengthTarget = coreRole.mul(coreClearLengthTarget)
-        .add(fringeRole.mul(float(0.36)))
-        .add(lossRole.mul(float(0.18)))
-        .toConst("clearLengthTarget");
-      const clearWidth = mix(flightWidth, clearWidthTarget, roleShapeT).toConst("clearWidth");
-      const clearHeight = mix(flightHeight, clearHeightTarget, roleShapeT).toConst("clearHeight");
-      const clearLength = mix(flightLength, clearLengthTarget, roleShapeT).toConst("clearLength");
-      const coreNearWidthMul = mix(float(1.0), float(0.58), coreNearShapeT)
-        .mul(mix(float(1.0), float(0.86), coreApexT))
-        .toConst("coreNearWidthMul");
-      const fringeNearWidthMul = mix(float(1.0), float(0.24), fringeNearShapeT)
-        .toConst("fringeNearWidthMul");
-      const lossNearWidthMul = mix(float(1.0), float(0.08), lossNearShapeT)
-        .toConst("lossNearWidthMul");
-      const coreNearLengthMul = mix(float(1.0), float(0.90), coreNearShapeT)
-        .mul(mix(float(1.0), float(0.96), coreApexT))
-        .toConst("coreNearLengthMul");
-      const fringeNearLengthMul = mix(float(1.0), float(0.54), fringeNearShapeT)
-        .toConst("fringeNearLengthMul");
-      const lossNearLengthMul = mix(float(1.0), float(0.34), lossNearShapeT)
-        .toConst("lossNearLengthMul");
-      const roleNearWidthMul = coreRole.mul(coreNearWidthMul)
-        .add(fringeRole.mul(fringeNearWidthMul))
-        .add(lossRole.mul(lossNearWidthMul))
-        .toConst("roleNearWidthMul");
-      const roleNearLengthMul = coreRole.mul(coreNearLengthMul)
-        .add(fringeRole.mul(fringeNearLengthMul))
-        .add(lossRole.mul(lossNearLengthMul))
-        .toConst("roleNearLengthMul");
-      const finalWidth = mix(monumentWidth, clearWidth, releaseT).mul(roleNearWidthMul)
+      const erodedWidthTarget = mix(float(0.12), float(0.24), forwardPrivilege)
+        .toConst("erodedWidthTarget");
+      const erodedHeightTarget = mix(float(0.12), float(0.24), forwardPrivilege)
+        .toConst("erodedHeightTarget");
+      const erodedLengthTarget = mix(float(0.18), float(0.74), forwardPrivilege)
+        .toConst("erodedLengthTarget");
+      const clearWidth = mix(monumentWidth, erodedWidthTarget, particleReleaseT)
+        .toConst("clearWidth");
+      const clearHeight = mix(monumentHeight, erodedHeightTarget, particleReleaseT)
+        .toConst("clearHeight");
+      const clearLength = mix(monumentLength, erodedLengthTarget, particleReleaseT)
+        .toConst("clearLength");
+      const nearWidthMul = mix(
+        float(1.0),
+        mix(float(0.02), float(0.06), heroPrivilege),
+        nearZoneT,
+      ).toConst("nearWidthMul");
+      const nearHeightMul = mix(
+        float(1.0),
+        mix(float(0.02), float(0.06), heroPrivilege),
+        nearZoneT,
+      ).toConst("nearHeightMul");
+      const nearLengthMul = mix(
+        float(1.0),
+        mix(float(0.28), float(0.86), heroPrivilege),
+        nearZoneT,
+      ).toConst("nearLengthMul");
+      const finalWidth = clearWidth
+        .mul(nearWidthMul)
         .toConst("finalWidth");
-      const finalHeight = mix(monumentHeight, clearHeight, releaseT).mul(roleNearWidthMul)
+      const finalHeight = clearHeight
+        .mul(nearHeightMul)
         .toConst("finalHeight");
-      const finalLength = mix(monumentLength, clearLength, releaseT).mul(roleNearLengthMul)
+      const finalLength = clearLength
+        .mul(nearLengthMul)
         .toConst("finalLength");
 
       const stretchedPos = vec3(
@@ -609,111 +414,41 @@ class ParticleRenderer {
       );
 
       // ─── SCALE ──────────────────────────────────────
-      const preloadScale = mix(float(1.0), float(1.08), preloadT).toConst("preloadScale");
-      const flightScale = mix(
-        float(1.0),
-        float(0.97),
-        smoothstep(float(0.34), float(0.82), burstParticleT),
-      ).toConst("flightScale");
-      const coreScaleJitter = mix(float(1.0), float(1.34), particleHash)
-        .toConst("coreScaleJitter");
-      const coreApexScaleMul = mix(float(1.0), float(0.76), coreApexT)
-        .toConst("coreApexScaleMul");
-      const fringeScaleJitter = mix(float(0.88), float(1.16), particleHash)
-        .toConst("fringeScaleJitter");
-      const lossScaleJitter = mix(float(0.70), float(0.98), particleHash)
-        .toConst("lossScaleJitter");
-      const coreVisibility = float(1)
-        .sub(smoothstep(float(0.0), float(1.0), coreFrontPassT.mul(0.82)))
-        .mul(coreOccupancyGate)
-        .mul(float(1).sub(smoothstep(float(0.42), float(0.78), this.uniforms.quietChamber)))
-        .toConst("coreVisibility");
-      const fringeVisibility = float(1).sub(
-        smoothstep(float(0.34), float(0.94), this.uniforms.quietChamber),
-      )
-        .mul(float(1).sub(fringeFrontFade.mul(0.78)))
-        .mul(float(1).sub(smoothstep(float(0.12), float(0.40), this.uniforms.quietChamber)))
-        .toConst("fringeVisibility");
-      const lossVisibility = float(1)
-        .sub(smoothstep(float(0.62), float(1.0), burstParticleT))
-        .mul(float(1).sub(lossFrontFade))
-        .mul(float(1).sub(smoothstep(float(0.04), float(0.24), this.uniforms.quietChamber)))
-        .toConst("lossVisibility");
-      const roleVisibility = coreRole.mul(coreVisibility)
-        .add(fringeRole.mul(fringeVisibility.mul(fringeKeepMask)))
-        .add(lossRole.mul(lossVisibility.mul(lossKeepMask)))
-        .toConst("roleVisibility");
-      const roleScale = coreRole.mul(float(0.40).mul(coreScaleJitter).mul(coreApexScaleMul))
-        .add(fringeRole.mul(float(0.24).mul(fringeScaleJitter)))
-        .add(lossRole.mul(float(0.10).mul(lossScaleJitter)))
-        .toConst("roleScale");
-      const nearScaleMul = coreRole.mul(coreNearScaleMul)
-        .add(fringeRole.mul(fringeNearScaleMul))
-        .add(lossRole.mul(lossNearScaleMul))
-        .toConst("nearScaleMul");
-      const hardClearGate = float(1)
-        .sub(smoothstep(float(0.52), float(0.70), this.uniforms.quietChamber))
-        .toConst("hardClearGate");
-      const roleHardClear = coreRole.mul(float(1.0))
-        .add(fringeRole.mul(hardClearGate))
-        .add(lossRole.mul(hardClearGate))
-        .toConst("roleHardClear");
-      const quietFade = float(1).sub(
-        smoothstep(float(0.34), float(0.96), this.uniforms.quietChamber),
-      ).toConst("quietFade");
-      const clearScale = mix(flightScale, roleScale, roleShapeT)
-        .mul(roleVisibility)
-        .mul(nearScaleMul)
-        .mul(roleHardClear)
-        .mul(quietFade)
+      const preloadScale = mix(float(1.0), float(1.08), preloadT).toConst(
+        "preloadScale",
+      );
+      const releaseScaleTarget = mix(float(0.12), float(0.36), denseCoreT)
+        .toConst("releaseScaleTarget");
+      const clearScale = mix(float(1.0), releaseScaleTarget, particleReleaseT)
+        .mul(visibilityT)
         .toConst("clearScale");
-      const renderScale = mix(preloadScale, clearScale, releaseT).toConst("renderScale");
+      const renderScale = mix(preloadScale, clearScale, particleReleaseT)
+        .mul(quietFade)
+        .toConst("renderScale");
 
       // ─── DIRECTION ──────────────────────────────────
-      vBurstT.assign(burstParticleT);
-      vFrontPassT.assign(coreFrontPassT);
-      vFringeFrontFade.assign(fringeFrontFade);
-      vLossFrontFade.assign(lossFrontFade);
-      vCoreRole.assign(coreRole);
-      vFringeRole.assign(fringeRole);
-      vLossRole.assign(lossRole);
-      vFringeKeep.assign(fringeKeepMask);
-      vLossKeep.assign(lossKeepMask);
-
-      const monumentDirection = normalize(mix(particleDirection.xyz, hashDir, float(0.08)));
-      const flightDirection = normalize(mix(
-        mix(
-          particleDirection.xyz,
-          monumentDirection,
-          monumentMix.mul(0.55).add(preloadT.mul(0.25)).clamp(0, 1),
-        ),
-        burstDir,
-        releaseT,
-      )).toConst("flightDirection");
-      const roleTravelDir = coreTravelDir.mul(coreRole)
-        .add(fringeTravelDir.mul(fringeRole))
-        .add(lossTravelDir.mul(lossRole))
-        .toConst("roleTravelDir");
-      const roleDirectionT = coreRole.mul(spearDriveT)
-        .add(fringeRole.mul(fieldBuildT))
-        .add(lossRole.mul(lossDriftT))
-        .toConst("roleDirectionT");
+      const travelBlendT = mix(float(0.20), float(0.96), forwardPrivilege)
+        .toConst("travelBlendT");
+      const travelDirection = normalize(
+        mix(peelDir, clearForwardDir, travelBlendT)
+          .add(hashDir.mul(float(0.01)).mul(float(1).sub(heroPrivilege))),
+      ).toConst("travelDirection");
       const renderDirection = normalize(
-        mix(flightDirection, roleTravelDir, roleDirectionT),
+        mix(particleDirection.xyz, travelDirection, particleReleaseT),
       ).toConst("renderDirection");
 
       const mat = calcLookAtMatrix(renderDirection);
-      vNormal.assign(transformNormalToView(mat.mul(normalLocal)));
       vAo.assign(particlePosition.z.div(64));
-      vAo.assign(
-        vAo
-          .mul(vAo)
-          .oneMinus()
-          .add(monumentMix.mul(0.02)),
-      );
+      vAo.assign(vAo.mul(vAo).oneMinus().add(monumentMix.mul(0.02)));
       return mat
         .mul(stretchedPos.mul(this.uniforms.size.mul(1.08)))
-        .mul(mix(particleDensity.mul(0.28).add(0.72).clamp(0, 1), float(0.975), monumentMix))
+        .mul(
+          mix(
+            particleDensity.mul(0.28).add(0.72).clamp(0, 1),
+            float(0.975),
+            monumentMix,
+          ),
+        )
         .mul(renderScale)
         .add(renderPosition);
     })();
@@ -721,113 +456,131 @@ class ParticleRenderer {
     const particleHeat = particle.get("heat");
     const coal = vec3(0.012, 0.009, 0.008);
     const surfaceColor = particleColor.toConst("surfaceColor");
-    const releasePulse = smoothstep(float(0.06), float(0.18), this.uniforms.collapseMix)
-      .mul(float(1).sub(smoothstep(float(0.34), float(0.62), this.uniforms.collapseMix)))
-      .toConst("releasePulse");
-    const releaseHeat = releasePulse
-      .mul(mix(float(0.55), float(1.0), smoothstep(float(0.0), float(0.28), vBurstT)))
-      .mul(float(1).sub(smoothstep(float(0.58), float(0.96), vBurstT)))
+    const colorPosition = particle.get("position").xyz.toConst("colorPosition");
+    const colorFreezeSpan = this.uniforms.freezeBoundsMax
+      .sub(this.uniforms.freezeBoundsMin)
+      .toConst("colorFreezeSpan");
+    const colorFreezeHalfSpan = vec3(
+      colorFreezeSpan.x.mul(0.5).max(float(0.001)),
+      colorFreezeSpan.y.mul(0.5).max(float(0.001)),
+      colorFreezeSpan.z.mul(0.5).max(float(0.001)),
+    ).toConst("colorFreezeHalfSpan");
+    const colorFreezeLocal = vec3(
+      colorPosition.x
+        .sub(this.uniforms.freezeCenter.x)
+        .div(colorFreezeHalfSpan.x),
+      colorPosition.y
+        .sub(this.uniforms.freezeCenter.y)
+        .div(colorFreezeHalfSpan.y),
+      colorPosition.z
+        .sub(this.uniforms.freezeCenter.z)
+        .div(colorFreezeHalfSpan.z),
+    ).toConst("colorFreezeLocal");
+    const colorCenterDistN = colorFreezeLocal
+      .length()
+      .div(float(1.7320508))
       .clamp(0, 1)
-      .toConst("releaseHeat");
-    // Progressive thermal ramp: No pink. Dark matter ember -> Fire Gold -> Bright Gold
-    const deepRed = vec3(0.10, 0.012, 0.0);
+      .toConst("colorCenterDistN");
+    const colorDenseCoreT = float(1)
+      .sub(smoothstep(float(0.18), float(0.42), colorCenterDistN))
+      .toConst("colorDenseCoreT");
+    const colorErosionWaveT = smoothstep(
+      float(0.16),
+      float(0.84),
+      this.uniforms.collapseMix,
+    ).toConst("colorErosionWaveT");
+    const colorReleaseFront = colorErosionWaveT
+      .sub(float(1).sub(colorCenterDistN))
+      .toConst("colorReleaseFront");
+    const colorParticleReleaseT = smoothstep(
+      float(-0.04),
+      float(0.14),
+      colorReleaseFront,
+    ).toConst("colorParticleReleaseT");
+    const colorSurvivalEnd = mix(
+      float(0.28),
+      float(1.10),
+      colorDenseCoreT,
+    ).toConst("colorSurvivalEnd");
+    const colorAliveT = float(1)
+      .sub(smoothstep(float(0.10), colorSurvivalEnd, colorReleaseFront))
+      .toConst("colorAliveT");
+    const quietFadeColor = float(1)
+      .sub(smoothstep(float(0.28), float(0.88), this.uniforms.quietChamber))
+      .toConst("quietFadeColor");
+    const colorVisibilityT = colorAliveT
+      .mul(quietFadeColor)
+      .toConst("colorVisibilityT");
+    const collapseFade = smoothstep(
+      float(0.04),
+      float(0.16),
+      this.uniforms.collapseMix,
+    ).toConst("collapseFade");
+    const heroHeatT = smoothstep(
+      float(0.68),
+      float(0.94),
+      this.uniforms.collapseMix,
+    )
+      .mul(colorDenseCoreT)
+      .mul(colorVisibilityT)
+      .toConst("heroHeatT");
+
+    const deepRed = vec3(0.1, 0.012, 0.0);
     const reignEmber = vec3(0.24, 0.035, 0.0);
-    const flareRed = vec3(0.58, 0.11, 0.0);
     const fireGold = vec3(0.92, 0.42, 0.0);
-    const hotWhite = vec3(1.0, 0.78, 0.24);
-    const rc1 = mix(coal, deepRed, smoothstep(float(0.0), float(0.22), releaseHeat));
-    const rc2 = mix(rc1, reignEmber, smoothstep(float(0.18), float(0.42), releaseHeat));
-    const rc3 = mix(rc2, flareRed, smoothstep(float(0.38), float(0.62), releaseHeat));
-    const rc4 = mix(rc3, fireGold, smoothstep(float(0.58), float(0.84), releaseHeat));
-    // Debug visualization: only live heat debug remains.
     const debugHeatColor = vec3(particleHeat, particleHeat.mul(0.3), float(0));
     const dv = this.uniforms.debugVis;
     const debugMix = smoothstep(float(0.5), float(1.0), dv);
-    const coolT = smoothstep(float(0.34), float(1.0), vBurstT).toConst("coolT");
-    const coreVisibility = float(1)
-      .sub(smoothstep(float(0.0), float(1.0), vFrontPassT.mul(0.82)))
-      .mul(float(1).sub(smoothstep(float(0.42), float(0.78), this.uniforms.quietChamber)))
-      .toConst("coreVisibility");
-    const fringeVisibility = float(1).sub(
-      smoothstep(float(0.34), float(0.94), this.uniforms.quietChamber),
-    )
-      .mul(float(1).sub(vFringeFrontFade.mul(0.78)))
-      .mul(float(1).sub(smoothstep(float(0.12), float(0.40), this.uniforms.quietChamber)))
-      .mul(vFringeKeep)
-      .toConst("fringeVisibility");
-    const lossVisibility = float(1)
-      .sub(smoothstep(float(0.62), float(1.0), vBurstT))
-      .mul(float(1).sub(vLossFrontFade))
-      .mul(float(1).sub(smoothstep(float(0.04), float(0.24), this.uniforms.quietChamber)))
-      .mul(vLossKeep)
-      .toConst("lossVisibility");
-    const coreApexEmissiveT = smoothstep(float(0.44), float(0.76), vBurstT)
-      .mul(float(1).sub(smoothstep(float(0.80), float(0.96), vBurstT)))
-      .toConst("coreApexEmissiveT");
-    const coreHotLift = vCoreRole
-      .mul(smoothstep(float(0.97), float(1.0), releaseHeat))
-      .mul(coreVisibility)
-      .mul(mix(float(0.16), float(0.08), coreApexEmissiveT))
-      .toConst("coreHotLift");
-    const releaseColor = mix(rc4, hotWhite, coreHotLift)
-      .toConst("releaseColor");
-    const fringeReleaseColor = mix(
-      rc3,
-      rc4,
-      smoothstep(float(0.58), float(0.84), releaseHeat).mul(0.55),
-    ).toConst("fringeReleaseColor");
-    const coreCool = mix(reignEmber, deepRed, float(0.35)).toConst("coreCool");
-    const fringeCool = mix(deepRed, coal, float(0.25)).toConst("fringeCool");
-    const coreClearColor = mix(releaseColor, coreCool, coolT).toConst("coreClearColor");
-    const fringeClearColor = mix(fringeReleaseColor, fringeCool, coolT).toConst("fringeClearColor");
-    const lossClearColor = mix(
+    const cooledSurface = mix(
+      surfaceColor,
       deepRed,
-      coal,
-      smoothstep(float(0.12), float(0.72), vBurstT),
-    ).toConst("lossClearColor");
-    const roleClearColor = vCoreRole.mul(coreClearColor.mul(coreVisibility))
-      .add(vFringeRole.mul(fringeClearColor.mul(fringeVisibility)))
-      .add(vLossRole.mul(lossClearColor.mul(lossVisibility)))
-      .toConst("roleClearColor");
+      smoothstep(float(0.04), float(0.34), this.uniforms.collapseMix),
+    ).toConst("cooledSurface");
+    const shellAshT = smoothstep(float(0.10), float(0.54), colorReleaseFront)
+      .mul(colorCenterDistN)
+      .toConst("shellAshT");
+    const shellColor = mix(cooledSurface, coal, shellAshT).toConst("shellColor");
+    const remnantColor = mix(
+      reignEmber,
+      fireGold,
+      smoothstep(float(0.74), float(0.96), this.uniforms.collapseMix),
+    ).toConst("remnantColor");
     const collapsedColor = mix(
       surfaceColor,
-      roleClearColor,
-      smoothstep(float(0.04), float(0.18), this.uniforms.collapseMix),
+      mix(
+        shellColor,
+        remnantColor,
+        colorDenseCoreT.mul(
+          smoothstep(float(0.52), float(0.90), this.uniforms.collapseMix),
+        ),
+      ).mul(mix(float(0.24), float(1.0), colorVisibilityT)),
+      collapseFade,
     ).toConst("collapsedColor");
     this.material.colorNode = mix(collapsedColor, debugHeatColor, debugMix);
     const glowFactor = smoothstep(float(0.18), float(0.52), particleHeat);
     const ember = vec3(0.82, 0.12, 0.02);
-    const emberLift = smoothstep(float(0.48), float(0.82), particleHeat).mul(0.06);
-    const preCollapseFade = float(1).sub(
-      smoothstep(float(0.0), float(0.05), this.uniforms.collapseMix)
-    ).toConst("preCollapseFade");
+    const emberLift = smoothstep(float(0.48), float(0.82), particleHeat).mul(
+      0.06,
+    );
+    const preCollapseFade = float(1)
+      .sub(smoothstep(float(0.0), float(0.05), this.uniforms.collapseMix))
+      .toConst("preCollapseFade");
     const normalEmissive = surfaceColor
       .mul(glowFactor)
       .mul(0.34)
       .add(ember.mul(emberLift))
       .mul(preCollapseFade);
-    const releaseFlash = releasePulse
-      .mul(float(1).sub(smoothstep(float(0.48), float(0.90), vBurstT)))
-      .mul(0.50)
-      .toConst("releaseFlash");
-    const hardClearGate = float(1)
-      .sub(smoothstep(float(0.52), float(0.70), this.uniforms.quietChamber))
-      .toConst("hardClearGate");
-    const roleEmissiveWeight = vCoreRole.mul(
-      coreVisibility.mul(mix(float(0.68), float(0.40), coreApexEmissiveT)),
-    )
-      .add(vFringeRole.mul(fringeVisibility.mul(0.07).mul(hardClearGate)))
-      .add(vLossRole.mul(lossVisibility.mul(0.01).mul(hardClearGate)))
-      .toConst("roleEmissiveWeight");
-    const releaseEmissive = releaseColor
-      .mul(releaseFlash)
-      .mul(roleEmissiveWeight)
-      .toConst("releaseEmissive");
-    const collapseFade = smoothstep(float(0.04), float(0.16), this.uniforms.collapseMix);
-    const finalEmissive = mix(normalEmissive, releaseEmissive, collapseFade);
+    const collapseEmissive = reignEmber
+      .mul(heroHeatT.mul(0.08))
+      .toConst("collapseEmissive");
+    const finalEmissive = mix(
+      normalEmissive,
+      collapseEmissive,
+      smoothstep(float(0.32), float(0.78), this.uniforms.collapseMix),
+    );
     this.material.emissiveNode = mix(finalEmissive, vec3(0), debugMix);
     const heatBloom = smoothstep(float(0.62), float(0.82), particleHeat);
-    this._bloomIntensityNode = heatBloom.max(releaseFlash.mul(releaseHeat).mul(0.55));
+    this._bloomIntensityNode = heatBloom.max(heroHeatT.mul(0.04));
     this.material.aoNode = vAo;
 
     this.object = new THREE.Mesh(this.geometry, this.material);
@@ -876,21 +629,21 @@ class ParticleRenderer {
     return target;
   }
 
-  setFreezeDescriptor(descriptor) {
-    if (!descriptor) {
-      this.freezeDescriptor = null;
+  setFreezeSnapshot(snapshot) {
+    if (!snapshot) {
+      this.freezeSnapshot = null;
       return;
     }
 
-    this.freezeDescriptor = {
-      center: descriptor.center.clone(),
-      boundsMin: descriptor.boundsMin.clone(),
-      boundsMax: descriptor.boundsMax.clone(),
+    this.freezeSnapshot = {
+      center: snapshot.center.clone(),
+      boundsMin: snapshot.boundsMin.clone(),
+      boundsMax: snapshot.boundsMax.clone(),
     };
   }
 
-  clearFreezeDescriptor() {
-    this.freezeDescriptor = null;
+  clearFreezeSnapshot() {
+    this.freezeSnapshot = null;
   }
 
   update() {
@@ -933,14 +686,18 @@ class ParticleRenderer {
       chamberSpan.z * 0.08,
     );
 
-    if (this.freezeDescriptor) {
-      this.uniforms.freezeCenter.value.copy(this.freezeDescriptor.center);
-      this.uniforms.freezeBoundsMin.value.copy(this.freezeDescriptor.boundsMin);
-      this.uniforms.freezeBoundsMax.value.copy(this.freezeDescriptor.boundsMax);
+    if (this.freezeSnapshot) {
+      this.uniforms.freezeCenter.value.copy(this.freezeSnapshot.center);
+      this.uniforms.freezeBoundsMin.value.copy(this.freezeSnapshot.boundsMin);
+      this.uniforms.freezeBoundsMax.value.copy(this.freezeSnapshot.boundsMax);
     } else {
       this.uniforms.freezeCenter.value.copy(fallbackCenter);
-      this.uniforms.freezeBoundsMin.value.copy(fallbackCenter).sub(fallbackExtents);
-      this.uniforms.freezeBoundsMax.value.copy(fallbackCenter).add(fallbackExtents);
+      this.uniforms.freezeBoundsMin.value
+        .copy(fallbackCenter)
+        .sub(fallbackExtents);
+      this.uniforms.freezeBoundsMax.value
+        .copy(fallbackCenter)
+        .add(fallbackExtents);
     }
 
     const debugMap = { heat: 1 };

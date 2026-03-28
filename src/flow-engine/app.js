@@ -40,9 +40,9 @@ class App {
     startupSourceFieldAnchorOffsets = null;
     mode = "idle";
     idleParticlePresentation = "active";
-    freezeDescriptorCaptured = false;
-    freezeDescriptorRequest = null;
-    freezeDescriptorCycle = 0;
+    freezeSnapshotCaptured = false;
+    freezeSnapshotRequest = null;
+    freezeSnapshotCycle = 0;
 
     constructor(renderer) {
         this.renderer = renderer;
@@ -268,11 +268,11 @@ class App {
     }
 
     setConvergenceProgress(progress) {
-        if (progress < 100 && (this.freezeDescriptorCaptured || this.freezeDescriptorRequest)) {
-            this.freezeDescriptorCaptured = false;
-            this.freezeDescriptorCycle++;
-            this.freezeDescriptorRequest = null;
-            this.particleRenderer?.clearFreezeDescriptor?.();
+        if (progress < 100 && (this.freezeSnapshotCaptured || this.freezeSnapshotRequest)) {
+            this.freezeSnapshotCaptured = false;
+            this.freezeSnapshotCycle++;
+            this.freezeSnapshotRequest = null;
+            this.particleRenderer?.clearFreezeSnapshot?.();
         }
     }
 
@@ -345,34 +345,34 @@ class App {
         await this.mlsMpmSim.update(delta, elapsed);
 
         if (conf.postFreezeSimLock > 0.5) {
-            if (!this.freezeDescriptorCaptured && !this.freezeDescriptorRequest) {
-                const requestCycle = this.freezeDescriptorCycle;
-                this.freezeDescriptorRequest = this.mlsMpmSim.captureFreezeDescriptor()
-                    .then((descriptor) => {
+            if (!this.freezeSnapshotCaptured && !this.freezeSnapshotRequest) {
+                const requestCycle = this.freezeSnapshotCycle;
+                this.freezeSnapshotRequest = this.mlsMpmSim.captureFreezeSnapshot()
+                    .then((snapshot) => {
                         if (
-                            descriptor &&
-                            requestCycle === this.freezeDescriptorCycle &&
+                            snapshot &&
+                            requestCycle === this.freezeSnapshotCycle &&
                             conf.postFreezeSimLock > 0.5
                         ) {
-                            this.particleRenderer?.setFreezeDescriptor?.(descriptor);
-                            this.freezeDescriptorCaptured = true;
+                            this.particleRenderer?.setFreezeSnapshot?.(snapshot);
+                            this.freezeSnapshotCaptured = true;
                         }
                     })
                     .finally(() => {
-                        if (requestCycle === this.freezeDescriptorCycle) {
-                            this.freezeDescriptorRequest = null;
+                        if (requestCycle === this.freezeSnapshotCycle) {
+                            this.freezeSnapshotRequest = null;
                         }
                     });
             }
 
-            if (this.freezeDescriptorRequest) {
-                await this.freezeDescriptorRequest;
+            if (this.freezeSnapshotRequest) {
+                await this.freezeSnapshotRequest;
             }
-        } else if (this.freezeDescriptorCaptured || this.freezeDescriptorRequest) {
-            this.freezeDescriptorCaptured = false;
-            this.freezeDescriptorCycle++;
-            this.freezeDescriptorRequest = null;
-            this.particleRenderer?.clearFreezeDescriptor?.();
+        } else if (this.freezeSnapshotCaptured || this.freezeSnapshotRequest) {
+            this.freezeSnapshotCaptured = false;
+            this.freezeSnapshotCycle++;
+            this.freezeSnapshotRequest = null;
+            this.particleRenderer?.clearFreezeSnapshot?.();
         }
 
         this.particleRenderer.update();

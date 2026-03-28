@@ -1,3 +1,5 @@
+> Archive note: This file is not authoritative for the current VOLKANO renderer or post-enter work. It documents unrelated ECS/component reference material and should be ignored unless a task explicitly asks for it.
+
 # Components Reference
 
 > **Last Updated:** 2026-01-20

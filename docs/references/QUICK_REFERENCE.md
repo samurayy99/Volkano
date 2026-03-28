@@ -1,3 +1,5 @@
+> Archive note: This file is not authoritative for the current VOLKANO renderer or post-enter work. It documents unrelated engine/game reference material and should be ignored unless a task explicitly asks for it.
+
 # Quick Reference Guide
 
 **Fast lookup for essential facts, commands, and patterns.**

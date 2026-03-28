@@ -1,3 +1,5 @@
+> Archive note: This file is not authoritative for the current VOLKANO renderer or post-enter work. It documents unrelated rendering architecture research and should be ignored unless a task explicitly asks for it.
+
 # WebGPU Rendering Architecture
 
 > **Status:** Proposal
