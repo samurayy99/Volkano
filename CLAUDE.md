@@ -54,7 +54,9 @@ We also proved what does **not** work:
 Additional current truth:
 
 - cleanup and ownership are necessary, but do not automatically create a strong visual read
-- the current failure mode is no longer primarily architecture chaos, but weak material read
+- the current failure mode is no longer primarily architecture chaos
+- the active bottleneck is now the renderer-owned post-freeze carry / clearing motion read
+- the current likely wrong live owner is the bounds-based carry form owner inside `particleRenderer.js`
 - if the mass reads as furry, ribbon-like, dusty, or like a particle blob feeding a crack, the sequence is still wrong
 - the post-freeze event must read as matter being staged and cleared, not as a particle effect doing tricks
 
@@ -145,6 +147,12 @@ The frozen mass should hold as a real form, then be cleared in a way that preser
 
 The question is not “is the math elegant?”  
 The question is “does the browser show one strong material sentence?”
+
+Current practical implication:
+
+- the current active challenge is not source tuning, proof styling, or bloom language
+- it is replacing the wrong post-freeze carry owner without breaking pre-enter
+- if a pass changes the renderer globally and threatens source visibility, the pass is wrong even if the theory is interesting
 
 ---
 
@@ -389,6 +397,7 @@ The renderer owns:
 - removing legacy reclaim / seam / capture logic
 - decoupling overloaded renderer signals
 - restructuring post-freeze renderer logic for a cleaner material read
+- replacing the active post-freeze carry owner with a safer, more truthful local renderer owner
 - emitting one clean proof-ready signal at the end of the authored beat
 
 ### Not allowed

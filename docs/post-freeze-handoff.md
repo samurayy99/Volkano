@@ -3,7 +3,7 @@
 This is the current session-start handoff for work on the
 post-enter / pre-proof sequence.
 
-Read this after `AGENTS.md`.
+Read this after `AGENTS.md` or, if a tool expects a repo file, after `/Users/lenox27/my_project/AGENTS.md`.
 
 ## What Matters Right Now
 
@@ -47,16 +47,14 @@ unless a new codepath is actually found.
 
 ### 2. The current failure is no longer mainly architecture chaos
 
-The current branch fails primarily on material read and stage dominance.
+The current branch fails primarily on post-freeze motion ownership and stage dominance.
 
 Current failure reads include:
 
-- no true expensive monument hold after enter
-- early mound / carpet / brick-mass read
-- body treated too early like compacting debris
-- brown / obsidian homogenization before the hold has landed
-- debris-cloud semantics instead of controlled shell clearing
-- crack-centered late remnant / left-edge streak garbage
+- front-lobe / egg / disk / slab / front-wall family during carry
+- toward-screen travel arriving as the wrong owner or too late
+- bounds-remapped carry envelope reading as a synthetic front form
+- repeated coefficient tuning changing the shape family without fixing the owner
 
 ### 3. Pre-enter is protected, but not “solved forever”
 
@@ -68,6 +66,7 @@ Current truth:
 
 Do not reopen source tuning casually.
 Do not ignore source regressions either.
+Do not reroute the global live particle baseline to test post-freeze ideas.
 
 ### 4. The bridge is not the main visual culprit right now
 
@@ -123,11 +122,10 @@ The next useful work is:
 
 - renderer-only
 - post-enter / pre-proof only
-- restoring a true monument hold first
-- then shell erosion
-- then forward-biased travel
-- then core pass
-- then genuinely empty chamber
+- protecting pre-enter while changing only the active wrong post-freeze owner
+- treating the current bounds-based carry form owner as the likely replaceable culprit
+- keeping bridge timing, solver behavior, and material language out of the next ownership experiment
+- preferring one local owner replacement over more tuning on the same envelope family
 
 If the first post-enter state is still a mound, carpet, or brown brick mass,
 the pass has failed regardless of architectural cleanliness.

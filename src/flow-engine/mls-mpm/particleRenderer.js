@@ -209,7 +209,9 @@ class ParticleRenderer {
         crustCompression,
       ).toConst("monumentLength");
 
-      // ─── TIMING + SPATIAL EROSION ───────────────────
+      // ─── POST-FREEZE OWNER SETUP ────────────────────
+      // Keep the live source / pre-enter path anchored to the raw particle state.
+      // All post-freeze ownership stays downstream from this baseline.
       const cMix = this.uniforms.collapseMix;
       const freezeCenter = this.uniforms.freezeCenter;
       const freezeBoundsMin = this.uniforms.freezeBoundsMin;
@@ -260,6 +262,7 @@ class ParticleRenderer {
         monumentPosition.y.sub(freezeCenter.y).div(freezeHalfSpan.y),
         monumentPosition.z.sub(freezeCenter.z).div(freezeHalfSpan.z),
       ).toConst("freezeLocal");
+      // ─── FREEZE-SPACE CLASSIFICATION ────────────────
       const centerDistN = freezeLocal
         .length()
         .div(float(1.7320508))
@@ -293,148 +296,80 @@ class ParticleRenderer {
         mix(radialDir, tangentDir, float(0.34)).add(hashDir.mul(0.03)),
       ).toConst("peelDir");
 
-      const erosionWaveT = smoothstep(float(0.16), float(0.84), cMix).toConst(
-        "erosionWaveT",
-      );
-      const releaseFront = erosionWaveT
-        .sub(float(1).sub(centerDistN))
-        .toConst("releaseFront");
-      const particleReleaseT = smoothstep(
-        float(-0.04),
-        float(0.14),
-        releaseFront,
-      ).toConst("particleReleaseT");
-      const heroPassT = smoothstep(float(0.68), float(0.94), cMix)
-        .mul(denseCoreT)
-        .toConst("heroPassT");
-      const survivalEnd = mix(float(0.28), float(1.10), denseCoreT).toConst(
-        "survivalEnd",
-      );
-      const particleAliveT = float(1)
-        .sub(smoothstep(float(0.10), survivalEnd, releaseFront))
-        .toConst("particleAliveT");
+      // ─── UNIFIED DEPARTURE ─────────────────────────────
+      // Each particle: ONE target, ONE timeline, ONE scale curve.
+      // Shell departs first, core follows. Everyone reaches zero.
 
-      const peelDistance = chamberDiag
-        .mul(mix(float(0.03), float(0.16), shellPrivilege))
-        .mul(particleReleaseT)
-        .mul(smoothstep(float(0.14), float(0.36), cMix))
-        .mul(float(1).sub(denseCoreT.mul(0.65)))
-        .toConst("peelDistance");
-      const lateralDistance = spanX
-        .mul(0.05)
-        .mul(shellPrivilege)
-        .mul(particleReleaseT)
-        .mul(float(1).sub(denseCoreT.mul(0.75)))
-        .mul(hashY)
-        .toConst("lateralDistance");
-      const verticalDistance = spanY
-        .mul(0.03)
-        .mul(shellPrivilege)
-        .mul(particleReleaseT)
-        .mul(float(1).sub(denseCoreT.mul(0.75)))
-        .mul(hashX)
-        .toConst("verticalDistance");
-      const baseForwardDistance = chamberDepth
-        .mul(mix(float(0.04), float(0.52), forwardPrivilege))
-        .mul(particleReleaseT)
-        .toConst("baseForwardDistance");
-      const heroForwardDistance = chamberDepth
-        .mul(1.48)
-        .mul(heroPassT)
-        .toConst("heroForwardDistance");
-      const forwardDistance = baseForwardDistance
-        .add(heroForwardDistance)
-        .toConst("forwardDistance");
+      // Stagger: shell starts at cMix 0.14, core at 0.54 (wider gap = depth wave)
+      const departureStart = mix(float(0.54), float(0.14), centerDistN)
+        .toConst("departureStart");
+      const departureEnd = departureStart.add(float(0.34))
+        .toConst("departureEnd");
+      const departureT = smoothstep(departureStart, departureEnd, cMix)
+        .toConst("departureT");
 
-      const renderPosition = monumentPosition
-        .add(peelDir.mul(peelDistance))
-        .add(tangentDir.mul(lateralDistance))
-        .add(chamberUp.mul(verticalDistance))
-        .add(clearForwardDir.mul(forwardDistance))
+      // Direction: radial outward + slight lift + forward bias + hash asymmetry
+      const departureDir = normalize(
+        radialDir.mul(float(0.30))
+          .add(chamberUp.mul(float(0.06)))
+          .add(clearForwardDir.mul(float(0.55)))
+          .add(hashDir.mul(float(0.12))),
+      ).toConst("departureDir");
+
+      // Distance: generous, shell flies farther than core
+      const departureRadius = chamberDiag
+        .mul(mix(float(0.36), float(0.64), centerDistN))
+        .toConst("departureRadius");
+
+      // Position: lerp from monument to departure target
+      const departureTarget = monumentPosition
+        .add(departureDir.mul(departureRadius))
+        .toConst("departureTarget");
+      const renderPosition = mix(monumentPosition, departureTarget, departureT.mul(departureT))
         .toConst("renderPosition");
-      const frontTravel = cMin.z
-        .sub(renderPosition.z)
-        .max(float(0))
-        .toConst("frontTravel");
-      const nearZoneT = smoothstep(
-        chamberDepth.mul(0.18),
-        chamberDepth.mul(0.92),
-        frontTravel,
-      ).toConst("nearZoneT");
-      const frontSurvival = mix(float(1).sub(nearZoneT), float(1), heroPrivilege)
-        .toConst("frontSurvival");
+
+      // Quiet fade (safety net — kills anything surviving past cMix 0.88)
       const quietFade = float(1)
         .sub(smoothstep(float(0.28), float(0.88), this.uniforms.quietChamber))
         .toConst("quietFade");
-      const visibilityT = particleAliveT
-        .mul(frontSurvival)
-        .toConst("visibilityT");
 
-      const erodedWidthTarget = mix(float(0.12), float(0.24), forwardPrivilege)
-        .toConst("erodedWidthTarget");
-      const erodedHeightTarget = mix(float(0.12), float(0.24), forwardPrivilege)
-        .toConst("erodedHeightTarget");
-      const erodedLengthTarget = mix(float(0.18), float(0.74), forwardPrivilege)
-        .toConst("erodedLengthTarget");
-      const clearWidth = mix(monumentWidth, erodedWidthTarget, particleReleaseT)
-        .toConst("clearWidth");
-      const clearHeight = mix(monumentHeight, erodedHeightTarget, particleReleaseT)
-        .toConst("clearHeight");
-      const clearLength = mix(monumentLength, erodedLengthTarget, particleReleaseT)
-        .toConst("clearLength");
-      const nearWidthMul = mix(
-        float(1.0),
-        mix(float(0.02), float(0.06), heroPrivilege),
-        nearZoneT,
-      ).toConst("nearWidthMul");
-      const nearHeightMul = mix(
-        float(1.0),
-        mix(float(0.02), float(0.06), heroPrivilege),
-        nearZoneT,
-      ).toConst("nearHeightMul");
-      const nearLengthMul = mix(
-        float(1.0),
-        mix(float(0.28), float(0.86), heroPrivilege),
-        nearZoneT,
-      ).toConst("nearLengthMul");
-      const finalWidth = clearWidth
-        .mul(nearWidthMul)
-        .toConst("finalWidth");
-      const finalHeight = clearHeight
-        .mul(nearHeightMul)
-        .toConst("finalHeight");
-      const finalLength = clearLength
-        .mul(nearLengthMul)
-        .toConst("finalLength");
+      // Scale / population shaping:
+      // shell clears earlier, core holds a bit longer, then the field yields.
+      // This reduces the democratic debris curtain while preserving a readable peel.
+      const preloadScale = mix(float(1.0), float(1.08), preloadT)
+        .toConst("preloadScale");
 
-      const stretchedPos = vec3(
-        localPos.x.mul(finalWidth),
-        localPos.y.mul(finalHeight),
-        localPos.z.mul(finalLength),
-      );
+      const shellClearT = smoothstep(float(0.16), float(0.62), departureT)
+        .mul(shellPrivilege)
+        .toConst("shellClearT");
 
-      // ─── SCALE ──────────────────────────────────────
-      const preloadScale = mix(float(1.0), float(1.08), preloadT).toConst(
-        "preloadScale",
-      );
-      const releaseScaleTarget = mix(float(0.12), float(0.36), denseCoreT)
-        .toConst("releaseScaleTarget");
-      const clearScale = mix(float(1.0), releaseScaleTarget, particleReleaseT)
-        .mul(visibilityT)
-        .toConst("clearScale");
-      const renderScale = mix(preloadScale, clearScale, particleReleaseT)
+      const coreClearT = smoothstep(float(0.60), float(0.96), departureT)
+        .mul(denseCoreT)
+        .toConst("coreClearT");
+
+      const departureScale = pow(float(1).sub(departureT), float(0.95))
+        .mul(mix(float(1.0), float(0.32), shellClearT))
+        .mul(mix(float(1.0), float(0.30), coreClearT))
+        .toConst("departureScale");
+
+      const renderScale = preloadScale
+        .mul(departureScale)
         .mul(quietFade)
         .toConst("renderScale");
 
-      // ─── DIRECTION ──────────────────────────────────
-      const travelBlendT = mix(float(0.20), float(0.96), forwardPrivilege)
-        .toConst("travelBlendT");
-      const travelDirection = normalize(
-        mix(peelDir, clearForwardDir, travelBlendT)
-          .add(hashDir.mul(float(0.01)).mul(float(1).sub(heroPrivilege))),
-      ).toConst("travelDirection");
+      // Late-onset mild stretch: cubic ramp preserves chunky monument read
+      // departureT 0.5 → 1.15x (barely visible), 0.8 → 1.61x, 1.0 → 2.2x
+      const needleStretch = float(1).add(pow(departureT, float(3.0)).mul(float(1.2)));
+      const needleThin = pow(needleStretch, float(-0.35));
+      const stretchedPos = vec3(
+        localPos.x.mul(monumentWidth).mul(needleThin),
+        localPos.y.mul(monumentHeight).mul(needleThin),
+        localPos.z.mul(monumentLength).mul(needleStretch),
+      );
+
+      // Direction: blend from sim direction to departure direction
       const renderDirection = normalize(
-        mix(particleDirection.xyz, travelDirection, particleReleaseT),
+        mix(particleDirection.xyz, departureDir, departureT),
       ).toConst("renderDirection");
 
       const mat = calcLookAtMatrix(renderDirection);
@@ -484,26 +419,17 @@ class ParticleRenderer {
     const colorDenseCoreT = float(1)
       .sub(smoothstep(float(0.18), float(0.42), colorCenterDistN))
       .toConst("colorDenseCoreT");
-    const colorErosionWaveT = smoothstep(
-      float(0.16),
-      float(0.84),
+    // Departure-aligned color timeline (mirrors position node stagger)
+    const colorDepartureStart = mix(float(0.54), float(0.14), colorCenterDistN)
+      .toConst("colorDepartureStart");
+    const colorDepartureT = smoothstep(
+      colorDepartureStart,
+      colorDepartureStart.add(float(0.34)),
       this.uniforms.collapseMix,
-    ).toConst("colorErosionWaveT");
-    const colorReleaseFront = colorErosionWaveT
-      .sub(float(1).sub(colorCenterDistN))
-      .toConst("colorReleaseFront");
-    const colorParticleReleaseT = smoothstep(
-      float(-0.04),
-      float(0.14),
-      colorReleaseFront,
-    ).toConst("colorParticleReleaseT");
-    const colorSurvivalEnd = mix(
-      float(0.28),
-      float(1.10),
-      colorDenseCoreT,
-    ).toConst("colorSurvivalEnd");
+    ).toConst("colorDepartureT");
+    // Alive through 80% of departure, fade in final 20%
     const colorAliveT = float(1)
-      .sub(smoothstep(float(0.10), colorSurvivalEnd, colorReleaseFront))
+      .sub(smoothstep(float(0.80), float(1.0), colorDepartureT))
       .toConst("colorAliveT");
     const quietFadeColor = float(1)
       .sub(smoothstep(float(0.28), float(0.88), this.uniforms.quietChamber))
@@ -516,14 +442,10 @@ class ParticleRenderer {
       float(0.16),
       this.uniforms.collapseMix,
     ).toConst("collapseFade");
-    const heroHeatT = smoothstep(
-      float(0.68),
-      float(0.94),
-      this.uniforms.collapseMix,
-    )
+    const coreHeatLift = smoothstep(float(0.10), float(0.60), colorDepartureT)
       .mul(colorDenseCoreT)
       .mul(colorVisibilityT)
-      .toConst("heroHeatT");
+      .toConst("coreHeatLift");
 
     const deepRed = vec3(0.1, 0.012, 0.0);
     const reignEmber = vec3(0.24, 0.035, 0.0);
@@ -534,25 +456,33 @@ class ParticleRenderer {
     const cooledSurface = mix(
       surfaceColor,
       deepRed,
-      smoothstep(float(0.04), float(0.34), this.uniforms.collapseMix),
+      smoothstep(float(0.55), float(0.85), colorDepartureT),
     ).toConst("cooledSurface");
-    const shellAshT = smoothstep(float(0.10), float(0.54), colorReleaseFront)
-      .mul(colorCenterDistN)
+    const shellAshT = smoothstep(float(0.70), float(0.95), colorDepartureT)
+      .mul(colorCenterDistN.mul(0.6))
       .toConst("shellAshT");
-    const shellColor = mix(cooledSurface, coal, shellAshT).toConst("shellColor");
+    const shellColor = mix(
+      cooledSurface,
+      vec3(0.03, 0.012, 0.01),
+      shellAshT,
+    ).toConst("shellColor");
+    const corePressureColor = mix(
+      deepRed,
+      reignEmber,
+      coreHeatLift.mul(0.6),
+    ).toConst("corePressureColor");
     const remnantColor = mix(
       reignEmber,
       fireGold,
-      smoothstep(float(0.74), float(0.96), this.uniforms.collapseMix),
+      smoothstep(float(0.60), float(0.85), colorDepartureT),
     ).toConst("remnantColor");
     const collapsedColor = mix(
       surfaceColor,
       mix(
-        shellColor,
+        mix(shellColor, corePressureColor, colorDenseCoreT),
         remnantColor,
-        colorDenseCoreT.mul(
-          smoothstep(float(0.52), float(0.90), this.uniforms.collapseMix),
-        ),
+        smoothstep(float(0.08), float(0.35), colorDepartureT)
+          .mul(float(1).sub(smoothstep(float(0.78), float(0.96), colorDepartureT))),
       ).mul(mix(float(0.24), float(1.0), colorVisibilityT)),
       collapseFade,
     ).toConst("collapsedColor");
@@ -563,7 +493,7 @@ class ParticleRenderer {
       0.06,
     );
     const preCollapseFade = float(1)
-      .sub(smoothstep(float(0.0), float(0.05), this.uniforms.collapseMix))
+      .sub(smoothstep(float(0.0), float(0.18), this.uniforms.collapseMix))
       .toConst("preCollapseFade");
     const normalEmissive = surfaceColor
       .mul(glowFactor)
@@ -571,7 +501,7 @@ class ParticleRenderer {
       .add(ember.mul(emberLift))
       .mul(preCollapseFade);
     const collapseEmissive = reignEmber
-      .mul(heroHeatT.mul(0.08))
+      .mul(coreHeatLift.mul(0.12))
       .toConst("collapseEmissive");
     const finalEmissive = mix(
       normalEmissive,
@@ -580,7 +510,7 @@ class ParticleRenderer {
     );
     this.material.emissiveNode = mix(finalEmissive, vec3(0), debugMix);
     const heatBloom = smoothstep(float(0.62), float(0.82), particleHeat);
-    this._bloomIntensityNode = heatBloom.max(heroHeatT.mul(0.04));
+    this._bloomIntensityNode = heatBloom.max(coreHeatLift.mul(0.025));
     this.material.aoNode = vAo;
 
     this.object = new THREE.Mesh(this.geometry, this.material);
