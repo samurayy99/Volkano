@@ -38,13 +38,8 @@ export class FlowEngineBridge implements FlowEngineApi {
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
-  private static readonly RENDERER_SEAM_DURATION = 0.35;
-  // Pacing: Hold (monument) → Collapse (implosion) → Quiet (verdict space)
-  private static readonly COLLAPSE_HOLD = 1.15;       // let the frozen monument land before the event starts
-  private static readonly COLLAPSE_DURATION = 7.2;    // slow enough to read the flight, not just the state changes
-  private static readonly QUIET_CHAMBER_DELAY = 0.55;
-  private static readonly QUIET_CHAMBER_DURATION = 1.35;
-  private static readonly QUIET_CHAMBER_PROOF_HOLD = 1.05; // silence before proof
+  private static readonly POST_FREEZE_HOLD = 0.22;
+  private static readonly POST_FREEZE_CLEAR_DURATION = 1.05;
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
@@ -438,12 +433,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     return THREE.MathUtils.smoothstep(this.clamp01(v), 0, 1);
   }
 
-  /** Ease-out: strong start, decelerating finish. Collapse reads immediately. */
-  private easeOut01(v: number): number {
-    const t = this.clamp01(v);
-    return 1 - (1 - t) * (1 - t); // quadratic ease-out — 75% of motion in first 50%
-  }
-
   private applyConvergenceSignals(): void {
     const convergenceSignals = mapProgressToEngineSignals(this.convergenceProgress);
     const slowdownMix = convergenceSignals.slowdownMix;
@@ -458,10 +447,12 @@ export class FlowEngineBridge implements FlowEngineApi {
       conf.convergenceSlowdown = 0;
       conf.convergenceCompression = 0;
       conf.convergenceFreeze = 0;
+      conf.convergenceShapeMix = 0;
       conf.convergenceHeatRetention = 0;
       conf.convergenceThermalExtinction = 0;
       conf.collapseMix = 0;
       conf.postFreezeSimLock = 0;
+      conf.postFreezeClearProgress = 0;
       conf.quietChamberMix = 0;
       conf.clearFieldMix = 0;
       conf.freshnessDecayRate = 0.044;
@@ -482,39 +473,23 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.convergenceSlowdown = slowdownMix;
     conf.convergenceCompression = compressionMix;
     conf.convergenceFreeze = freezeMix;
+    conf.convergenceShapeMix = compressionMix;
     conf.convergenceHeatRetention = heatRetentionMix;
     conf.convergenceThermalExtinction = thermalExtinctionMix;
     conf.freshnessDecayRate = THREE.MathUtils.lerp(0.044, 0.004, heatRetentionMix);
 
-    // Post-freeze remains renderer-owned. The bridge only drives timing and gates.
-    const collapseElapsed = this.postFreezeActive
-      ? Math.max(0, this.postFreezeElapsed - FlowEngineBridge.COLLAPSE_HOLD)
-      : 0;
-    const collapseMix = this.easeOut01(
-      collapseElapsed / FlowEngineBridge.COLLAPSE_DURATION,
-    );
-
-    // Quiet chamber triggers when collapse nears completion
-    if (!this.quietChamberStarted && collapseMix >= 0.95) {
-      this.quietChamberStarted = true;
-      this.quietChamberElapsed = 0;
-    }
-    const quietActiveElapsed = Math.max(
-      0,
-      this.quietChamberElapsed - FlowEngineBridge.QUIET_CHAMBER_DELAY,
-    );
-    const quietChamberMix = this.quietChamberStarted
-      ? this.ease01(
-          quietActiveElapsed / FlowEngineBridge.QUIET_CHAMBER_DURATION,
+    const postFreezeClearProgress = this.postFreezeActive
+      ? this.clamp01(
+          (this.postFreezeElapsed - FlowEngineBridge.POST_FREEZE_HOLD) /
+            FlowEngineBridge.POST_FREEZE_CLEAR_DURATION,
         )
       : 0;
-    const clearFieldMix =
-      THREE.MathUtils.smoothstep(collapseMix, 0.14, 0.30) *
-      (1 - THREE.MathUtils.smoothstep(collapseMix, 0.82, 0.98)) *
-      (1 - THREE.MathUtils.smoothstep(quietChamberMix, 0.0, 0.28));
 
-    conf.collapseMix = collapseMix;
+    conf.collapseMix = 0;
     conf.postFreezeSimLock = this.postFreezeActive ? 1 : 0;
+    conf.postFreezeClearProgress = postFreezeClearProgress;
+    conf.quietChamberMix = 0;
+    conf.clearFieldMix = 0;
 
     // Gravity: always centered attractor. No downward pull post-freeze.
     conf.gravity = 2;
@@ -539,9 +514,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.convergenceFreeze = freezeMix; // stays at 1.0 — sim is still
     // speed stays at frozen level — no sim motion
     // noise stays at frozen level
-
-    conf.quietChamberMix = quietChamberMix;
-    conf.clearFieldMix = clearFieldMix;
 
     conf.noise = noise;
     conf.speed = speed;
@@ -578,14 +550,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     if (this.proofReadyEmitted || !this.externalFreezeSettled) return;
     if (!this.postFreezeActive) return;
 
-    const targetElapsed =
-      FlowEngineBridge.COLLAPSE_HOLD +
-      FlowEngineBridge.COLLAPSE_DURATION +
-      FlowEngineBridge.QUIET_CHAMBER_DELAY +
-      FlowEngineBridge.QUIET_CHAMBER_DURATION +
-      FlowEngineBridge.QUIET_CHAMBER_PROOF_HOLD;
-
-    if (this.postFreezeElapsed < targetElapsed) {
+    if ((conf.postFreezeClearProgress || 0) < 0.98) {
       this.proofReadyHoldFrames = 0;
       return;
     }

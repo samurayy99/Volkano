@@ -83,10 +83,12 @@ class Conf {
     convergenceSlowdown = 0.0; // 0..1 motion/turbulence reduction mix
     convergenceCompression = 0.0; // 0..1 spatial densification mix
     convergenceFreeze = 0.0; // 0..1 terminal stillness mix
+    convergenceShapeMix = 0.0; // 0..1 renderer-owned rock geometry lock during convergence
     convergenceHeatRetention = 0.0; // 0..1 thermal memory retention during convergence
     convergenceThermalExtinction = 0.0; // 0..1 pre-freeze heat extinction for dark pressure lock
     collapseMix = 0.0; // 0..1 whole-mass collapse progress (hold → implosion → gone)
     postFreezeSimLock = 0.0; // 0..1 hard gate: solver motion/capture disabled, renderer owns post-freeze
+    postFreezeClearProgress = 0.0; // 0..1 renderer clear timing after ownership lock
     quietChamberMix = 0.0; // 0..1 late renderer-owned quiet chamber handoff
     clearFieldMix = 0.0; // 0..1 short forward-clearing support window; dies before quiet
 

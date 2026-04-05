@@ -1,7 +1,6 @@
 import type {
   ConvergenceEngineSignals,
   ConvergenceProgress,
-  ConvergenceSnapshot,
 } from '../core/convergence-types';
 
 function clamp01(value: number): number {
@@ -25,25 +24,23 @@ export function mapProgressToEngineSignals(
   progress: ConvergenceProgress,
 ): ConvergenceEngineSignals {
   const compressionGlowMix = smoothstep(progress, 68, 82);
-  // Thermal extinction: cooling starts mid-descent so particles land as warm red, not white blowout
-  const thermalExtinctionMix = smoothstep(progress, 80, 98);
+  const holdSculptMix = inverseLerp(progress, 74, 94) * 0.72;
+  // Thermal extinction: capped at 0.65 so deep warm pockets survive into hold.
+  // The hold reads as erstarrt but not farblos — inner glow in core/occlusion zones.
+  // Capped at 0.22 so lava embers survive deep into hold — red life inside the rock.
+  const thermalExtinctionMix = smoothstep(progress, 80, 90) * 0.08;
   // Settle drives solver downward pull DURING convergence (not after freeze)
   const settleMix = smoothstep(progress, 55, 88);
 
   return {
-    slowdownMix: smoothstep(progress, 84, 98),
-    densifyMix: smoothstep(progress, 86, 98),
-    compressionMix: smoothstep(progress, 88, 100),
-    freezeMix: smoothstep(progress, 98, 100),
+    slowdownMix: smoothstep(progress, 74, 96),
+    densifyMix: smoothstep(progress, 70, 92),
+    compressionMix: smoothstep(progress, 72, 96),
+    holdSculptMix,
+    freezeMix: smoothstep(progress, 96, 100),
     settleMix,
     heatRetentionMix: compressionGlowMix * (1 - thermalExtinctionMix),
     thermalExtinctionMix,
     pointerInfluenceMix: smoothstep(progress, 84, 100),
   };
-}
-
-export function mapSnapshotToEngineSignals(
-  snapshot: ConvergenceSnapshot,
-): ConvergenceEngineSignals {
-  return mapProgressToEngineSignals(snapshot.progress);
 }

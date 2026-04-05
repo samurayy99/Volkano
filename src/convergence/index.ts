@@ -26,7 +26,6 @@ export { createConvergenceEngineBridge } from './engine/convergence-engine-bridg
 export type { ConvergenceEngineBridge } from './engine/convergence-engine-bridge';
 export {
   mapProgressToEngineSignals,
-  mapSnapshotToEngineSignals,
 } from './engine/convergence-progress-map';
 export { ConvergenceTrigger } from './ui/ConvergenceTrigger';
 export type { ConvergenceTriggerProps } from './ui/ConvergenceTrigger';

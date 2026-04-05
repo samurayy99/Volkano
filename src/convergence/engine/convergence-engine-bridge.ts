@@ -1,6 +1,6 @@
-import { getSourceInteractive } from '../core/convergence-selectors';
-import type { ConvergenceSnapshot } from '../core/convergence-types';
-import type { FlowEngineApi } from '../../flow-engine/types';
+import { getSourceInteractive } from "../core/convergence-selectors";
+import type { ConvergenceSnapshot } from "../core/convergence-types";
+import type { FlowEngineApi } from "../../flow-engine/types";
 
 export interface ConvergenceEngineBridge {
   sync(snapshot: ConvergenceSnapshot): void;

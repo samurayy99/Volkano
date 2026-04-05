@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ConvergenceController } from '../core/convergence-controller';
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ConvergenceController } from "../core/convergence-controller";
 
-const TIMELINE_DURATION_MS = 3600;
+const TIMELINE_DURATION_MS = 3000;
 const TIMELINE_TIME_SPLIT = 0.56;
 const TIMELINE_PROGRESS_SPLIT = 0.88;
 
@@ -31,7 +31,9 @@ function easedProgress(t: number): number {
   }
 
   const localT = (t - TIMELINE_TIME_SPLIT) / (1 - TIMELINE_TIME_SPLIT);
-  return TIMELINE_PROGRESS_SPLIT + (1 - TIMELINE_PROGRESS_SPLIT) * smoothstep(localT);
+  return (
+    TIMELINE_PROGRESS_SPLIT + (1 - TIMELINE_PROGRESS_SPLIT) * smoothstep(localT)
+  );
 }
 
 export interface UseConvergenceTimelineResult {
@@ -53,11 +55,12 @@ export function useConvergenceTimeline(
       const t = Math.min(elapsed / TIMELINE_DURATION_MS, 1);
       const progress = easedProgress(t) * 100;
 
-      controller.setProgress(progress, 'enter');
+      controller.setProgress(progress, "enter");
 
       if (t < 1) {
         frameRef.current = requestAnimationFrame(tick);
       } else {
+        controller.markFreezeSettled();
         frameRef.current = null;
       }
     },

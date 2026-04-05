@@ -33,6 +33,7 @@ export interface ConvergenceEngineSignals {
   slowdownMix: number;
   densifyMix: number;
   compressionMix: number;
+  holdSculptMix: number;
   freezeMix: number;
   settleMix: number;
   heatRetentionMix: number;

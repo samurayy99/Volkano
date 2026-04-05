@@ -25,3 +25,17 @@ export const PREENTER_SOURCE_ANCHOR = Object.freeze({
   axisLocal: new THREE.Vector3(0.012, 0.978, -0.208).normalize(),
   radiiLocal: new THREE.Vector3(0.042, 0.066, 0.024),
 });
+
+const PREENTER_HOLD_BOUNDS_MIN = new THREE.Vector3(-0.3, -0.16, 0.48);
+const PREENTER_HOLD_BOUNDS_MAX = new THREE.Vector3(0.3, 0.4, 0.86);
+const PREENTER_HOLD_CENTER = PREENTER_HOLD_BOUNDS_MIN
+  .clone()
+  .lerp(PREENTER_HOLD_BOUNDS_MAX, 0.5);
+
+// Single authored hold owner for the pre-proof chamber state.
+// This is chamber-local by design and must remain explicit; no snapshot/readback.
+export const PREENTER_HOLD_DESCRIPTOR = Object.freeze({
+  centerLocal: PREENTER_HOLD_CENTER.clone(),
+  boundsMinLocal: PREENTER_HOLD_BOUNDS_MIN.clone(),
+  boundsMaxLocal: PREENTER_HOLD_BOUNDS_MAX.clone(),
+});

@@ -32,7 +32,6 @@ class mlsMpmSimulator {
   renderer = null;
   numParticles = 0;
   gridSize = new THREE.Vector3(0, 0, 0);
-  gridCellSize = new THREE.Vector3(0, 0, 0);
   uniforms = {};
   kernels = {};
   fixedPointMultiplier = 1e7;
@@ -101,7 +100,6 @@ class mlsMpmSimulator {
     this.uniforms.noise = uniform(0);
 
     this.uniforms.gridSize = uniform(this.gridSize, "ivec3");
-    this.uniforms.gridCellSize = uniform(this.gridCellSize);
     this.uniforms.dt = uniform(0.1);
     this.uniforms.numParticles = uniform(0, "uint");
 
@@ -472,13 +470,31 @@ class mlsMpmSimulator {
         .length()
         .max(float(0.0001))
         .toConst("convergenceDistance");
+      const lateCompactionT = smoothstep(
+        float(0.085),
+        float(0.19),
+        this.uniforms.convergenceCompression,
+      ).toConst("lateCompactionT");
+      const convergencePullBase = mix(
+        float(0.38),
+        float(0.92),
+        lateCompactionT,
+      ).toConst("convergencePullBase");
+      const outlierPullBoost = smoothstep(
+        float(6.5),
+        float(18.0),
+        convergenceDistance,
+      )
+        .mul(lateCompactionT)
+        .mul(float(0.34))
+        .toConst("outlierPullBoost");
       const convergencePull = smoothstep(
         float(2.5),
         float(18.0),
         convergenceDistance,
       )
         .mul(this.uniforms.convergenceCompression)
-        .mul(float(0.38))
+        .mul(convergencePullBase.add(outlierPullBoost))
         .toConst("convergencePull");
       particleVelocity.addAssign(
         toConvergenceCenter
@@ -543,7 +559,6 @@ class mlsMpmSimulator {
         particlePosition.mul(vec3(1, 1, 1.0)).sub(this.uniforms.mouseRayOrigin),
       ).length();
       const force = dist.mul(0.1).oneMinus().max(0.0).pow(2);
-      //particleVelocity.assign(mix(particleVelocity, this.uniforms.mouseForce.mul(6), force));
       particleVelocity.addAssign(
         this.uniforms.mouseForce
           .mul(this.uniforms.mouseInfluence)
@@ -792,7 +807,7 @@ class mlsMpmSimulator {
     this.mousePos.copy(pos);
   }
 
-  async update(interval, elapsed) {
+  async update(interval) {
     const {
       particles,
       run,
@@ -802,21 +817,13 @@ class mlsMpmSimulator {
       restDensity,
       speed,
       gravity,
-      gravitySensorReading,
-      accelerometerReading,
     } = conf;
 
     this.uniforms.noise.value = noise;
     this.uniforms.stiffness.value = stiffness;
     this.uniforms.gravityType.value = gravity;
-    if (gravity === 0) {
-      this.uniforms.gravity.value.set(0, 0, 0.2);
-    } else if (gravity === 1) {
+    if (gravity === 1) {
       this.uniforms.gravity.value.set(0, -0.2, 0);
-    } else if (gravity === 3) {
-      this.uniforms.gravity.value
-        .copy(gravitySensorReading)
-        .add(accelerometerReading);
     }
     this.uniforms.dynamicViscosity.value = dynamicViscosity;
     this.uniforms.restDensity.value = restDensity;
@@ -884,93 +891,73 @@ class mlsMpmSimulator {
   }
 
   async captureFreezeSnapshot() {
-    const count = this.numParticles || this.uniforms.numParticles.value || 0;
-    const storageAttribute = this.particleBuffer?.buffer?.value;
-    const positionMember = this.particleBuffer?.layout?.position;
-    const directionMember = this.particleBuffer?.layout?.direction;
-
-    if (
-      !count ||
-      !storageAttribute ||
-      !positionMember ||
-      !directionMember ||
-      !this.renderer?.getArrayBufferAsync
-    ) {
-      return null;
+    const particleAttribute = this.particleBuffer?.buffer?.value;
+    if (!particleAttribute || !this.renderer?.getArrayBufferAsync) {
+      throw new Error(
+        "VOLKANO freeze snapshot unavailable: particle storage readback is not wired.",
+      );
     }
 
-    const arrayBuffer =
-      await this.renderer.getArrayBufferAsync(storageAttribute);
-    const values = new Float32Array(arrayBuffer);
+    const particleCount = Math.max(1, this.numParticles || conf.particles || 0);
     const stride = this.particleBuffer.structSize;
-    const positionOffset = positionMember.offset;
-    const directionOffset = directionMember.offset;
+    const positionOffset = this.particleBuffer.layout.position.offset;
+    const arrayBuffer = await this.renderer.getArrayBufferAsync(particleAttribute);
+    const particleData = new Float32Array(arrayBuffer);
+
     const boundsMin = new THREE.Vector3(Infinity, Infinity, Infinity);
     const boundsMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-    const center = new THREE.Vector3();
-    const positions = new Float32Array(count * 3);
-    const directions = new Float32Array(count * 3);
 
-    let validCount = 0;
-    for (let i = 0; i < count; i++) {
-      const baseIndex = i * stride + positionOffset;
-      const x = values[baseIndex + 0];
-      const y = values[baseIndex + 1];
-      const z = values[baseIndex + 2];
+    for (let i = 0; i < particleCount; i++) {
+      const base = i * stride + positionOffset;
+      const x = particleData[base + 0];
+      const y = particleData[base + 1];
+      const z = particleData[base + 2];
 
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
         continue;
       }
 
-      const directionIndex = i * stride + directionOffset;
-      const dx = values[directionIndex + 0];
-      const dy = values[directionIndex + 1];
-      const dz = values[directionIndex + 2];
-      const outIndex = validCount * 3;
-
-      positions[outIndex + 0] = x;
-      positions[outIndex + 1] = y;
-      positions[outIndex + 2] = z;
-      directions[outIndex + 0] = Number.isFinite(dx) ? dx : 0;
-      directions[outIndex + 1] = Number.isFinite(dy) ? dy : 0;
-      directions[outIndex + 2] = Number.isFinite(dz) ? dz : -1;
-      center.x += x;
-      center.y += y;
-      center.z += z;
-      boundsMin.min(new THREE.Vector3(x, y, z));
-      boundsMax.max(new THREE.Vector3(x, y, z));
-      validCount++;
+      boundsMin.x = Math.min(boundsMin.x, x);
+      boundsMin.y = Math.min(boundsMin.y, y);
+      boundsMin.z = Math.min(boundsMin.z, z);
+      boundsMax.x = Math.max(boundsMax.x, x);
+      boundsMax.y = Math.max(boundsMax.y, y);
+      boundsMax.z = Math.max(boundsMax.z, z);
     }
 
-    if (validCount === 0) {
-      return null;
+    if (
+      !Number.isFinite(boundsMin.x) ||
+      !Number.isFinite(boundsMin.y) ||
+      !Number.isFinite(boundsMin.z) ||
+      !Number.isFinite(boundsMax.x) ||
+      !Number.isFinite(boundsMax.y) ||
+      !Number.isFinite(boundsMax.z)
+    ) {
+      throw new Error(
+        "VOLKANO freeze snapshot failed: particle bounds readback produced no finite positions.",
+      );
     }
 
-    center.divideScalar(validCount);
-    const trimmedBoundsMin = boundsMin.clone().lerp(center, 0.08);
-    const trimmedBoundsMax = boundsMax.clone().lerp(center, 0.08);
+    const center = boundsMin.clone().add(boundsMax).multiplyScalar(0.5);
+    const halfSpan = boundsMax
+      .clone()
+      .sub(boundsMin)
+      .multiplyScalar(0.5)
+      .max(new THREE.Vector3(0.001, 0.001, 0.001));
 
     return {
-      count: validCount,
       center,
-      boundsMin: trimmedBoundsMin,
-      boundsMax: trimmedBoundsMax,
-      extents: trimmedBoundsMax.clone().sub(trimmedBoundsMin),
-      positions: positions.slice(0, validCount * 3),
-      directions: directions.slice(0, validCount * 3),
+      boundsMin: center.clone().sub(halfSpan),
+      boundsMax: center.clone().add(halfSpan),
     };
   }
 
-  // Compat stubs for Production engineBridge/app.js integration
   setMouseInfluence(value) {
     this.uniforms.mouseInfluence.value = value;
   }
   setMouseActive(value) {
     this.uniforms.mouseActive.value = value ? 1 : 0;
   }
-  prepareStartupFromVent() {}
-  reseedAllParticlesFromVent() {}
-  seedMatureIdlePopulation() {}
 }
 
 export default mlsMpmSimulator;
