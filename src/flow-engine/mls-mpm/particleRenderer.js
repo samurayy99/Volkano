@@ -573,22 +573,12 @@ class ParticleRenderer {
       .mul(mix(float(0.72), float(1.0), shapeSupportT))
       .toConst("frozenShapeT");
     const materialHoldT = frozenShapeT
-      .mul(float(1).sub(materialCrossT))
-      .mul(mix(float(1.0), float(0.92), materialLaunchT))
+      .mul(float(1).sub(materialLeaveT))
+      .mul(mix(float(1.0), float(0.96), materialLaunchT))
       .toConst("materialHoldT");
     const materialFamilyT = materialHoldT
       .mul(materialHoldT.mul(float(3).sub(materialHoldT.mul(2))))
       .toConst("materialFamilyT");
-    const postFreezeMaterialLock =
-      this.uniforms.postFreezeLock.toConst("postFreezeMaterialLock");
-    const holdAutonomyT = smoothstep(
-      float(0.56),
-      float(0.82),
-      materialFamilyT,
-    )
-      .mul(postFreezeMaterialLock)
-      .mul(float(1).sub(materialCrossT.mul(0.78)))
-      .toConst("holdAutonomyT");
     const colorCoreT = float(1)
       .sub(smoothstep(float(0.16), float(0.46), colorCenterDistN))
       .toConst("colorCoreT");
@@ -606,61 +596,33 @@ class ParticleRenderer {
       .mul(mix(float(0.72), float(1.0), readFocusT.mul(0.28)))
       .mul(materialFamilyT)
       .toConst("emberPocketT");
-    const coalShell = vec3(0.016, 0.011, 0.011);
-    const shellPressureTint = vec3(0.078, 0.016, 0.013);
-    const pressureRed = vec3(0.108, 0.016, 0.007);
-    const emberPocketColor = vec3(0.13, 0.02, 0.005);
+    const coalShell = vec3(0.022, 0.011, 0.01);
+    const shellPressureTint = vec3(0.115, 0.022, 0.016);
+    const pressureRed = vec3(0.168, 0.026, 0.011);
+    const emberPocketColor = vec3(0.19, 0.036, 0.008);
     const heldShellColor = mix(
       shellPressureTint,
       coalShell,
-      colorShellPrivilege.mul(0.26).add(shellHoldT.mul(0.46)).clamp(0, 1),
+      colorShellPrivilege.mul(0.18).add(shellHoldT.mul(0.3)).clamp(0, 1),
     ).toConst("heldShellColor");
-    const shellSurface = mix(surfaceColor, heldShellColor, shellHoldT).toConst(
-      "shellSurface",
-    );
+    const shellColorHoldT = shellHoldT.mul(0.18).toConst("shellColorHoldT");
+    const shellSurface = mix(
+      surfaceColor,
+      heldShellColor,
+      shellColorHoldT,
+    ).toConst("shellSurface");
     const pressureBodyColor = mix(
       shellSurface,
       pressureRed,
-      innerBodyT,
+      innerBodyT.mul(0.32),
     ).toConst("pressureBodyColor");
     const pressureFamilyColor = mix(
       pressureBodyColor,
       emberPocketColor,
-      emberPocketT.mul(0.16),
+      emberPocketT.mul(0.24),
     )
       .toConst("pressureFamilyColor");
-    const midBodyT = colorCoreT
-      .mul(pow(float(1).sub(colorShellPrivilege), float(0.42)))
-      .mul(mix(float(0.9), float(1.0), readFocusT.mul(0.18)))
-      .mul(materialFamilyT)
-      .toConst("midBodyT");
-    const corePocketT = colorCoreT
-      .mul(colorCoreT)
-      .mul(float(1).sub(colorShellPrivilege.mul(0.82)))
-      .mul(mix(float(0.8), float(1.0), readFocusT.mul(0.22)))
-      .mul(materialFamilyT)
-      .toConst("corePocketT");
-    const holdShellAutonomousColor = mix(
-      shellPressureTint,
-      coalShell,
-      colorShellPrivilege.mul(0.34).add(shellHoldT.mul(0.52)).clamp(0, 1),
-    ).toConst("holdShellAutonomousColor");
-    const holdBodyAutonomousColor = mix(
-      holdShellAutonomousColor,
-      pressureRed,
-      midBodyT,
-    ).toConst("holdBodyAutonomousColor");
-    const autonomousHoldColor = mix(
-      holdBodyAutonomousColor,
-      emberPocketColor,
-      corePocketT.mul(0.18),
-    ).toConst("autonomousHoldColor");
-    const finalPressureColor = mix(
-      pressureFamilyColor,
-      autonomousHoldColor,
-      holdAutonomyT,
-    ).toConst("finalPressureColor");
-    this.material.colorNode = mix(finalPressureColor, debugHeatColor, debugMix);
+    this.material.colorNode = mix(pressureFamilyColor, debugHeatColor, debugMix);
 
     const roughnessNoise = fract(
       sin(instanceIndex.toFloat().mul(483.1)).mul(19847.3),
@@ -710,34 +672,21 @@ class ParticleRenderer {
       .mul(glowFactor)
       .mul(emberPocketT)
       .mul(materialFamilyT)
-      .mul(0.022)
+      .mul(0.034)
       .toConst("baseEmissive");
     const holdEmissive = baseEmissive
       .mul(mix(float(0.2), float(0.08), colorShellPrivilege))
-      .add(emberPocketColor.mul(emberPocketT.mul(0.03)))
-      .add(ember.mul(emberLift.mul(emberPocketT).mul(0.06)))
+      .add(emberPocketColor.mul(emberPocketT.mul(0.045)))
+      .add(ember.mul(emberLift.mul(emberPocketT).mul(0.08)))
       .toConst("holdEmissive");
     const emissive = mix(baseEmissive, holdEmissive, materialFamilyT).toConst(
       "emissive",
     );
-    const autonomousHoldEmissive = pressureRed
-      .mul(glowFactor)
-      .mul(corePocketT)
-      .mul(holdAutonomyT)
-      .mul(0.016)
-      .add(emberPocketColor.mul(corePocketT.mul(holdAutonomyT).mul(0.024)))
-      .add(ember.mul(emberLift.mul(corePocketT).mul(holdAutonomyT).mul(0.04)))
-      .toConst("autonomousHoldEmissive");
-    const finalEmissive = mix(
-      emissive,
-      autonomousHoldEmissive,
-      holdAutonomyT,
-    ).toConst("finalEmissive");
-    this.material.emissiveNode = mix(finalEmissive, vec3(0), debugMix);
+    this.material.emissiveNode = mix(emissive, vec3(0), debugMix);
 
-    const emissivePeak = finalEmissive.r
-      .max(finalEmissive.g)
-      .max(finalEmissive.b)
+    const emissivePeak = emissive.r
+      .max(emissive.g)
+      .max(emissive.b)
       .toConst("emissivePeak");
     const emissiveBloomMask = smoothstep(
       float(0.028),

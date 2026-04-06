@@ -626,6 +626,10 @@ class mlsMpmSimulator {
         .element(instanceIndex)
         .get("heat")
         .toConst("previousHeat");
+      const previousColor = this.particleBuffer
+        .element(instanceIndex)
+        .get("color")
+        .toConst("previousColor");
 
       // VOLKANO THERMAL RAMP — dark body plus separate ignition channels
       const coal = vec3(0.005, 0.003, 0.003);
@@ -787,10 +791,22 @@ class mlsMpmSimulator {
         .mul(0.18)
         .toConst("collapseDarken");
       const cooledColor = mix(color, coal, collapseDarken);
+      const freezeColorMemoryT = smoothstep(
+        float(0.02),
+        float(0.42),
+        this.uniforms.convergenceFreeze,
+      )
+        .mul(0.985)
+        .toConst("freezeColorMemoryT");
+      const freezeRetainedColor = mix(
+        cooledColor,
+        previousColor,
+        freezeColorMemoryT,
+      ).toConst("freezeRetainedColor");
       this.particleBuffer
         .element(instanceIndex)
         .get("color")
-        .assign(cooledColor);
+        .assign(freezeRetainedColor);
       this.particleBuffer
         .element(instanceIndex)
         .get("heat")

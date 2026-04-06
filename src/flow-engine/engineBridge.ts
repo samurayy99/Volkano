@@ -38,7 +38,7 @@ export class FlowEngineBridge implements FlowEngineApi {
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
-  private static readonly POST_FREEZE_HOLD = 0.22;
+  private static readonly POST_FREEZE_HOLD = 0.78;
   private static readonly POST_FREEZE_CLEAR_DURATION = 1.05;
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
