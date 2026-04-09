@@ -5,7 +5,6 @@ import { conf } from "./conf.js";
 import type {
   FlowEngineApi,
   FlowEngineBridgeOptions,
-  FlowEngineDebugView,
   FlowEngineFrontRailMetrics,
 } from "./types";
 
@@ -16,14 +15,12 @@ export class FlowEngineBridge implements FlowEngineApi {
   private app: any | null = null;
   private clock = new THREE.Clock();
   private rafId = 0;
-  private debugView: FlowEngineDebugView = "composite";
   private disposed = false;
   private interactiveEnabled = true;
   private hidden = false;
   private resizeObserver: ResizeObserver | null = null;
   private lastPointerLocalX = 0.5;
   private lastPointerLocalY = 0.5;
-  private idlePlayPresetApplied = false;
   private convergenceProgress = 0;
   private currentPointerInfluence = 1;
   private freezeSettled = false;
@@ -33,12 +30,10 @@ export class FlowEngineBridge implements FlowEngineApi {
   private proofReadyHoldFrames = 0;
   private postFreezeActive = false;
   private postFreezeElapsed = 0;
-  private quietChamberStarted = false;
-  private quietChamberElapsed = 0;
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
-  private static readonly POST_FREEZE_HOLD = 0.78;
+  private static readonly POST_FREEZE_HOLD = 1.2;
   private static readonly POST_FREEZE_CLEAR_DURATION = 1.05;
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
@@ -73,8 +68,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app = app;
     await app.init(async () => {}, width, height);
 
-    this.debugView = this.options.debugView ?? "composite";
-
     window.addEventListener("resize", this.onResize);
     this.resizeObserver = new ResizeObserver(this.onResize);
     this.resizeObserver.observe(this.container);
@@ -84,9 +77,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app.primeStartupSource?.();
     this.app.promoteIdlePopulation?.();
     this.app.clearPointer?.(this.lastPointerLocalX, this.lastPointerLocalY);
-    this.resetIdleMaturation();
     this.app.setConvergenceProgress?.(this.convergenceProgress);
-    this.app.setDebugView?.(this.debugView);
     document.addEventListener("visibilitychange", this.onVisibilityChange);
 
     this.clock.start();
@@ -102,11 +93,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.convergenceProgress = clampedProgress;
     this.app?.setConvergenceProgress?.(clampedProgress);
 
-    if (clampedProgress > 0) {
-      this.ensureActiveSourcePreset();
-      conf.startupStateMix = 0;
-    }
-
     if (clampedProgress < 100) {
       this.freezeSettled = false;
       this.freezeSettledElapsed = 0;
@@ -117,14 +103,10 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.postFreezeElapsed = 0;
     }
     if (clampedProgress <= 0 || clampedProgress < previousProgress) {
-      this.quietChamberStarted = false;
-      this.quietChamberElapsed = 0;
-      conf.quietChamberMix = 0;
-      conf.clearFieldMix = 0;
     }
   }
 
-  setFreezeSettled(settled: boolean): void {
+  private setFreezeSettled(settled: boolean): void {
     if (this.disposed) return;
 
     this.externalFreezeSettled = settled;
@@ -137,6 +119,10 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.postFreezeActive = false;
       this.postFreezeElapsed = 0;
     }
+  }
+
+  setConvergenceSettled(settled: boolean): void {
+    this.setFreezeSettled(settled);
   }
 
   setInteractiveEnabled(enabled: boolean): void {
@@ -186,11 +172,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.lastPointerLocalX = localX;
     this.lastPointerLocalY = localY;
     this.app.clearPointer(localX, localY);
-  }
-
-  setDebugView(view: FlowEngineDebugView): void {
-    this.debugView = view;
-    this.app?.setDebugView?.(view);
   }
 
   dispose(): void {
@@ -251,12 +232,8 @@ export class FlowEngineBridge implements FlowEngineApi {
     const elapsed = this.clock.getElapsedTime();
 
     try {
-      this.advanceIdleMaturation();
       if (this.postFreezeActive) {
         this.postFreezeElapsed += delta;
-      }
-      if (this.quietChamberStarted) {
-        this.quietChamberElapsed += delta;
       }
       this.applyConvergenceSignals();
       await this.app.update(delta, elapsed);
@@ -315,26 +292,9 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.stiffness = 1.92;
     conf.dynamicViscosity = 0.034;
     conf.bloom = true;
-    conf.colorSaturation = 0.9;
-    conf.particleDebugMode = "off";
     conf.ventCenter.set(23.2, 30.6, 18.4);
     conf.ventRadii.set(4.2, 3.2, 2.8);
     conf.ventAxis.set(-0.16, 0.94, 0.3).normalize();
-    conf.ventSpawnJitter = 0.18;
-    conf.sourceBindStrength = 0.56;
-    conf.sourceLiftStrength = 0.76;
-    conf.mouthRadiusScale = 0.56;
-    conf.mouthBindStrength = 1.42;
-    conf.mouthLiftStrength = 0.34;
-    conf.throatHeight = 8.2;
-    conf.throatSpread = 1.12;
-    conf.throatLiftStrength = 0.92;
-    conf.startupDelay = 0.08;
-    conf.startupDuration = 0.86;
-    conf.startupLatentVisibility = 0.05;
-    conf.freshnessDecayRate = 0.044;
-    conf.freshnessRespawnThreshold = 0.02;
-    conf.spotlightIntensity = 0.18;
     conf.sourceFieldCenter.set(24.0, 30.8, 18.8);
     conf.sourceFieldRadii.set(16.4, 12.8, 12.8);
     conf.sourceFieldSecondaryCenter.set(30.8, 31.6, 24.8);
@@ -343,55 +303,12 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.chamberFlowRadii.set(26.8, 23.4, 22.8);
   }
 
-  private applyStartupPreset(): void {
-    this.applySharedPresetBase();
-
-    conf.startupProgress = 0.0;
-    conf.startupStateMix = 1.0;
-    conf.size = 0.52;
-    conf.updateParams();
-    conf.auraOpacityCap = 0.62;
-    conf.auraEmissiveCap = 0.74;
-    conf.auraSizeScale = 0.88;
-    conf.edgeOrganicBreakup = 0.036;
-    conf.trailStretch = 0.16;
-    conf.pointerWake = 0.02;
-    conf.startupDuration = 1.18;
-    conf.freshnessReleaseStart = 0.82;
-    conf.freshnessReleaseEnd = 0.42;
-    conf.sourceConfinementStrength = 0.0;
-    conf.chamberFlowStrength = 0.0;
-    conf.emissiveIntensity = 0.88;
-    conf.sourceDepthScale = 1.82;
-
-    this.app?.setPointerInfluence?.(0.08);
-    this.app?.setLook?.({
-      environmentIntensity: 0.18,
-      exposure: 0.52,
-      bloomThreshold: 0.14,
-      bloomStrength: 0.14,
-      bloomRadius: 0.38,
-    });
-  }
-
   private applyIdlePlayPreset(): void {
     this.applySharedPresetBase();
 
     conf.size = 0.68;
     conf.updateParams();
     conf.gravity = 1;
-    conf.auraOpacityCap = 0.9;
-    conf.auraEmissiveCap = 0.92;
-    conf.auraSizeScale = 0.98;
-    conf.edgeOrganicBreakup = 0.068;
-    conf.trailStretch = 0.28;
-    conf.pointerWake = 0.76;
-    conf.freshnessReleaseStart = 0.72;
-    conf.freshnessReleaseEnd = 0.28;
-    conf.sourceConfinementStrength = 0.62;
-    conf.chamberFlowStrength = 0.14;
-    conf.emissiveIntensity = 1.08;
-    conf.sourceDepthScale = 1.18;
     conf.sourceFieldRadii.set(12.8, 10.2, 10.6);
     conf.sourceFieldSecondaryRadii.set(7.8, 7.2, 8.1);
 
@@ -403,26 +320,6 @@ export class FlowEngineBridge implements FlowEngineApi {
       bloomStrength: 0.2,
       bloomRadius: 0.46,
     });
-  }
-
-  private resetIdleMaturation(): void {
-    this.idlePlayPresetApplied = true;
-    conf.startupStateMix = 0;
-  }
-
-  private advanceIdleMaturation(): void {
-    conf.startupStateMix = 0;
-  }
-
-  private ensureActiveSourcePreset(): void {
-    if (this.idlePlayPresetApplied) {
-      return;
-    }
-
-    this.applyIdlePlayPreset();
-    this.app?.promoteIdlePopulation?.();
-    this.idlePlayPresetApplied = true;
-    conf.startupStateMix = 0;
   }
 
   private clamp01(v: number): number {
@@ -447,19 +344,13 @@ export class FlowEngineBridge implements FlowEngineApi {
       conf.convergenceSlowdown = 0;
       conf.convergenceCompression = 0;
       conf.convergenceFreeze = 0;
-      conf.convergenceShapeMix = 0;
+      conf.holdShapeMix = 0;
       conf.convergenceHeatRetention = 0;
       conf.convergenceThermalExtinction = 0;
-      conf.collapseMix = 0;
       conf.postFreezeSimLock = 0;
       conf.postFreezeClearProgress = 0;
-      conf.quietChamberMix = 0;
-      conf.clearFieldMix = 0;
-      conf.freshnessDecayRate = 0.044;
       this.currentPointerInfluence = 1;
       this.app?.setPointerInfluence?.(this.interactiveEnabled ? this.currentPointerInfluence : 0);
-      this.quietChamberStarted = false;
-      this.quietChamberElapsed = 0;
       return;
     }
 
@@ -471,12 +362,10 @@ export class FlowEngineBridge implements FlowEngineApi {
 
     conf.convergenceProgress = this.convergenceProgress;
     conf.convergenceSlowdown = slowdownMix;
-    conf.convergenceCompression = compressionMix;
     conf.convergenceFreeze = freezeMix;
-    conf.convergenceShapeMix = compressionMix;
+    conf.holdShapeMix = compressionMix;
     conf.convergenceHeatRetention = heatRetentionMix;
     conf.convergenceThermalExtinction = thermalExtinctionMix;
-    conf.freshnessDecayRate = THREE.MathUtils.lerp(0.044, 0.004, heatRetentionMix);
 
     const postFreezeClearProgress = this.postFreezeActive
       ? this.clamp01(
@@ -485,11 +374,8 @@ export class FlowEngineBridge implements FlowEngineApi {
         )
       : 0;
 
-    conf.collapseMix = 0;
     conf.postFreezeSimLock = this.postFreezeActive ? 1 : 0;
     conf.postFreezeClearProgress = postFreezeClearProgress;
-    conf.quietChamberMix = 0;
-    conf.clearFieldMix = 0;
 
     // Gravity: always centered attractor. No downward pull post-freeze.
     conf.gravity = 2;
@@ -504,16 +390,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     );
     conf.convergenceCompression = compressionMix * 0.2;
     conf.dynamicViscosity = THREE.MathUtils.lerp(0.034, 0.058, densifyMix);
-    conf.sourceConfinementStrength = THREE.MathUtils.lerp(0.62, 0.98, compressionMix);
-    conf.chamberFlowStrength = THREE.MathUtils.lerp(0.14, 0.08, slowdownMix);
-    conf.trailStretch = THREE.MathUtils.lerp(0.28, 0.18, slowdownMix);
-    conf.pointerWake = THREE.MathUtils.lerp(0.76, 0.18, slowdownMix);
-
-    // Simulation stays FROZEN during collapse. The renderer owns the entire visual.
-    // Unfreezing reactivates grid momentum which pushes particles into the wall.
-    conf.convergenceFreeze = freezeMix; // stays at 1.0 — sim is still
-    // speed stays at frozen level — no sim motion
-    // noise stays at frozen level
 
     conf.noise = noise;
     conf.speed = speed;
@@ -543,7 +419,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.postFreezeActive = true;
     this.postFreezeElapsed = 0;
 
-    this.options.onConvergenceFreeze?.();
+    this.options.onPostEnterHoldStart?.();
   }
 
   private updateProofReady(): void {
@@ -559,6 +435,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     if (this.proofReadyHoldFrames < 2) return;
 
     this.proofReadyEmitted = true;
-    this.options.onProofReady?.();
+    this.options.onRiftReady?.();
   }
 }

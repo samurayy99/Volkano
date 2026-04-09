@@ -6,20 +6,19 @@ import type { FlowEngineFrontRailMetrics, FlowEngineHostProps } from "./types";
 
 export function FlowEngineHost({
   onReady,
-  onConvergenceFreeze,
-  onProofReady,
+  onPostEnterHoldStart,
+  onRiftReady,
   onFrontRailMetricsChange,
   onError,
   className,
-  debugView,
 }: FlowEngineHostProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<FlowEngineBridge | null>(null);
   const pointerDownRef = useRef(false);
   const callbacksRef = useRef({
     onReady,
-    onConvergenceFreeze,
-    onProofReady,
+    onPostEnterHoldStart,
+    onRiftReady,
     onFrontRailMetricsChange,
     onError,
   });
@@ -27,15 +26,15 @@ export function FlowEngineHost({
   useEffect(() => {
     callbacksRef.current = {
       onReady,
-      onConvergenceFreeze,
-      onProofReady,
+      onPostEnterHoldStart,
+      onRiftReady,
       onFrontRailMetricsChange,
       onError,
     };
   }, [
     onReady,
-    onConvergenceFreeze,
-    onProofReady,
+    onPostEnterHoldStart,
+    onRiftReady,
     onFrontRailMetricsChange,
     onError,
   ]);
@@ -45,11 +44,11 @@ export function FlowEngineHost({
     if (!host) return;
 
     const bridge = new FlowEngineBridge(host, {
-      onConvergenceFreeze: () => {
-        callbacksRef.current.onConvergenceFreeze?.();
+      onPostEnterHoldStart: () => {
+        callbacksRef.current.onPostEnterHoldStart?.();
       },
-      onProofReady: () => {
-        callbacksRef.current.onProofReady?.();
+      onRiftReady: () => {
+        callbacksRef.current.onRiftReady?.();
       },
       onFrontRailMetricsChange: (metrics: FlowEngineFrontRailMetrics) => {
         callbacksRef.current.onFrontRailMetricsChange?.(metrics);
@@ -57,7 +56,6 @@ export function FlowEngineHost({
       onError: (error) => {
         callbacksRef.current.onError?.(error);
       },
-      debugView,
     });
     bridgeRef.current = bridge;
 
@@ -77,20 +75,11 @@ export function FlowEngineHost({
 
     return () => {
       cancelled = true;
+      pointerDownRef.current = false;
       bridge.dispose();
       if (bridgeRef.current === bridge) {
         bridgeRef.current = null;
       }
-    };
-  }, []);
-
-  useEffect(() => {
-    bridgeRef.current?.setDebugView(debugView ?? "composite");
-  }, [debugView]);
-
-  useEffect(() => {
-    return () => {
-      pointerDownRef.current = false;
     };
   }, []);
 

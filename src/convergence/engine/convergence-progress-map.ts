@@ -24,7 +24,6 @@ export function mapProgressToEngineSignals(
   progress: ConvergenceProgress,
 ): ConvergenceEngineSignals {
   const compressionGlowMix = smoothstep(progress, 68, 82);
-  const holdSculptMix = inverseLerp(progress, 74, 94) * 0.72;
   // Thermal extinction: capped at 0.65 so deep warm pockets survive into hold.
   // The hold reads as erstarrt but not farblos — inner glow in core/occlusion zones.
   // Capped at 0.22 so lava embers survive deep into hold — red life inside the rock.
@@ -36,7 +35,6 @@ export function mapProgressToEngineSignals(
     slowdownMix: smoothstep(progress, 74, 96),
     densifyMix: smoothstep(progress, 70, 92),
     compressionMix: smoothstep(progress, 72, 96),
-    holdSculptMix,
     freezeMix: smoothstep(progress, 96, 100),
     settleMix,
     heatRetentionMix: compressionGlowMix * (1 - thermalExtinctionMix),

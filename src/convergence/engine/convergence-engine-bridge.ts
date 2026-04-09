@@ -6,13 +6,11 @@ export interface ConvergenceEngineBridge {
   sync(snapshot: ConvergenceSnapshot): void;
 }
 
-export function createConvergenceEngineBridge(
-  engine: FlowEngineApi,
-): ConvergenceEngineBridge {
+export function createConvergenceEngineBridge(engine: FlowEngineApi): ConvergenceEngineBridge {
   return {
     sync(snapshot) {
       engine.setConvergenceProgress(snapshot.progress);
-      engine.setFreezeSettled(snapshot.freezeSettled);
+      engine.setConvergenceSettled(snapshot.convergenceSettled);
       engine.setInteractiveEnabled(getSourceInteractive(snapshot));
     },
   };

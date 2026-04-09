@@ -13,8 +13,6 @@ import {
   ConvergenceTrigger,
   createConvergenceController,
   createConvergenceEngineBridge,
-  getProofVisible,
-  getRotationAllowed,
   getSourceInteractive,
   type ConvergenceController,
   type ConvergenceSnapshot,
@@ -27,8 +25,6 @@ import type {
 
 type RoomPhase = "source" | "rotating" | "back";
 const FREEZE_FALLBACK_MS = 2500;
-const PROOF_READY_FALLBACK_MS = 8000;
-const PROOF_HOLD_MS = 1800;
 const TRIGGER_HEIGHT_RATIO = 0.72;
 const TRIGGER_WIDTH_RATIO = 0.115;
 const TRIGGER_VERTICAL_BIAS_RATIO = 0.02;
@@ -58,7 +54,6 @@ export function SpatialChamber() {
   const roomPhase = getRoomPhase(snapshot);
   const view: RoomPhase =
     reducedMotion && snapshot.rotationComplete ? "back" : roomPhase;
-  const proofVisible = getProofVisible(snapshot);
   const rotationActive = snapshot.rotationActive;
   const rotationComplete = snapshot.rotationComplete;
   const heroLanded = snapshot.heroLanded;
@@ -69,52 +64,46 @@ export function SpatialChamber() {
     getSourceInteractive(snapshot);
   const isBackPointerActive = view === "back" && interfaceActive;
   const shouldMountEngine = !reducedMotion && !engineFailed;
-  const rotationAllowed = getRotationAllowed(snapshot);
+  /** Without this, `.chamber-stage` stays opacity:0 until WebGPU `onReady` — hangs, no-GPU, or failed init never call `onReady`. */
+  const sourceShellVisible =
+    view === "source" && (engineReady || !shouldMountEngine);
 
-  useEffect(() => {
-    if (!snapshot.proofReady || snapshot.proofVisible) {
-      return;
-    }
-
-    controller.showProof();
-  }, [controller, snapshot.proofReady, snapshot.proofVisible]);
-
+  // Safety fallback: if convergence settled but rotation never triggered, start after timeout
   useEffect(() => {
     if (
-      !snapshot.freezeSettled ||
-      snapshot.proofReady ||
-      (shouldMountEngine && !engineFailed && engineReady)
+      !snapshot.convergenceSettled ||
+      snapshot.rotationActive ||
+      snapshot.rotationComplete
     ) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      controller.markProofReady();
-    }, PROOF_READY_FALLBACK_MS);
+      controller.startRotation();
+    }, FREEZE_FALLBACK_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [
     controller,
-    engineReady,
-    engineFailed,
-    shouldMountEngine,
-    snapshot.freezeSettled,
-    snapshot.proofReady,
+    snapshot.convergenceSettled,
+    snapshot.rotationActive,
+    snapshot.rotationComplete,
   ]);
 
+  // No-engine fallback: mark convergence settled after timeout
   useEffect(() => {
     if (
       snapshot.progress < 100 ||
-      snapshot.freezeSettled ||
+      snapshot.convergenceSettled ||
       (!reducedMotion && shouldMountEngine && !engineFailed && engineReady)
     ) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      controller.markFreezeSettled();
+      controller.markConvergenceSettled();
     }, FREEZE_FALLBACK_MS);
 
     return () => {
@@ -126,35 +115,24 @@ export function SpatialChamber() {
     engineFailed,
     reducedMotion,
     shouldMountEngine,
-    snapshot.freezeSettled,
+    snapshot.convergenceSettled,
     snapshot.progress,
   ]);
 
+  // Reduced-motion bypass: no hero-wall-land animation fires, so mark landed directly
   useEffect(() => {
-    if (!rotationAllowed) {
+    if (!reducedMotion || !snapshot.rotationComplete || snapshot.heroLanded) {
       return;
     }
 
-    let frameId: number | null = null;
-    const timeoutId = window.setTimeout(() => {
-      controller.startRotation();
-
-      if (!reducedMotion) {
-        return;
-      }
-
-      frameId = window.requestAnimationFrame(() => {
-        controller.completeRotation();
-      });
-    }, PROOF_HOLD_MS);
+    const frameId = window.requestAnimationFrame(() => {
+      controller.markHeroLanded();
+    });
 
     return () => {
-      window.clearTimeout(timeoutId);
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
+      window.cancelAnimationFrame(frameId);
     };
-  }, [controller, reducedMotion, rotationAllowed]);
+  }, [controller, reducedMotion, snapshot.rotationComplete, snapshot.heroLanded]);
 
   useEffect(() => {
     if (!snapshot.heroLanded || snapshot.interfaceActive) {
@@ -212,6 +190,7 @@ export function SpatialChamber() {
       data-back-interactive={isBackPointerActive ? "true" : "false"}
       data-view={view}
       data-engine-ready={engineReady ? "true" : undefined}
+      data-source-shell-visible={sourceShellVisible ? "true" : undefined}
     >
       <div className="cube-wrapper">
         <div className="chamber-stage">
@@ -234,28 +213,27 @@ export function SpatialChamber() {
                 controller={controller}
                 interactive={isFrontPointerActive}
                 mountEngine={shouldMountEngine && !engineFailed}
-                proofVisible={proofVisible}
-                proofSettled={snapshot.proofSettled}
                 triggerVisible={
                   shouldMountEngine &&
                   !engineFailed &&
-                  view === "source" &&
-                  !proofVisible
+                  view === "source"
                 }
                 triggerDisabled={rotationActive || rotationComplete}
-                onProofSettled={() => {
-                  controller.markProofSettled();
-                }}
                 onEngineReady={(api) => {
                   engineBridgeRef.current = createConvergenceEngineBridge(api);
                   engineBridgeRef.current.sync(snapshot);
                   requestAnimationFrame(() => setEngineReady(true));
                 }}
-                onConvergenceFreeze={() => {
-                  controller.markFreezeSettled();
+                onPostEnterHoldStart={() => {
+                  controller.markConvergenceSettled();
                 }}
-                onProofReady={() => {
-                  controller.markProofReady();
+                onRiftReady={() => {
+                  if (reducedMotion) {
+                    window.requestAnimationFrame(() => {
+                      controller.completeRotation();
+                    });
+                  }
+                  controller.startRotation();
                 }}
                 onEngineError={() => {
                   setEngineFailed(true);
@@ -288,27 +266,21 @@ function FrontFace({
   controller,
   interactive,
   mountEngine,
-  proofVisible,
-  proofSettled,
   triggerVisible,
   triggerDisabled,
-  onProofSettled,
   onEngineReady,
-  onConvergenceFreeze,
-  onProofReady,
+  onPostEnterHoldStart,
+  onRiftReady,
   onEngineError,
 }: {
   controller: ConvergenceController;
   interactive: boolean;
   mountEngine: boolean;
-  proofVisible: boolean;
-  proofSettled: boolean;
   triggerVisible: boolean;
   triggerDisabled: boolean;
-  onProofSettled: () => void;
   onEngineReady: (api: FlowEngineApi) => void;
-  onConvergenceFreeze: () => void;
-  onProofReady: () => void;
+  onPostEnterHoldStart: () => void;
+  onRiftReady: () => void;
   onEngineError: (error: unknown) => void;
 }) {
   const triggerAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -356,8 +328,8 @@ function FrontFace({
                   setTriggerAnchorReady(true);
                 }
               }}
-              onConvergenceFreeze={onConvergenceFreeze}
-              onProofReady={onProofReady}
+              onPostEnterHoldStart={onPostEnterHoldStart}
+              onRiftReady={onRiftReady}
               onError={onEngineError}
             />
           ) : (
@@ -376,11 +348,6 @@ function FrontFace({
               />
             </div>
           ) : null}
-          <ProofOverlay
-            settled={proofSettled}
-            visible={proofVisible}
-            onSettled={onProofSettled}
-          />
         </div>
       </div>
     </section>
@@ -437,46 +404,6 @@ function writeFrontRailAnchorStyle(
   node.style.setProperty("--trigger-module-height", geometry.moduleHeight);
   node.style.setProperty("--trigger-label-size", geometry.fontSize);
   node.style.setProperty("--trigger-label-spacing", geometry.letterSpacing);
-}
-
-function ProofOverlay({
-  visible,
-  settled,
-  onSettled,
-}: {
-  visible: boolean;
-  settled: boolean;
-  onSettled: () => void;
-}) {
-  return (
-    <div
-      className={`proof-front-overlay ${visible ? "is-visible" : ""} ${
-        settled ? "is-settled" : ""
-      }`}
-      onAnimationEnd={(event: ReactAnimationEvent<HTMLDivElement>) => {
-        if (
-          event.currentTarget !== event.target ||
-          event.animationName !== "proof-front-reveal" ||
-          !visible ||
-          settled
-        ) {
-          return;
-        }
-
-        onSettled();
-      }}
-    >
-      <div className="proof-front-copy">
-        <h1 className="proof-front-headline">
-          I BUILD
-          <br />
-          SUPA
-          <br />
-          STUFF
-        </h1>
-      </div>
-    </div>
-  );
 }
 
 function BackFace({

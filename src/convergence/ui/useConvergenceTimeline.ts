@@ -60,7 +60,7 @@ export function useConvergenceTimeline(
       if (t < 1) {
         frameRef.current = requestAnimationFrame(tick);
       } else {
-        controller.markFreezeSettled();
+        controller.markConvergenceSettled();
         frameRef.current = null;
       }
     },

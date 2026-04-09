@@ -4,7 +4,6 @@ import {Lights} from "./lights";
 
 import { float, Fn, mrt, output, pass, vec4 } from "three/tsl";
 import {conf} from "./conf";
-import {Info} from "./info";
 import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
 import BackgroundGeometry from "./backgroundGeometry";
@@ -32,27 +31,32 @@ class App {
 
     lights = null;
     backgroundGeometry = null;
-    pointerSample = null;
     pointerNdc = new THREE.Vector2();
     pointerIntersect = new THREE.Vector3();
-    debugView = "composite";
     sourceFieldAnchorOffsets = null;
     startupSourceFieldAnchorOffsets = null;
-    mode = "idle";
-    idleParticlePresentation = "active";
     freezeSnapshotCaptured = false;
     freezeSnapshotRequest = null;
     freezeSnapshotCycle = 0;
+    sourceAnchorScales = {
+        idlePrimary: new THREE.Vector3(0.78, 0.82, 0.7),
+        idleSecondary: new THREE.Vector3(0.38, 0.62, 0.4),
+    };
+    sourceAnchorScratch = {
+        ventCenter: new THREE.Vector3(),
+        ventAxis: new THREE.Vector3(),
+        rightPoint: new THREE.Vector3(),
+        upPoint: new THREE.Vector3(),
+        axisPoint: new THREE.Vector3(),
+        worldOffsetPoint: new THREE.Vector3(),
+        worldProjectPoint: new THREE.Vector3(),
+    };
 
     constructor(renderer) {
         this.renderer = renderer;
     }
 
     async init(progressCallback, width = window.innerWidth, height = window.innerHeight) {
-        conf.dispose();
-        this.info = new Info();
-        conf.init();
-
         this.camera = new THREE.PerspectiveCamera(47, width / height, 0.01, 7.5);
         this.applyCameraFraming(width, height);
 
@@ -83,7 +87,7 @@ class App {
         this.scene.add(this.lights.object);
         this.scene.add(this.particleRenderer.object);
 
-        this.applyDebugView();
+        this.applySceneVisibility();
 
         const scenePass = pass(this.scene, this.camera);
         scenePass.setMRT( mrt( {
@@ -135,10 +139,6 @@ class App {
     }
 
     setPointer(clientX, clientY, isDown = false) {
-        this.pointerDown = isDown;
-
-        this.pointerSample = { x: clientX, y: clientY, t: performance.now() };
-
         this.pointerNdc.x = clientX * 2 - 1;
         this.pointerNdc.y = -(clientY * 2) + 1;
         this.raycaster.setFromCamera(this.pointerNdc, this.camera);
@@ -152,11 +152,6 @@ class App {
         }
     }
 
-    setDebugView(view = "composite") {
-        this.debugView = view;
-        this.applyDebugView();
-    }
-
     primeStartupSource() {
         if (this.startupSourceFieldAnchorOffsets) {
             this.sourceFieldAnchorOffsets = {
@@ -165,25 +160,25 @@ class App {
             };
         }
         this.backgroundGeometry?.update?.(0, 0);
-        this.syncSourceAnchors("startup");
+        this.syncSourceAnchors();
     }
 
     promoteIdlePopulation() {
         if (this.startupSourceFieldAnchorOffsets) {
             this.sourceFieldAnchorOffsets = {
-                primary: this.startupSourceFieldAnchorOffsets.primary.clone().multiply(new THREE.Vector3(0.78, 0.82, 0.7)),
-                secondary: this.startupSourceFieldAnchorOffsets.secondary.clone().multiply(new THREE.Vector3(0.38, 0.62, 0.4)),
+                primary: this.startupSourceFieldAnchorOffsets.primary
+                    .clone()
+                    .multiply(this.sourceAnchorScales.idlePrimary),
+                secondary: this.startupSourceFieldAnchorOffsets.secondary
+                    .clone()
+                    .multiply(this.sourceAnchorScales.idleSecondary),
             };
         }
         this.backgroundGeometry?.update?.(0, 0);
-        this.syncSourceAnchors("mature-idle");
+        this.syncSourceAnchors();
     }
 
-    syncSourceAnchors(reseedMode = false) {
-        if (!this.backgroundGeometry?.getSourceAnchorDescriptorWorld || !this.particleRenderer?.worldPointToSimulation) {
-            return;
-        }
-
+    ensureSourceAnchorOffsets() {
         if (!this.sourceFieldAnchorOffsets) {
             const primary = conf.sourceFieldCenter.clone().sub(conf.ventCenter);
             const secondary = conf.sourceFieldSecondaryCenter.clone().sub(conf.ventCenter);
@@ -196,26 +191,69 @@ class App {
                 secondary,
             };
         }
+    }
+
+    getSourceDescriptor() {
+        if (!this.backgroundGeometry?.getSourceAnchorDescriptorWorld || !this.particleRenderer?.worldPointToSimulation) {
+            return null;
+        }
+
+        this.ensureSourceAnchorOffsets();
 
         const source = this.backgroundGeometry.getSourceAnchorDescriptorWorld();
         if (!source) {
-            return;
+            return null;
         }
 
-        const ventCenterSim = this.particleRenderer.worldPointToSimulation(source.originWorld, new THREE.Vector3());
-        const ventAxisSim = this.particleRenderer.worldDirectionToSimulation(source.axisWorld, new THREE.Vector3());
+        const {
+            ventCenter,
+            ventAxis,
+            rightPoint,
+            upPoint,
+            axisPoint,
+            worldOffsetPoint,
+        } = this.sourceAnchorScratch;
+
+        const ventCenterSim = this.particleRenderer.worldPointToSimulation(
+            source.originWorld,
+            ventCenter,
+        );
+        const ventAxisSim = this.particleRenderer.worldDirectionToSimulation(
+            source.axisWorld,
+            ventAxis,
+        );
         const simRightPoint = this.particleRenderer.worldPointToSimulation(
-            source.originWorld.clone().addScaledVector(source.rightWorld, source.radiiLocal.x),
-            new THREE.Vector3(),
+            worldOffsetPoint.copy(source.originWorld).addScaledVector(source.rightWorld, source.radiiLocal.x),
+            rightPoint,
         );
         const simUpPoint = this.particleRenderer.worldPointToSimulation(
-            source.originWorld.clone().addScaledVector(source.upWorld, source.radiiLocal.z),
-            new THREE.Vector3(),
+            worldOffsetPoint.copy(source.originWorld).addScaledVector(source.upWorld, source.radiiLocal.z),
+            upPoint,
         );
         const simAxisPoint = this.particleRenderer.worldPointToSimulation(
-            source.originWorld.clone().addScaledVector(source.axisWorld, source.radiiLocal.y),
-            new THREE.Vector3(),
+            worldOffsetPoint.copy(source.originWorld).addScaledVector(source.axisWorld, source.radiiLocal.y),
+            axisPoint,
         );
+
+        return {
+            source,
+            ventCenterSim,
+            ventAxisSim,
+            simRightPoint,
+            simUpPoint,
+            simAxisPoint,
+        };
+    }
+
+    applySourceAnchorDescriptor({
+        ventCenterSim,
+        ventAxisSim,
+        simRightPoint,
+        simUpPoint,
+        simAxisPoint,
+    }) {
+        const primaryOffset = this.sourceFieldAnchorOffsets.primary;
+        const secondaryOffset = this.sourceFieldAnchorOffsets.secondary;
 
         conf.ventCenter.copy(ventCenterSim);
         conf.ventAxis.copy(ventAxisSim);
@@ -224,16 +262,17 @@ class App {
             Math.max(1.4, simAxisPoint.distanceTo(ventCenterSim)),
             Math.max(1.0, simUpPoint.distanceTo(ventCenterSim)),
         );
-        conf.sourceFieldCenter.copy(ventCenterSim).add(this.sourceFieldAnchorOffsets.primary);
-        conf.sourceFieldSecondaryCenter.copy(ventCenterSim).add(this.sourceFieldAnchorOffsets.secondary);
+        conf.sourceFieldCenter.copy(ventCenterSim).add(primaryOffset);
+        conf.sourceFieldSecondaryCenter.copy(ventCenterSim).add(secondaryOffset);
+    }
 
-        if (reseedMode === "startup") {
-            this.mlsMpmSim?.prepareStartupFromVent?.();
-        } else if (reseedMode === "mature-idle") {
-            this.mlsMpmSim?.seedMatureIdlePopulation?.();
-        } else if (reseedMode) {
-            this.mlsMpmSim?.reseedAllParticlesFromVent?.();
+    syncSourceAnchors() {
+        const sourceDescriptor = this.getSourceDescriptor();
+        if (!sourceDescriptor) {
+            return;
         }
+
+        this.applySourceAnchorDescriptor(sourceDescriptor);
     }
 
     setLook(values = {}) {
@@ -268,15 +307,12 @@ class App {
     }
 
     setConvergenceProgress(progress) {
-        if (progress < 100 && (this.freezeSnapshotCaptured || this.freezeSnapshotRequest)) {
-            this.freezeSnapshotCaptured = false;
-            this.freezeSnapshotCycle++;
-            this.freezeSnapshotRequest = null;
-            this.particleRenderer?.clearFreezeSnapshot?.();
+        if (progress < 100) {
+            this.resetFreezeCaptureState();
         }
     }
 
-    clearPointer(x, y) {
+    clearPointer() {
         this.mlsMpmSim?.setMouseActive?.(false);
     }
 
@@ -296,13 +332,15 @@ class App {
         const frameFrontZ = frameDepth * 0.5;
         const bandCenterY = -outerHeight * 0.5 + frameTop * 0.5;
         const railObject = this.backgroundGeometry.object;
+        const projectScratch = this.sourceAnchorScratch.worldProjectPoint;
 
         railObject.updateWorldMatrix(true, false);
         this.camera.updateMatrixWorld();
 
         const projectPoint = (x, y, z) => {
-            const worldPoint = railObject.localToWorld(new THREE.Vector3(x, y, z));
-            const projectedPoint = worldPoint.project(this.camera);
+            const projectedPoint = railObject
+                .localToWorld(projectScratch.set(x, y, z))
+                .project(this.camera);
 
             return {
                 x: (projectedPoint.x + 1) * 0.5,
@@ -334,83 +372,96 @@ class App {
         };
     }
 
+    resetFreezeCaptureState() {
+        if (!this.freezeSnapshotCaptured && !this.freezeSnapshotRequest) {
+            return;
+        }
+
+        this.freezeSnapshotCaptured = false;
+        this.freezeSnapshotCycle++;
+        this.freezeSnapshotRequest = null;
+        this.particleRenderer?.clearFreezeSnapshot?.();
+    }
+
+    ensureFreezeSnapshotCapture() {
+        if (this.freezeSnapshotCaptured || this.freezeSnapshotRequest) {
+            return;
+        }
+
+        const requestCycle = this.freezeSnapshotCycle;
+        this.freezeSnapshotRequest = this.mlsMpmSim.captureFreezeSnapshot()
+            .then((snapshot) => {
+                if (
+                    snapshot &&
+                    requestCycle === this.freezeSnapshotCycle &&
+                    conf.postFreezeSimLock > 0.5
+                ) {
+                    this.particleRenderer?.setFreezeSnapshot?.(snapshot);
+                    this.freezeSnapshotCaptured = true;
+                }
+            })
+            .finally(() => {
+                if (requestCycle === this.freezeSnapshotCycle) {
+                    this.freezeSnapshotRequest = null;
+                }
+            });
+    }
+
 
     async update(delta, elapsed) {
-        conf.begin();
-
         this.backgroundGeometry?.update?.(delta, elapsed);
-        this.lights.update(elapsed);
+        this.lights.update();
 
         this.syncSourceAnchors();
         await this.mlsMpmSim.update(delta, elapsed);
 
         if (conf.postFreezeSimLock > 0.5) {
-            if (!this.freezeSnapshotCaptured && !this.freezeSnapshotRequest) {
-                const requestCycle = this.freezeSnapshotCycle;
-                this.freezeSnapshotRequest = this.mlsMpmSim.captureFreezeSnapshot()
-                    .then((snapshot) => {
-                        if (
-                            snapshot &&
-                            requestCycle === this.freezeSnapshotCycle &&
-                            conf.postFreezeSimLock > 0.5
-                        ) {
-                            this.particleRenderer?.setFreezeSnapshot?.(snapshot);
-                            this.freezeSnapshotCaptured = true;
-                        }
-                    })
-                    .finally(() => {
-                        if (requestCycle === this.freezeSnapshotCycle) {
-                            this.freezeSnapshotRequest = null;
-                        }
-                    });
-            }
+            this.ensureFreezeSnapshotCapture();
 
             if (this.freezeSnapshotRequest) {
                 await this.freezeSnapshotRequest;
             }
-        } else if (this.freezeSnapshotCaptured || this.freezeSnapshotRequest) {
-            this.freezeSnapshotCaptured = false;
-            this.freezeSnapshotCycle++;
-            this.freezeSnapshotRequest = null;
-            this.particleRenderer?.clearFreezeSnapshot?.();
+        } else {
+            this.resetFreezeCaptureState();
         }
 
         this.particleRenderer.update();
-        this.applyDebugView();
+        this.applySceneVisibility();
 
         if (conf.bloom) {
             await this.postProcessing.renderAsync();
         } else {
             await this.renderer.renderAsync(this.scene, this.camera);
         }
-
-        conf.end();
     }
 
     dispose() {
-        this.info?.dispose?.();
-        conf.dispose();
+        this.particleRenderer?.dispose?.();
+        this.backgroundGeometry?.dispose?.();
+        this.lights?.dispose?.();
+        this.mlsMpmSim?.dispose?.();
+        this.postProcessing?.dispose?.();
+        this.scene?.environment?.dispose?.();
+        this.scene = null;
+        this.camera = null;
+        this.particleRenderer = null;
+        this.backgroundGeometry = null;
+        this.lights = null;
+        this.mlsMpmSim = null;
+        this.postProcessing = null;
+        this.bloomPass = null;
+        this.sourceFieldAnchorOffsets = null;
+        this.startupSourceFieldAnchorOffsets = null;
+        this.freezeSnapshotRequest = null;
     }
 
-    applyDebugView() {
-        const params = typeof window !== "undefined"
-            ? new URLSearchParams(window.location.search)
-            : null;
-        const particleDebug = params?.get("particleDebug");
-        const resolvedParticleDebug = particleDebug === "source"
-            || particleDebug === "heat"
-            ? particleDebug
-            : "off";
-
+    applySceneVisibility() {
         if (this.particleRenderer?.object) {
-            this.particleRenderer.object.visible =
-                this.debugView !== "geometry" && this.idleParticlePresentation !== "hidden";
+            this.particleRenderer.object.visible = true;
         }
         if (this.backgroundGeometry?.object) {
-            this.backgroundGeometry.object.visible = this.debugView !== "particles";
+            this.backgroundGeometry.object.visible = true;
         }
-        conf.particleDebugMode = resolvedParticleDebug;
-        this.backgroundGeometry?.setDebugView?.(this.debugView);
     }
 
     applyCameraFraming(width = window.innerWidth, height = window.innerHeight) {

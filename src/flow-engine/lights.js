@@ -1,5 +1,4 @@
 import * as THREE from "three/webgpu";
-import { conf } from "./conf";
 
 export class Lights {
     hemi = null;
@@ -40,23 +39,14 @@ export class Lights {
         this.frontVolumeLight = frontVolumeLight;
     }
 
-    update(elapsed) {
-        const clearFieldMix = conf.clearFieldMix || 0;
+    update() {
+    }
 
-        if (this.hemi) {
-            this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.35, clearFieldMix);
-        }
-
-        if (this.keyLight) {
-            this.keyLight.intensity = THREE.MathUtils.lerp(1.85, 1.36, clearFieldMix);
-        }
-
-        if (this.rimLight) {
-            this.rimLight.intensity = THREE.MathUtils.lerp(0.14, 0.22, clearFieldMix);
-        }
-
-        if (this.frontVolumeLight) {
-            this.frontVolumeLight.intensity = THREE.MathUtils.lerp(0.0, 0.18, clearFieldMix);
-        }
+    dispose() {
+        this.hemi = null;
+        this.keyLight = null;
+        this.rimLight = null;
+        this.frontVolumeLight = null;
+        this.object = null;
     }
 }

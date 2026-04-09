@@ -974,6 +974,17 @@ class mlsMpmSimulator {
   setMouseActive(value) {
     this.uniforms.mouseActive.value = value ? 1 : 0;
   }
+
+  dispose() {
+    this.mousePosArray = [];
+    this.mousePos = null;
+    this.kernels = {};
+    this.uniforms = {};
+    this.particleBuffer = null;
+    this.cellBuffer = null;
+    this.cellBufferF = null;
+    this.renderer = null;
+  }
 }
 
 export default mlsMpmSimulator;

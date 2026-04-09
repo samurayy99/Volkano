@@ -35,7 +35,6 @@
   --seam-warm: rgba(255, 200, 140, 0.08);
   --rotation-duration: 1900ms;
   --rotation-ease: cubic-bezier(0.76, 0, 0.18, 1);
-  --proof-size: clamp(4.6rem, 11vw, 10.8rem);
   /* Material families — per surface identity */
   --mat-graphite: hsl(220, 4%, 11%);
   --mat-obsidian: hsl(230, 5%, 7%);
@@ -592,47 +591,6 @@ select {
   opacity: 0.58;
 }
 
-/* ── Proof front overlay ────────────────────────────────────────────────── */
-
-.proof-front-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  opacity: 0;
-}
-
-.proof-front-overlay.is-visible {
-  animation: proof-front-reveal 1200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.proof-front-overlay.is-settled {
-  opacity: 1;
-  animation: none;
-}
-
-.proof-front-copy {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-}
-
-.proof-front-headline {
-  font-family: var(--font-display);
-  font-size: var(--proof-size);
-  font-weight: 700;
-  line-height: 0.84;
-  letter-spacing: -0.06em;
-  text-transform: uppercase;
-  color: var(--text-main);
-  text-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.6),
-    0 6px 28px rgba(0, 0, 0, 0.35);
-}
-
 /* ── Backface / hero wall ───────────────────────────────────────────────── */
 
 .back-surface {
@@ -929,7 +887,7 @@ select {
   pointer-events: none;
 }
 
-.site-root[data-view="source"][data-engine-ready="true"] .chamber-stage {
+.site-root[data-view="source"][data-source-shell-visible="true"] .chamber-stage {
   opacity: 1;
   pointer-events: auto;
   transition: opacity 0.3s ease-out;
@@ -944,9 +902,11 @@ select {
   animation: hero-copy-reveal var(--rotation-duration) linear forwards;
 }
 
-.site-root[data-view="back"] .back-chrome,
-.site-root[data-view="back"] .back-hero {
+.site-root[data-view="back"] .back-chrome {
   opacity: 1;
+}
+.site-root[data-view="back"] .back-hero {
+  animation: hero-wall-land 0.6s ease-out forwards;
 }
 
 .site-root[data-view="back"] .back-scroll {
@@ -1026,12 +986,11 @@ select {
   }
 }
 
-@keyframes proof-front-reveal {
+@keyframes hero-wall-land {
   0% {
     opacity: 0;
-    transform: translateY(0.6rem);
+    transform: translateY(1.2rem);
   }
-
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -1046,7 +1005,6 @@ select {
     --cube-width: min(1000px, calc(100vw - 4rem));
     --cube-height: min(720px, calc(100vh - 4.5rem));
     --cube-depth: min(calc(var(--cube-width) * 1.14), 1120px);
-    --proof-size: clamp(4rem, 10vw, 7.8rem);
   }
 
   .back-hero {
@@ -1071,7 +1029,6 @@ select {
     --backwall-seat-side: clamp(0.55rem, 1.8vw, 0.75rem);
     --backwall-seat-top: clamp(0.55rem, 1.2vh, 0.8rem);
     --backwall-seat-bottom: clamp(0.6rem, 1.3vh, 0.85rem);
-    --proof-size: clamp(3.2rem, 13vw, 5.8rem);
   }
 
   .cube-wrapper {

@@ -1,5 +1,3 @@
-export type FlowEngineDebugView = "composite" | "geometry" | "particles";
-
 export interface FlowEngineFrontRailMetrics {
   // Pixel-space rect of the lower front frame band relative to the engine host.
   left: number;
@@ -12,27 +10,24 @@ export interface FlowEngineFrontRailMetrics {
 
 export interface FlowEngineApi {
   setConvergenceProgress: (progress: number) => void;
-  setFreezeSettled: (settled: boolean) => void;
+  setConvergenceSettled: (settled: boolean) => void;
   setInteractiveEnabled: (enabled: boolean) => void;
   setPointer: (x: number, y: number, isDown: boolean) => void;
-  setDebugView: (view: FlowEngineDebugView) => void;
   dispose: () => void;
 }
 
 export interface FlowEngineBridgeOptions {
   onError?: (error: unknown) => void;
-  onConvergenceFreeze?: () => void;
-  onProofReady?: () => void;
+  onPostEnterHoldStart?: () => void;
+  onRiftReady?: () => void;
   onFrontRailMetricsChange?: (metrics: FlowEngineFrontRailMetrics) => void;
-  debugView?: FlowEngineDebugView;
 }
 
 export interface FlowEngineHostProps {
   onReady?: (api: FlowEngineApi) => void;
-  onConvergenceFreeze?: () => void;
-  onProofReady?: () => void;
+  onPostEnterHoldStart?: () => void;
+  onRiftReady?: () => void;
   onFrontRailMetricsChange?: (metrics: FlowEngineFrontRailMetrics) => void;
   onError?: (error: unknown) => void;
   className?: string;
-  debugView?: FlowEngineDebugView;
 }

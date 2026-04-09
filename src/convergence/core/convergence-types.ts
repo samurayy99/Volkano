@@ -5,8 +5,6 @@ export type ConvergencePhase =
   | 'converging'
   | 'frozen'
   | 'condensing'
-  | 'proof'
-  | 'proof_hold'
   | 'rotating'
   | 'hero_landed'
   | 'interface_active';
@@ -19,10 +17,7 @@ export interface ConvergenceSnapshot {
   progress: ConvergenceProgress;
   phase: ConvergencePhase;
   inputSource: ConvergenceInputSource | null;
-  freezeSettled: boolean;
-  proofReady: boolean;
-  proofVisible: boolean;
-  proofSettled: boolean;
+  convergenceSettled: boolean;
   rotationActive: boolean;
   rotationComplete: boolean;
   heroLanded: boolean;
@@ -33,7 +28,6 @@ export interface ConvergenceEngineSignals {
   slowdownMix: number;
   densifyMix: number;
   compressionMix: number;
-  holdSculptMix: number;
   freezeMix: number;
   settleMix: number;
   heatRetentionMix: number;

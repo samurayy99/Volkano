@@ -100,6 +100,7 @@ class BackgroundGeometry {
   backPlateMaterial = null;
   backPlate = null;
   interiorWallMaterials = [];
+  sourceTextures = [];
 
   addImpulse(amount) {
     if (!Number.isFinite(amount) || amount <= 0) return;
@@ -156,11 +157,14 @@ class BackgroundGeometry {
       this.linerMaterial.emissiveIntensity = linerBase + response * 0.01;
     }
 
-    this.interiorWallMaterials.forEach((material, index) => {
-      material.color.copy(INTERIOR_WALL_BASE_COLORS[index]);
+    const mats = this.interiorWallMaterials;
+    const baseCols = INTERIOR_WALL_BASE_COLORS;
+    for (let i = 0; i < mats.length; i++) {
+      const material = mats[i];
+      material.color.copy(baseCols[i]);
       material.envMapIntensity = 0.076;
       material.emissiveIntensity = 0.018;
-    });
+    }
 
     if (this.backWallMaterial) {
       this.backWallMaterial.color.copy(BACK_WALL_BASE_COLOR);
@@ -185,6 +189,12 @@ class BackgroundGeometry {
           colorSpace: THREE.SRGBColorSpace,
         }),
       ]);
+    this.sourceTextures = [
+      normalTexture,
+      colorTexture,
+      roughnessTexture,
+      backPlateTexture,
+    ];
 
     backPlateTexture.center.set(0.5, 0.5);
     backPlateTexture.repeat.set(1, 1);
@@ -472,6 +482,46 @@ class BackgroundGeometry {
 
     group.position.set(centerX, centerY, centerZ);
     this.object = group;
+  }
+
+  dispose() {
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set(this.sourceTextures);
+
+    this.object?.traverse?.((child) => {
+      if (child.geometry) {
+        geometries.add(child.geometry);
+      }
+      const childMaterials = Array.isArray(child.material)
+        ? child.material
+        : child.material
+          ? [child.material]
+          : [];
+      childMaterials.forEach((material) => {
+        materials.add(material);
+        Object.values(material).forEach((value) => {
+          if (value?.isTexture) {
+            textures.add(value);
+          }
+        });
+      });
+    });
+
+    geometries.forEach((geometry) => geometry.dispose?.());
+    materials.forEach((material) => material.dispose?.());
+    textures.forEach((texture) => texture.dispose?.());
+
+    this.object?.parent?.remove?.(this.object);
+
+    this.object = null;
+    this.frameMaterial = null;
+    this.linerMaterial = null;
+    this.backWallMaterial = null;
+    this.backPlateMaterial = null;
+    this.backPlate = null;
+    this.interiorWallMaterials = [];
+    this.sourceTextures = [];
   }
 }
 

@@ -1,6 +1,5 @@
 import {
   canRevealInterface,
-  canRevealProof,
   canStartRotation,
   clampConvergenceProgress,
   resolveConvergencePhase,
@@ -14,12 +13,7 @@ export interface ConvergenceController {
   getSnapshot(): ConvergenceSnapshot;
   subscribe(listener: () => void): () => void;
   setProgress(progress: number, source?: ConvergenceInputSource): void;
-  nudgeProgress(delta: number, source?: ConvergenceInputSource): void;
-  reset(): void;
-  markFreezeSettled(): void;
-  markProofReady(): void;
-  showProof(): void;
-  markProofSettled(): void;
+  markConvergenceSettled(): void;
   startRotation(): void;
   completeRotation(): void;
   markHeroLanded(): void;
@@ -39,16 +33,12 @@ function createSnapshot(
     progress: clampConvergenceProgress(progress),
     phase: 'source',
     inputSource,
-    freezeSettled: false,
-    proofReady: false,
-    proofVisible: false,
-    proofSettled: false,
+    convergenceSettled: false,
     rotationActive: false,
     rotationComplete: false,
     heroLanded: false,
     interfaceActive: false,
   };
-
   snapshot.phase = resolveConvergencePhase(snapshot);
   return snapshot;
 }
@@ -63,20 +53,14 @@ export function createConvergenceController(
   const listeners = new Set<() => void>();
 
   const emit = () => {
-    snapshot = {
-      ...snapshot,
-      phase: resolveConvergencePhase(snapshot),
-    };
+    snapshot = { ...snapshot, phase: resolveConvergencePhase(snapshot) };
     listeners.forEach((listener) => listener());
   };
 
   const resetDerivedState = () => {
     snapshot = {
       ...snapshot,
-      freezeSettled: false,
-      proofReady: false,
-      proofVisible: false,
-      proofSettled: false,
+      convergenceSettled: false,
       rotationActive: false,
       rotationComplete: false,
       heroLanded: false,
@@ -97,129 +81,46 @@ export function createConvergenceController(
     },
 
     setProgress(progress, source = 'programmatic') {
-      if (snapshot.rotationActive || snapshot.rotationComplete) {
-        return;
-      }
+      if (snapshot.rotationActive || snapshot.rotationComplete) return;
 
-      const nextProgress = clampConvergenceProgress(progress);
-      const nextSnapshot = {
+      snapshot = {
         ...snapshot,
-        progress: nextProgress,
+        progress: clampConvergenceProgress(progress),
         inputSource: source,
       };
-
-      snapshot = nextSnapshot;
-
-      if (nextProgress < 100) {
-        resetDerivedState();
-      }
-
+      if (snapshot.progress < 100) resetDerivedState();
       emit();
     },
 
-    nudgeProgress(delta, source = 'programmatic') {
-      this.setProgress(snapshot.progress + delta, source);
-    },
-
-    reset() {
-      snapshot = createSnapshot(0, null);
-      emit();
-    },
-
-    markFreezeSettled() {
-      if (snapshot.progress < 100 || snapshot.freezeSettled || snapshot.rotationComplete) {
+    markConvergenceSettled() {
+      if (snapshot.progress < 100 || snapshot.convergenceSettled || snapshot.rotationComplete) {
         return;
       }
-
-      snapshot = {
-        ...snapshot,
-        freezeSettled: true,
-      };
-      emit();
-    },
-
-    markProofReady() {
-      if (!snapshot.freezeSettled || snapshot.proofReady || snapshot.rotationComplete) {
-        return;
-      }
-
-      snapshot = {
-        ...snapshot,
-        proofReady: true,
-      };
-      emit();
-    },
-
-    showProof() {
-      if (!canRevealProof(snapshot) || snapshot.proofVisible) {
-        return;
-      }
-
-      snapshot = {
-        ...snapshot,
-        proofVisible: true,
-      };
-      emit();
-    },
-
-    markProofSettled() {
-      if (!snapshot.proofVisible || snapshot.proofSettled) {
-        return;
-      }
-
-      snapshot = {
-        ...snapshot,
-        proofSettled: true,
-      };
+      snapshot = { ...snapshot, convergenceSettled: true };
       emit();
     },
 
     startRotation() {
-      if (!canStartRotation(snapshot)) {
-        return;
-      }
-
-      snapshot = {
-        ...snapshot,
-        rotationActive: true,
-      };
+      if (!canStartRotation(snapshot)) return;
+      snapshot = { ...snapshot, rotationActive: true };
       emit();
     },
 
     completeRotation() {
-      if (!snapshot.rotationActive || snapshot.rotationComplete) {
-        return;
-      }
-
-      snapshot = {
-        ...snapshot,
-        rotationActive: false,
-        rotationComplete: true,
-      };
+      if (!snapshot.rotationActive || snapshot.rotationComplete) return;
+      snapshot = { ...snapshot, rotationActive: false, rotationComplete: true };
       emit();
     },
 
     markHeroLanded() {
-      if (!snapshot.rotationComplete || snapshot.heroLanded) {
-        return;
-      }
-
-      snapshot = {
-        ...snapshot,
-        heroLanded: true,
-      };
+      if (!snapshot.rotationComplete || snapshot.heroLanded) return;
+      snapshot = { ...snapshot, heroLanded: true };
       emit();
     },
 
     markInterfaceActive() {
-      if (!canRevealInterface(snapshot) || snapshot.interfaceActive) {
-        return;
-      }
-
-      snapshot = {
-        ...snapshot,
-        interfaceActive: true,
-      };
+      if (!canRevealInterface(snapshot) || snapshot.interfaceActive) return;
+      snapshot = { ...snapshot, interfaceActive: true };
       emit();
     },
   };
