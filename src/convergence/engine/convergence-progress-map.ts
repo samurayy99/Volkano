@@ -23,22 +23,17 @@ function smoothstep(value: number, min: number, max: number): number {
 export function mapProgressToEngineSignals(
   progress: ConvergenceProgress,
 ): ConvergenceEngineSignals {
-  const compressionGlowMix = smoothstep(progress, 68, 82);
-  // Thermal extinction: capped at 0.65 so deep warm pockets survive into hold.
-  // The hold reads as erstarrt but not farblos — inner glow in core/occlusion zones.
-  // Capped at 0.22 so lava embers survive deep into hold — red life inside the rock.
-  const thermalExtinctionMix = smoothstep(progress, 80, 90) * 0.08;
-  // Settle drives solver downward pull DURING convergence (not after freeze)
-  const settleMix = smoothstep(progress, 55, 88);
-
+  const compressionGlowMix = smoothstep(progress, 62, 82);
+  const thermalExtinctionMix = smoothstep(progress, 82, 96) * 0.58;
   return {
-    slowdownMix: smoothstep(progress, 74, 96),
-    densifyMix: smoothstep(progress, 70, 92),
-    compressionMix: smoothstep(progress, 72, 96),
-    freezeMix: smoothstep(progress, 96, 100),
-    settleMix,
+    slowdownMix: smoothstep(progress, 72, 88),
+    densifyMix: smoothstep(progress, 70, 90),
+    compressionMix: smoothstep(progress, 78, 94),
+    freezeMix: smoothstep(progress, 92, 100),
+    settleMix: smoothstep(progress, 72, 90),
     heatRetentionMix: compressionGlowMix * (1 - thermalExtinctionMix),
     thermalExtinctionMix,
     pointerInfluenceMix: smoothstep(progress, 84, 100),
+    holdShapeMix: smoothstep(progress, 82, 98),
   };
 }

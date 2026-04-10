@@ -33,4 +33,5 @@ export interface ConvergenceEngineSignals {
   heatRetentionMix: number;
   thermalExtinctionMix: number;
   pointerInfluenceMix: number;
+  holdShapeMix: number;
 }

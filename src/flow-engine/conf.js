@@ -15,6 +15,8 @@ class Conf {
     dynamicViscosity = 0.1;
     gravity = 0;
     simSubsteps = 1;           // compute substeps per frame (higher = more stable convergence)
+    apicBlend = 0.45;          // internal solver blend: full APIC feels too fibrous for pre-enter
+    maxVelocity = 6.0;         // keep the guard, but stop choking the interactive wall-launch energy
     ventCenter = new THREE.Vector3(23.2, 30.6, 18.4); // derived sim-space source center
     ventRadii = new THREE.Vector3(4.2, 3.2, 2.8); // derived sim-space source radii
     ventAxis = new THREE.Vector3(-0.16, 0.94, 0.3); // derived sim-space source axis
@@ -28,10 +30,11 @@ class Conf {
     convergenceSlowdown = 0.0; // 0..1 motion/turbulence reduction mix
     convergenceCompression = 0.0; // 0..1 spatial densification mix
     convergenceFreeze = 0.0; // 0..1 terminal stillness mix
-    holdShapeMix = 0.0; // 0..1 renderer-owned rod→hold body morph
     convergenceHeatRetention = 0.0; // 0..1 thermal memory retention during convergence
     convergenceThermalExtinction = 0.0; // 0..1 pre-freeze heat extinction for dark pressure lock
+    holdShapeMix = 0.0; // 0..1 rod→hold-body morph driven by late convergence
     postFreezeSimLock = 0.0; // 0..1 hard gate: solver motion/capture disabled, renderer owns post-freeze
+    postFreezeHoldProgress = 0.0; // 0..1 early post-enter shock/lock timeline before clear/extraction accelerates
     postFreezeClearProgress = 0.0; // 0..1 renderer clear timing after ownership lock
     isMobile = false;
     actualSize = 1;
@@ -41,6 +44,7 @@ class Conf {
         if (typeof window !== "undefined" && window.innerWidth < 768) {
             this.maxParticles = 8192 * 8;
             this.particles = 4096;
+            this.simSubsteps = 1;
             this.isMobile = true;
         }
         this.updateParams();

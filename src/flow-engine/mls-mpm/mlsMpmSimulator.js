@@ -37,6 +37,7 @@ class mlsMpmSimulator {
   fixedPointMultiplier = 1e7;
   mousePos = new THREE.Vector3();
   mousePosArray = [];
+  initialParticlePositions = null;
 
   constructor(renderer) {
     this.renderer = renderer;
@@ -81,6 +82,7 @@ class mlsMpmSimulator {
       this.particleBuffer.set(i, "mass", mass);
       this.particleBuffer.set(i, "heat", 0);
     }
+    this.captureInitialParticlePositions();
 
     const cellCount = this.gridSize.x * this.gridSize.y * this.gridSize.z;
     const cellStruct = {
@@ -98,6 +100,8 @@ class mlsMpmSimulator {
     this.uniforms.restDensity = uniform(0);
     this.uniforms.dynamicViscosity = uniform(0);
     this.uniforms.noise = uniform(0);
+    this.uniforms.apicBlend = uniform(0);
+    this.uniforms.maxVelocity = uniform(0);
 
     this.uniforms.gridSize = uniform(this.gridSize, "ivec3");
     this.uniforms.dt = uniform(0.1);
@@ -211,7 +215,10 @@ class mlsMpmSimulator {
                     .add(0.5)
                     .sub(particlePosition)
                     .toConst("cellDist");
-                  const Q = C.mul(cellDist);
+                  const Q = C
+                    .mul(cellDist)
+                    .mul(this.uniforms.apicBlend)
+                    .toConst("Q");
 
                   const massContrib = weight; // assuming particle mass = 1.0
                   const velContrib = massContrib
@@ -577,6 +584,10 @@ class mlsMpmSimulator {
         .max(float(0.94))
         .toConst("freezeDamping");
       particleVelocity.mulAssign(freezeDamping);
+      const particleSpeed = particleVelocity.length().toVar("particleSpeed");
+      If(particleSpeed.greaterThan(this.uniforms.maxVelocity), () => {
+        particleVelocity.mulAssign(this.uniforms.maxVelocity.div(particleSpeed));
+      });
 
       this.particleBuffer.element(instanceIndex).get("C").assign(B.mul(4));
       particlePosition.addAssign(particleVelocity.mul(this.uniforms.dt));
@@ -828,6 +839,8 @@ class mlsMpmSimulator {
       particles,
       run,
       noise,
+      apicBlend,
+      maxVelocity,
       dynamicViscosity,
       stiffness,
       restDensity,
@@ -842,6 +855,8 @@ class mlsMpmSimulator {
       this.uniforms.gravity.value.set(0, -0.2, 0);
     }
     this.uniforms.dynamicViscosity.value = dynamicViscosity;
+    this.uniforms.apicBlend.value = apicBlend;
+    this.uniforms.maxVelocity.value = maxVelocity;
     this.uniforms.restDensity.value = restDensity;
     this.uniforms.sourceFieldCenter.value.copy(conf.sourceFieldCenter);
     this.uniforms.sourceFieldSecondaryCenter.value.copy(
@@ -881,7 +896,8 @@ class mlsMpmSimulator {
 
     interval = Math.min(interval, 1 / 60);
     const dt = interval * 6 * speed;
-    this.uniforms.dt.value = dt;
+    const substeps = Math.max(1, Math.floor(conf.simSubsteps || 1));
+    const subDt = dt / substeps;
 
     this.mousePosArray.push(this.mousePos.clone());
     if (this.mousePosArray.length > 2) {
@@ -902,7 +918,10 @@ class mlsMpmSimulator {
         this.kernels.updateGrid,
         this.kernels.g2p,
       ];
-      await this.renderer.computeAsync(kernels);
+      for (let i = 0; i < substeps; i++) {
+        this.uniforms.dt.value = subDt;
+        await this.renderer.computeAsync(kernels);
+      }
     }
   }
 
@@ -917,7 +936,8 @@ class mlsMpmSimulator {
     const particleCount = Math.max(1, this.numParticles || conf.particles || 0);
     const stride = this.particleBuffer.structSize;
     const positionOffset = this.particleBuffer.layout.position.offset;
-    const arrayBuffer = await this.renderer.getArrayBufferAsync(particleAttribute);
+    const arrayBuffer =
+      await this.renderer.getArrayBufferAsync(particleAttribute);
     const particleData = new Float32Array(arrayBuffer);
 
     const boundsMin = new THREE.Vector3(Infinity, Infinity, Infinity);
@@ -975,9 +995,113 @@ class mlsMpmSimulator {
     this.uniforms.mouseActive.value = value ? 1 : 0;
   }
 
+  markParticleBufferDirty() {
+    const particleAttribute = this.particleBuffer?.buffer?.value;
+    if (particleAttribute) {
+      particleAttribute.needsUpdate = true;
+    }
+  }
+
+  captureInitialParticlePositions() {
+    if (!this.particleBuffer?.floatArray || !this.particleBuffer?.layout?.position) {
+      return;
+    }
+
+    const particleCount = this.particleBuffer.length || conf.maxParticles || 0;
+    const basePositions = new Float32Array(particleCount * 3);
+    const positionOffset = this.particleBuffer.layout.position.offset;
+
+    for (let i = 0; i < particleCount; i++) {
+      const baseIndex = i * 3;
+      const sourceIndex = i * this.particleBuffer.structSize + positionOffset;
+      basePositions[baseIndex + 0] = this.particleBuffer.floatArray[sourceIndex + 0];
+      basePositions[baseIndex + 1] = this.particleBuffer.floatArray[sourceIndex + 1];
+      basePositions[baseIndex + 2] = this.particleBuffer.floatArray[sourceIndex + 2];
+    }
+
+    this.initialParticlePositions = basePositions;
+  }
+
+  carvePopulationSlit({
+    splitPush = 1.8,
+    gapWidth = 3.2,
+  } = {}) {
+    if (!this.particleBuffer || !this.initialParticlePositions) {
+      return;
+    }
+
+    const particleCount = this.particleBuffer.length || conf.maxParticles || 0;
+    if (particleCount <= 0) {
+      return;
+    }
+
+    const splitAxis = new THREE.Vector3(1, 0, 0);
+    const splitMidpoint = conf.chamberFlowCenter.clone();
+    const flowDirection = conf.ventAxis.clone();
+    if (flowDirection.lengthSq() < 1e-6) {
+      flowDirection.set(0, 1, 0);
+    } else {
+      flowDirection.normalize();
+    }
+
+    const particlePosition = new THREE.Vector3();
+    const clampedMax = this.gridSize.clone().subScalar(2);
+    const zeroVelocity = [0, 0, 0];
+    const zeroColor = [0, 0, 0];
+    const zeroMat3 = new Array(12).fill(0);
+
+    for (let i = 0; i < particleCount; i++) {
+      const baseIndex = i * 3;
+      particlePosition.set(
+        this.initialParticlePositions[baseIndex + 0],
+        this.initialParticlePositions[baseIndex + 1],
+        this.initialParticlePositions[baseIndex + 2],
+      );
+
+      const signedMidDistance = particlePosition
+        .clone()
+        .sub(splitMidpoint)
+        .dot(splitAxis);
+      const signedSide = signedMidDistance < 0 ? -1 : 1;
+      if (Math.abs(signedMidDistance) < gapWidth) {
+        particlePosition.addScaledVector(
+          splitAxis,
+          signedSide * (gapWidth - Math.abs(signedMidDistance) + splitPush),
+        );
+      }
+
+      particlePosition.clamp(new THREE.Vector3(2, 2, 2), clampedMax);
+
+      this.particleBuffer.set(i, "position", particlePosition);
+      this.particleBuffer.set(i, "velocity", zeroVelocity);
+      this.particleBuffer.set(i, "C", zeroMat3);
+      this.particleBuffer.set(i, "density", conf.restDensity);
+      this.particleBuffer.set(i, "direction", flowDirection);
+      this.particleBuffer.set(i, "color", zeroColor);
+      this.particleBuffer.set(i, "heat", 0);
+    }
+
+    this.markParticleBufferDirty();
+  }
+
+  prepareStartupFromVent() {
+    this.carvePopulationSlit({
+      splitPush: 1.05,
+      gapWidth: 3.2,
+    });
+  }
+
+  seedMatureIdlePopulation() {
+    this.carvePopulationSlit({
+      splitPush: 0.8,
+      gapWidth: 2.45,
+    });
+  }
+
   dispose() {
     this.mousePosArray = [];
     this.mousePos = null;
+    this.initialParticlePositions = null;
     this.kernels = {};
     this.uniforms = {};
     this.particleBuffer = null;

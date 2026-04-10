@@ -25,4 +25,3 @@ export const PREENTER_SOURCE_ANCHOR = Object.freeze({
   axisLocal: new THREE.Vector3(0.012, 0.978, -0.208).normalize(),
   radiiLocal: new THREE.Vector3(0.042, 0.066, 0.024),
 });
-

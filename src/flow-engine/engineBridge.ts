@@ -30,11 +30,13 @@ export class FlowEngineBridge implements FlowEngineApi {
   private proofReadyHoldFrames = 0;
   private postFreezeActive = false;
   private postFreezeElapsed = 0;
+  private postFreezeClaimPending = false;
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
   private static readonly FREEZE_SETTLE_DELAY = 0.15;
-  private static readonly POST_FREEZE_HOLD = 1.2;
-  private static readonly POST_FREEZE_CLEAR_DURATION = 1.05;
+  // Shorter pre-claim pause, longer extraction window.
+  private static readonly POST_FREEZE_HOLD = 0.45;
+  private static readonly POST_FREEZE_CLEAR_DURATION = 1.9;
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
@@ -101,6 +103,8 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.proofReadyHoldFrames = 0;
       this.postFreezeActive = false;
       this.postFreezeElapsed = 0;
+      this.postFreezeClaimPending = false;
+      this.app?.clearFreezeOwnership?.();
     }
     if (clampedProgress <= 0 || clampedProgress < previousProgress) {
     }
@@ -118,6 +122,8 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.proofReadyHoldFrames = 0;
       this.postFreezeActive = false;
       this.postFreezeElapsed = 0;
+      this.postFreezeClaimPending = false;
+      this.app?.clearFreezeOwnership?.();
     }
   }
 
@@ -237,7 +243,7 @@ export class FlowEngineBridge implements FlowEngineApi {
       }
       this.applyConvergenceSignals();
       await this.app.update(delta, elapsed);
-      this.updateFreezeSettlement(delta);
+      await this.updateFreezeSettlement(delta);
       this.updateProofReady();
     } catch (error) {
       this.options.onError?.(error);
@@ -336,7 +342,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     const densifyMix = convergenceSignals.densifyMix;
     const compressionMix = convergenceSignals.compressionMix;
     const freezeMix = convergenceSignals.freezeMix;
-    const settleMix = convergenceSignals.settleMix;
     const thermalExtinctionMix = convergenceSignals.thermalExtinctionMix;
 
     if (this.convergenceProgress <= 0) {
@@ -344,10 +349,11 @@ export class FlowEngineBridge implements FlowEngineApi {
       conf.convergenceSlowdown = 0;
       conf.convergenceCompression = 0;
       conf.convergenceFreeze = 0;
-      conf.holdShapeMix = 0;
       conf.convergenceHeatRetention = 0;
       conf.convergenceThermalExtinction = 0;
+      conf.holdShapeMix = 0;
       conf.postFreezeSimLock = 0;
+      conf.postFreezeHoldProgress = 0;
       conf.postFreezeClearProgress = 0;
       this.currentPointerInfluence = 1;
       this.app?.setPointerInfluence?.(this.interactiveEnabled ? this.currentPointerInfluence : 0);
@@ -363,7 +369,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     conf.convergenceProgress = this.convergenceProgress;
     conf.convergenceSlowdown = slowdownMix;
     conf.convergenceFreeze = freezeMix;
-    conf.holdShapeMix = compressionMix;
     conf.convergenceHeatRetention = heatRetentionMix;
     conf.convergenceThermalExtinction = thermalExtinctionMix;
 
@@ -373,23 +378,32 @@ export class FlowEngineBridge implements FlowEngineApi {
             FlowEngineBridge.POST_FREEZE_CLEAR_DURATION,
         )
       : 0;
+    const postFreezeHoldProgress = this.postFreezeActive
+      ? this.clamp01(
+          this.postFreezeElapsed / FlowEngineBridge.POST_FREEZE_HOLD,
+        )
+      : 0;
 
     conf.postFreezeSimLock = this.postFreezeActive ? 1 : 0;
+    conf.postFreezeHoldProgress = postFreezeHoldProgress;
     conf.postFreezeClearProgress = postFreezeClearProgress;
+    conf.holdShapeMix = this.ease01(
+      Math.max(convergenceSignals.holdShapeMix, postFreezeHoldProgress),
+    );
 
-    // Gravity: always centered attractor. No downward pull post-freeze.
+    // Direction D: no spatial convergence forces. Gravity stays play-state.
     conf.gravity = 2;
 
-    // Noise calms during convergence
-    let noise = THREE.MathUtils.lerp(1.08, 0.62, settleMix * 0.4);
-    noise = THREE.MathUtils.lerp(noise, 0.42, slowdownMix);
+    // Motion kill leads the first visible arrest; compression only tightens the mass modestly.
+    let noise = THREE.MathUtils.lerp(1.08, 0.2, slowdownMix);
+    noise = THREE.MathUtils.lerp(noise, 0.06, freezeMix);
     const speed = THREE.MathUtils.lerp(
-      THREE.MathUtils.lerp(1.02, 0.82, slowdownMix),
+      THREE.MathUtils.lerp(1.02, 0.72, slowdownMix),
       0.12,
       freezeMix,
     );
-    conf.convergenceCompression = compressionMix * 0.2;
-    conf.dynamicViscosity = THREE.MathUtils.lerp(0.034, 0.058, densifyMix);
+    conf.convergenceCompression = compressionMix * 0.3;
+    conf.dynamicViscosity = THREE.MathUtils.lerp(0.034, 0.052, densifyMix);
 
     conf.noise = noise;
     conf.speed = speed;
@@ -398,7 +412,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app?.setPointerInfluence?.(this.interactiveEnabled ? this.currentPointerInfluence : 0);
   }
 
-  private updateFreezeSettlement(delta: number): void {
+  private async updateFreezeSettlement(delta: number): Promise<void> {
     if (this.convergenceProgress < 100) {
       this.freezeSettled = false;
       this.freezeSettledElapsed = 0;
@@ -413,6 +427,17 @@ export class FlowEngineBridge implements FlowEngineApi {
 
     if (this.freezeSettledElapsed < FlowEngineBridge.FREEZE_SETTLE_DELAY) {
       return;
+    }
+
+    if (this.postFreezeClaimPending) {
+      return;
+    }
+
+    this.postFreezeClaimPending = true;
+    try {
+      await this.app?.captureFreezeOwnership?.();
+    } finally {
+      this.postFreezeClaimPending = false;
     }
 
     this.freezeSettled = true;

@@ -35,9 +35,6 @@ class App {
     pointerIntersect = new THREE.Vector3();
     sourceFieldAnchorOffsets = null;
     startupSourceFieldAnchorOffsets = null;
-    freezeSnapshotCaptured = false;
-    freezeSnapshotRequest = null;
-    freezeSnapshotCycle = 0;
     sourceAnchorScales = {
         idlePrimary: new THREE.Vector3(0.78, 0.82, 0.7),
         idleSecondary: new THREE.Vector3(0.38, 0.62, 0.4),
@@ -161,6 +158,7 @@ class App {
         }
         this.backgroundGeometry?.update?.(0, 0);
         this.syncSourceAnchors();
+        this.mlsMpmSim?.prepareStartupFromVent?.();
     }
 
     promoteIdlePopulation() {
@@ -176,6 +174,7 @@ class App {
         }
         this.backgroundGeometry?.update?.(0, 0);
         this.syncSourceAnchors();
+        this.mlsMpmSim?.seedMatureIdlePopulation?.();
     }
 
     ensureSourceAnchorOffsets() {
@@ -306,14 +305,23 @@ class App {
         this.mlsMpmSim?.setMouseInfluence?.(value);
     }
 
-    setConvergenceProgress(progress) {
-        if (progress < 100) {
-            this.resetFreezeCaptureState();
-        }
-    }
+    setConvergenceProgress() {}
 
     clearPointer() {
         this.mlsMpmSim?.setMouseActive?.(false);
+    }
+
+    async captureFreezeOwnership() {
+        const snapshot = await this.mlsMpmSim?.captureFreezeSnapshot?.();
+        if (!snapshot) {
+            throw new Error("VOLKANO freeze snapshot claim failed: simulator returned no snapshot.");
+        }
+
+        this.particleRenderer?.setFreezeSnapshot?.(snapshot);
+    }
+
+    clearFreezeOwnership() {
+        this.particleRenderer?.clearFreezeSnapshot?.();
     }
 
     getFrontRailMetrics() {
@@ -372,58 +380,12 @@ class App {
         };
     }
 
-    resetFreezeCaptureState() {
-        if (!this.freezeSnapshotCaptured && !this.freezeSnapshotRequest) {
-            return;
-        }
-
-        this.freezeSnapshotCaptured = false;
-        this.freezeSnapshotCycle++;
-        this.freezeSnapshotRequest = null;
-        this.particleRenderer?.clearFreezeSnapshot?.();
-    }
-
-    ensureFreezeSnapshotCapture() {
-        if (this.freezeSnapshotCaptured || this.freezeSnapshotRequest) {
-            return;
-        }
-
-        const requestCycle = this.freezeSnapshotCycle;
-        this.freezeSnapshotRequest = this.mlsMpmSim.captureFreezeSnapshot()
-            .then((snapshot) => {
-                if (
-                    snapshot &&
-                    requestCycle === this.freezeSnapshotCycle &&
-                    conf.postFreezeSimLock > 0.5
-                ) {
-                    this.particleRenderer?.setFreezeSnapshot?.(snapshot);
-                    this.freezeSnapshotCaptured = true;
-                }
-            })
-            .finally(() => {
-                if (requestCycle === this.freezeSnapshotCycle) {
-                    this.freezeSnapshotRequest = null;
-                }
-            });
-    }
-
-
     async update(delta, elapsed) {
         this.backgroundGeometry?.update?.(delta, elapsed);
         this.lights.update();
 
         this.syncSourceAnchors();
         await this.mlsMpmSim.update(delta, elapsed);
-
-        if (conf.postFreezeSimLock > 0.5) {
-            this.ensureFreezeSnapshotCapture();
-
-            if (this.freezeSnapshotRequest) {
-                await this.freezeSnapshotRequest;
-            }
-        } else {
-            this.resetFreezeCaptureState();
-        }
 
         this.particleRenderer.update();
         this.applySceneVisibility();
@@ -452,7 +414,6 @@ class App {
         this.bloomPass = null;
         this.sourceFieldAnchorOffsets = null;
         this.startupSourceFieldAnchorOffsets = null;
-        this.freezeSnapshotRequest = null;
     }
 
     applySceneVisibility() {
