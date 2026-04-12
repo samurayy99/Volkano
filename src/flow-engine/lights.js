@@ -4,7 +4,6 @@ export class Lights {
     hemi = null;
     keyLight = null;
     rimLight = null;
-    frontVolumeLight = null;
 
     constructor() {
         this.object = new THREE.Object3D();
@@ -17,14 +16,11 @@ export class Lights {
 
         const rimLight = new THREE.PointLight(0x8b9daf, 0.14, 5.5, 2);
         rimLight.position.set(0.96, 0.6, 0.46);
-        const frontVolumeLight = new THREE.PointLight(0xbcb6ae, 0.0, 3.6, 2);
-        frontVolumeLight.position.set(0.02, 0.54, -0.36);
 
         this.object.add(hemi);
         this.object.add(light);
         this.object.add(lightTarget);
         this.object.add(rimLight);
-        this.object.add(frontVolumeLight);
 
         light.castShadow = true; // default false
         light.shadow.mapSize.width = 512*2; // default
@@ -36,17 +32,12 @@ export class Lights {
         this.hemi = hemi;
         this.keyLight = light;
         this.rimLight = rimLight;
-        this.frontVolumeLight = frontVolumeLight;
-    }
-
-    update() {
     }
 
     dispose() {
         this.hemi = null;
         this.keyLight = null;
         this.rimLight = null;
-        this.frontVolumeLight = null;
         this.object = null;
     }
 }

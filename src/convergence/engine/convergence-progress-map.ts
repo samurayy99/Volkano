@@ -24,16 +24,19 @@ export function mapProgressToEngineSignals(
   progress: ConvergenceProgress,
 ): ConvergenceEngineSignals {
   const compressionGlowMix = smoothstep(progress, 62, 82);
-  const thermalExtinctionMix = smoothstep(progress, 82, 96) * 0.58;
+  /**
+   * Thermal wash in MLS-MPM (`buildThermalState`) was ramping 82→96 while the UI timeline
+   * still had a long tail before 100 — colors went dull *before* post-enter arrest / rift.
+   * Keep the buffer vivid through most of convergence; only apply extinction in the final
+   * approach to 100 (post-enter still handles the locked read in the renderer).
+   */
+  const thermalExtinctionMix = smoothstep(progress, 97, 100) * 0.58;
   return {
     slowdownMix: smoothstep(progress, 72, 88),
-    densifyMix: smoothstep(progress, 70, 90),
-    compressionMix: smoothstep(progress, 78, 94),
-    freezeMix: smoothstep(progress, 92, 100),
-    settleMix: smoothstep(progress, 72, 90),
+    viscosityMix: smoothstep(progress, 70, 90),
+    freezeMix: smoothstep(progress, 92, 96),
     heatRetentionMix: compressionGlowMix * (1 - thermalExtinctionMix),
     thermalExtinctionMix,
     pointerInfluenceMix: smoothstep(progress, 84, 100),
-    holdShapeMix: smoothstep(progress, 82, 98),
   };
 }

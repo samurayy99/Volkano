@@ -48,6 +48,7 @@ export function useConvergenceTimeline(
   const [hasTriggered, setHasTriggered] = useState(false);
   const frameRef = useRef<number | null>(null);
   const startTimeRef = useRef(0);
+  const tickRef = useRef<(now: number) => void>(() => {});
 
   const tick = useCallback(
     (now: number) => {
@@ -58,26 +59,26 @@ export function useConvergenceTimeline(
       controller.setProgress(progress, "enter");
 
       if (t < 1) {
-        frameRef.current = requestAnimationFrame(tick);
+        frameRef.current = requestAnimationFrame(tickRef.current);
       } else {
-        controller.markConvergenceSettled();
         frameRef.current = null;
       }
     },
     [controller],
   );
 
+  useEffect(() => {
+    tickRef.current = tick;
+  }, [tick]);
+
   const start = useCallback(() => {
     if (hasTriggeredRef.current) return;
-
-    const snapshot = controller.getSnapshot();
-    if (snapshot.rotationActive || snapshot.rotationComplete) return;
 
     hasTriggeredRef.current = true;
     setHasTriggered(true);
     startTimeRef.current = performance.now();
-    frameRef.current = requestAnimationFrame(tick);
-  }, [controller, tick]);
+    frameRef.current = requestAnimationFrame(tickRef.current);
+  }, [controller]);
 
   useEffect(() => {
     return () => {

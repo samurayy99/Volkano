@@ -19,10 +19,67 @@ import {
   fract,
   sin,
   step,
+  max,
+  min,
 } from "three/tsl";
-import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { conf } from "../conf";
-import { PREENTER_VESSEL, PREENTER_SOURCE_ANCHOR } from "../vesselDescriptors";
+import { PREENTER_VESSEL } from "../vesselDescriptors";
+import {
+  buildRiftAndExitFromChamberSim,
+  computeChamberBoundsSimFromParticleObject,
+  POST_ENTER_FREEZE_SPACE_FRAC,
+} from "../post-enter/postEnterChamberBasis";
+
+const _idleExitScratch = new THREE.Vector3();
+const _idleRiftP0 = new THREE.Vector3();
+const _idleRiftP1 = new THREE.Vector3();
+const _idleFreezeCenter = new THREE.Vector3();
+const _idleFreezeHalf = new THREE.Vector3();
+
+const POST_ENTER_MATERIAL = Object.freeze({
+  cavityTint: [0.08, 0.034, 0.018],
+  bodyTint: [0.18, 0.074, 0.034],
+  ridgeTint: [0.28, 0.118, 0.05],
+  emissiveTint: [0.36, 0.13, 0.048],
+  ridgeStrength: 0.32,
+  emissiveStrength: 0.022,
+  roughness: 0.88,
+  roughnessVariance: 0.09,
+  facingLift: 0.04,
+});
+
+const POST_ENTER_SURFACE_READ = Object.freeze({
+  bodyBandWeight: 0.28,
+  bodyCoreWeight: 0.2,
+  bodyBias: 0.24,
+  bodyMax: 0.7,
+  ridgeCoreWeight: 0.24,
+  ridgeBandWeight: 0.1,
+  ridgeFacingWeight: 0.08,
+  ridgeMax: 0.42,
+  emissiveRidgeWeight: 0.35,
+  emissiveBodyWeight: 0.16,
+});
+
+const PARTICLE_PROFILE_READ = Object.freeze({
+  speedBandStart: 1.2,
+  speedBandEnd: 3.5,
+  stretchGain: 1.2,
+  stretchBias: 1.0,
+  thinningPower: -0.4,
+  freezeBandStart: 0.18,
+  freezeBandEnd: 0.82,
+  frozenWidth: 1.0,
+  frozenHeight: 1.45,
+  frozenLength: 0.34,
+  densityLift: 0.28,
+  densityBias: 0.72,
+  frozenDensity: 0.975,
+  instanceScale: 1.08,
+  preEnterSpeedStart: 0.16,
+  preEnterSpeedEnd: 1.32,
+  preEnterThicknessGain: 0.72,
+  preEnterThicknessBias: 0.28,
+});
 
 const calcLookAtMatrix = /*#__PURE__*/ Fn(([target_immutable]) => {
   const target = vec3(target_immutable).toVar();
@@ -40,42 +97,662 @@ const calcLookAtMatrix = /*#__PURE__*/ Fn(([target_immutable]) => {
   inputs: [{ name: "direction", type: "vec3" }],
 });
 
-const buildFreezeSpaceMetrics = ({
+const buildFreezeSpaceState = ({
   position,
   center,
   boundsMin,
   boundsMax,
-  spanName,
-  halfName,
-  localName,
-  centerDistName,
-  frontName,
+  name,
 }) => {
-  const span = boundsMax.sub(boundsMin).toConst(spanName);
+  const span = boundsMax.sub(boundsMin).toConst(`${name}Span`);
   const half = vec3(
     span.x.mul(0.5).max(float(0.001)),
     span.y.mul(0.5).max(float(0.001)),
     span.z.mul(0.5).max(float(0.001)),
-  ).toConst(halfName);
+  ).toConst(`${name}Half`);
+
   const local = vec3(
     position.x.sub(center.x).div(half.x),
     position.y.sub(center.y).div(half.y),
     position.z.sub(center.z).div(half.z),
-  ).toConst(localName);
+  ).toConst(`${name}Local`);
+
   const centerDist = local
     .length()
     .div(float(1.7320508))
     .clamp(0, 1)
-    .toConst(centerDistName);
-  const frontT = local.z
-    .negate()
-    .mul(0.5)
-    .add(0.5)
-    .clamp(0, 1)
-    .toConst(frontName);
+    .toConst(`${name}CenterDist`);
 
-  return { span, half, local, centerDist, frontT };
+  const band = float(1)
+    .sub(
+      smoothstep(
+        float(0.1),
+        float(0.72),
+        local.y.abs().add(local.x.abs().mul(0.22)),
+      ),
+    )
+    .mul(float(1).sub(smoothstep(float(0.82), float(1.06), local.z.abs())))
+    .clamp(0, 1)
+    .toConst(`${name}Band`);
+
+  const core = float(1)
+    .sub(smoothstep(float(0.18), float(0.56), centerDist))
+    .toConst(`${name}Core`);
+
+  const diag = span.length().max(float(0.001)).toConst(`${name}Diag`);
+
+  return { band, core, local, centerDist, diag };
 };
+
+const buildParticleProfileState = ({
+  speed,
+  particleDensity,
+  convergenceFreeze,
+}) => {
+  const stretch = smoothstep(
+    float(PARTICLE_PROFILE_READ.speedBandStart),
+    float(PARTICLE_PROFILE_READ.speedBandEnd),
+    speed,
+  )
+    .mul(PARTICLE_PROFILE_READ.stretchGain)
+    .add(PARTICLE_PROFILE_READ.stretchBias)
+    .toConst("stretch");
+
+  const thinning = pow(
+    stretch,
+    float(PARTICLE_PROFILE_READ.thinningPower),
+  ).toConst("thinning");
+
+  const freezeShapeT = smoothstep(
+    float(PARTICLE_PROFILE_READ.freezeBandStart),
+    float(PARTICLE_PROFILE_READ.freezeBandEnd),
+    convergenceFreeze.toConst("shapeFrozenT"),
+  ).toConst("freezeShapeT");
+
+  const rodWidth = mix(
+    thinning,
+    float(PARTICLE_PROFILE_READ.frozenWidth),
+    freezeShapeT,
+  ).toConst("rodWidth");
+
+  const rodHeight = mix(
+    thinning,
+    float(PARTICLE_PROFILE_READ.frozenHeight),
+    freezeShapeT,
+  ).toConst("rodHeight");
+
+  const rodLength = mix(
+    stretch,
+    float(PARTICLE_PROFILE_READ.frozenLength),
+    freezeShapeT,
+  ).toConst("rodLength");
+
+  const densityScale = mix(
+    particleDensity
+      .mul(PARTICLE_PROFILE_READ.densityLift)
+      .add(PARTICLE_PROFILE_READ.densityBias)
+      .clamp(0, 1),
+    float(PARTICLE_PROFILE_READ.frozenDensity),
+    freezeShapeT,
+  ).toConst("densityScale");
+
+  return { rodWidth, rodHeight, rodLength, densityScale };
+};
+
+const buildParticleViewState = ({
+  formedDir,
+  speed,
+  vNormalView,
+  vPreEnterThickness,
+}) => {
+  const mat = calcLookAtMatrix(formedDir);
+
+  const orientedNormalView = normalize(
+    transformNormalToView(mat.mul(normalLocal)),
+  ).toConst("orientedNormalView");
+
+  const preEnterThickness = orientedNormalView.z
+    .abs()
+    .oneMinus()
+    .mul(
+      smoothstep(
+        float(PARTICLE_PROFILE_READ.preEnterSpeedStart),
+        float(PARTICLE_PROFILE_READ.preEnterSpeedEnd),
+        speed,
+      )
+        .toConst("preEnterSpeedT")
+        .mul(PARTICLE_PROFILE_READ.preEnterThicknessGain)
+        .add(PARTICLE_PROFILE_READ.preEnterThicknessBias),
+    )
+    .clamp(0, 1)
+    .toConst("preEnterThickness");
+
+  vNormalView.assign(orientedNormalView);
+  vPreEnterThickness.assign(preEnterThickness);
+
+  return { mat };
+};
+
+const buildParticleDrawState = ({
+  simPos,
+  particleDirection,
+  flight,
+  localPos,
+  rodWidth,
+  rodHeight,
+  rodLength,
+  uniforms,
+  vNearIntakePanel,
+  vNearSpineAxis,
+}) => {
+  const flightPhaseT = step(float(0.5), flight.get("flightPhase")).toConst(
+    "flightPhaseT",
+  );
+
+  const captureWeight = flight
+    .get("captureWeight")
+    .clamp(0, 1)
+    .toConst("captureWeight");
+
+  const dissolveT = flight.get("dissolve").clamp(0, 1).toConst("dissolveT");
+
+  const flightPhaseRaw = flight.get("flightPhase");
+  /** Flight `dead` phase is 4 — zero footprint so gate/renderer semantics match. */
+  const deadT = step(float(3.99), flightPhaseRaw).toConst("flightDeadT");
+
+  const transportPos = flight.get("transportPos").xyz.toConst("transportPos");
+
+  /** Renderer consumes transport truth. It does not clamp or re-author it. */
+  const worldCenter = mix(simPos, transportPos, flightPhaseT).toConst(
+    "worldCenter",
+  );
+
+  const loR = uniforms.chamberMin;
+  const hiR = uniforms.chamberMax;
+  const chamberDepthR = hiR.z
+    .sub(loR.z)
+    .max(float(0.01))
+    .toConst("riftChamberDepth");
+  const r0d = uniforms.riftSlitP0;
+  const r1d = uniforms.riftSlitP1;
+  const rminx = min(r0d.x, r1d.x);
+  const rmaxx = max(r0d.x, r1d.x);
+  const rminy = min(r0d.y, r1d.y);
+  const rmaxy = max(r0d.y, r1d.y);
+  const zRiftDraw = r0d.z.add(r1d.z).mul(float(0.5));
+  /** Closest point on intake **panel** (axis-aligned rect on wall). */
+  const closestPanel = vec3(
+    worldCenter.x.clamp(rminx, rmaxx),
+    worldCenter.y.clamp(rminy, rmaxy),
+    zRiftDraw,
+  ).toConst("riftClosestPanel");
+  const distPanel = worldCenter
+    .sub(closestPanel)
+    .length()
+    .max(float(1e-6))
+    .toConst("distPanelDraw");
+  const distNormPanel = distPanel.div(chamberDepthR).toConst("distNormPanelDraw");
+  /** Wider band: on-wall / through-wall read (not slit center). */
+  const nearIntakePanelT = float(1)
+    .sub(smoothstep(float(0.022), float(0.26), distNormPanel))
+    .mul(flightPhaseT)
+    .toConst("nearIntakePanelT");
+
+  /** Vertical **spine** line: center X of slit, Y clamped to slit span (true 1D axis). */
+  const spineXDraw = rminx.add(rmaxx).mul(float(0.5)).toConst("spineXDraw");
+  const spineYOnAxis = worldCenter.y.clamp(rminy, rmaxy).toConst("spineYOnAxis");
+  const closestSpineAxis = vec3(
+    spineXDraw,
+    spineYOnAxis,
+    zRiftDraw,
+  ).toConst("riftClosestSpineAxis");
+  const distSpineAxis = worldCenter
+    .sub(closestSpineAxis)
+    .length()
+    .max(float(1e-6))
+    .toConst("distSpineAxisDraw");
+  const distNormSpineAxis = distSpineAxis.div(chamberDepthR).toConst(
+    "distNormSpineAxisDraw",
+  );
+  /** Narrow band: slit center / read-protect only. */
+  const nearSpineAxisT = float(1)
+    .sub(smoothstep(float(0.0045), float(0.055), distNormSpineAxis))
+    .mul(flightPhaseT)
+    .toConst("nearSpineAxisT");
+
+  vNearIntakePanel.assign(nearIntakePanelT);
+  vNearSpineAxis.assign(nearSpineAxisT);
+
+  /** Surface identity stays anchored to the freeze commit, not moving world position. */
+  const surfaceAnchor = mix(
+    simPos,
+    flight.get("commitPos").xyz,
+    flightPhaseT,
+  ).toConst("surfaceAnchor");
+
+  const commitDirRaw = mix(
+    particleDirection.xyz,
+    flight.get("commitDir").xyz,
+    flightPhaseT,
+  ).toConst("commitDirRaw");
+
+  const transportVelRaw = flight
+    .get("transportVel")
+    .xyz.toConst("transportVelRaw");
+
+  const transportVelLen = transportVelRaw
+    .length()
+    .max(float(1e-5))
+    .toConst("transportVelLen");
+
+  const transportDir = transportVelRaw
+    .div(transportVelLen)
+    .toConst("transportDir");
+
+  const gpuMotionBias = smoothstep(
+    float(0.02),
+    float(0.18),
+    transportVelRaw.length(),
+  ).toConst("gpuMotionBias");
+  const motionBias = gpuMotionBias.clamp(0, 1).toConst("motionBias");
+
+  const formedDir = normalize(
+    mix(commitDirRaw, transportDir, motionBias),
+  ).toConst("formedDir");
+
+  const spineSlim = nearSpineAxisT
+    .mul(smoothstep(float(0.06), float(0.88), captureWeight))
+    .toConst("spineSlim");
+
+  const panelSlim = nearIntakePanelT
+    .mul(smoothstep(float(0.12), float(0.92), captureWeight))
+    .toConst("panelSlim");
+
+  const widthScale = float(1)
+    .sub(captureWeight.mul(float(0.18)))
+    .sub(dissolveT.mul(float(0.3)))
+    .mul(mix(float(1), float(0.38), spineSlim))
+    .mul(mix(float(1), float(0.58), panelSlim))
+    .clamp(0.32, 1)
+    .toConst("widthScale");
+
+  const heightScale = float(1)
+    .sub(captureWeight.mul(float(0.1)))
+    .sub(dissolveT.mul(float(0.22)))
+    .mul(mix(float(1), float(0.45), spineSlim))
+    .mul(mix(float(1), float(0.52), panelSlim))
+    .clamp(0.36, 1)
+    .toConst("heightScale");
+
+  const lengthScale = float(1)
+    .sub(captureWeight.mul(float(0.22)))
+    .sub(dissolveT.mul(float(0.5)))
+    .mul(mix(float(1), float(0.55), spineSlim.mul(smoothstep(float(0.12), float(0.95), dissolveT))))
+    .mul(mix(float(1), float(0.62), panelSlim.mul(smoothstep(float(0.15), float(0.9), dissolveT))))
+    .clamp(0.24, 1)
+    .toConst("lengthScale");
+
+  const shapedPos = vec3(
+    localPos.x.mul(rodWidth.mul(widthScale)),
+    localPos.y.mul(rodHeight.mul(heightScale)),
+    localPos.z.mul(rodLength.mul(lengthScale)),
+  )
+    .mul(float(1).sub(deadT))
+    .toConst("shapedPos");
+
+  /** Panel = broad on-wall fade; spine axis = extra collapse in the slit. */
+  const intakeOpacityFeather = nearIntakePanelT
+    .mul(smoothstep(float(0.04), float(0.68), captureWeight))
+    .mul(
+      mix(
+        float(0.42),
+        float(1),
+        smoothstep(float(0.06), float(0.5), dissolveT),
+      ),
+    )
+    .mul(
+      mix(
+        float(1),
+        float(0.28),
+        nearSpineAxisT.mul(smoothstep(float(0.08), float(0.82), captureWeight)),
+      ),
+    )
+    .toConst("intakeOpacityFeather");
+
+  const opacityMul = mix(
+    float(1),
+    float(1).sub(dissolveT).clamp(0, 1),
+    flightPhaseT,
+  )
+    .mul(mix(float(1), float(0.14), intakeOpacityFeather))
+    .mul(float(1).sub(deadT))
+    .clamp(0, 1)
+    .toConst("opacityMul");
+
+  return {
+    worldCenter,
+    surfaceAnchor,
+    formedDir,
+    shapedPos,
+    opacityMul,
+    captureWeight,
+    dissolveT,
+    flightPhaseT,
+  };
+};
+
+const buildUnifiedParticleSurfaceNodes = ({
+  particle,
+  flight,
+  uniforms,
+  material,
+  vNormalView,
+  vPreEnterThickness,
+  vOpacityMul,
+  vSurfaceAnchor,
+  vNearIntakePanel,
+  vNearSpineAxis,
+}) => {
+  const particleHeat = particle.get("heat");
+  const particleColor = particle.get("color").toConst("particleColor");
+  const viewNormal = normalize(vNormalView).toConst("viewNormal");
+  const viewFacingT = viewNormal.z.abs().clamp(0, 1).toConst("viewFacingT");
+
+  const arrestStep = uniforms.postEnterLockMix
+    .clamp(0, 1)
+    .toConst("arrestStep");
+  const extractStep = uniforms.postEnterExtractMix
+    .clamp(0, 1)
+    .toConst("extractStep");
+
+  const quietStep = uniforms.postEnterQuietMix.clamp(0, 1).toConst("quietStep");
+
+  const flightPhaseT = step(float(0.5), flight.get("flightPhase")).toConst(
+    "surfaceFlightPhaseT",
+  );
+
+  const captureWeight = flight
+    .get("captureWeight")
+    .clamp(0, 1)
+    .toConst("surfaceCaptureWeight");
+
+  const dissolveT = flight
+    .get("dissolve")
+    .clamp(0, 1)
+    .toConst("surfaceDissolve");
+
+  const flightPhaseRaw = flight.get("flightPhase");
+
+  /** Lock / intake look: arrest + extract + flight + quiet beat (no clearMix flip-flop). */
+  const postEnterActive = step(
+    float(1e-5),
+    arrestStep
+      .add(extractStep)
+      .add(flightPhaseT.mul(float(0.001)))
+      .add(quietStep.mul(float(0.85))),
+  ).toConst("postEnterActive");
+
+  /** Locked mineral look is GPU-owned (captureWeight + flight phase intake). */
+  const captureLockedT = smoothstep(
+    float(0.1),
+    float(0.78),
+    captureWeight,
+  ).toConst("captureLockedT");
+  const intakePhaseT = smoothstep(
+    float(1.35),
+    float(2.65),
+    flightPhaseRaw,
+  ).toConst("intakePhaseT");
+  const spineReadProtect = vNearSpineAxis
+    .mul(smoothstep(float(0.08), float(0.82), captureWeight))
+    .clamp(0, 1)
+    .toConst("spineReadProtect");
+
+  const lockedDriver = max(captureLockedT, intakePhaseT)
+    .mul(postEnterActive)
+    .mul(mix(float(1), float(0.36), spineReadProtect))
+    .clamp(0, 1)
+    .toConst("lockedDriver");
+
+  const albedoToLockedT = lockedDriver.toConst("albedoToLockedT");
+
+  const openT = float(1).sub(arrestStep).toConst("openT");
+  const viewThicknessT = vPreEnterThickness
+    .mul(openT)
+    .clamp(0, 1)
+    .toConst("viewThicknessT");
+
+  const freezeSpace = buildFreezeSpaceState({
+    position: vSurfaceAnchor.toConst("surfaceAnchor"),
+    center: uniforms.freezeCenter,
+    boundsMin: uniforms.freezeBoundsMin,
+    boundsMax: uniforms.freezeBoundsMax,
+    name: "freezeSurface",
+  });
+
+  const cavityTint = vec3(...POST_ENTER_MATERIAL.cavityTint);
+  const bodyTint = vec3(...POST_ENTER_MATERIAL.bodyTint);
+  const ridgeTint = vec3(...POST_ENTER_MATERIAL.ridgeTint);
+  const emissiveTint = vec3(...POST_ENTER_MATERIAL.emissiveTint);
+
+  const bodyShape = freezeSpace.band
+    .mul(POST_ENTER_SURFACE_READ.bodyBandWeight)
+    .add(freezeSpace.core.mul(POST_ENTER_SURFACE_READ.bodyCoreWeight))
+    .add(POST_ENTER_SURFACE_READ.bodyBias)
+    .clamp(0, POST_ENTER_SURFACE_READ.bodyMax)
+    .toConst("bodyShape");
+
+  const ridgeShape = freezeSpace.core
+    .mul(POST_ENTER_SURFACE_READ.ridgeCoreWeight)
+    .add(freezeSpace.band.mul(POST_ENTER_SURFACE_READ.ridgeBandWeight))
+    .add(viewFacingT.mul(POST_ENTER_SURFACE_READ.ridgeFacingWeight))
+    .clamp(0, POST_ENTER_SURFACE_READ.ridgeMax)
+    .toConst("ridgeShape");
+
+  const lockedAlbedo = mix(cavityTint, bodyTint, bodyShape)
+    .add(ridgeTint.mul(ridgeShape.mul(POST_ENTER_MATERIAL.ridgeStrength)))
+    .toConst("lockedAlbedo");
+
+  const lockedRoughness = float(POST_ENTER_MATERIAL.roughness)
+    .sub(bodyShape.mul(POST_ENTER_MATERIAL.roughnessVariance))
+    .sub(viewFacingT.mul(POST_ENTER_MATERIAL.facingLift))
+    .clamp(0.72, 0.96)
+    .toConst("lockedRoughness");
+
+  const lockedEmissive = emissiveTint
+    .mul(
+      ridgeShape
+        .mul(POST_ENTER_SURFACE_READ.emissiveRidgeWeight)
+        .add(bodyShape.mul(POST_ENTER_SURFACE_READ.emissiveBodyWeight)),
+    )
+    .mul(POST_ENTER_MATERIAL.emissiveStrength)
+    .mul(float(1).sub(dissolveT))
+    .toConst("lockedEmissive");
+
+  const roughNoise = fract(sin(instanceIndex.toFloat().mul(483.1)).mul(19847.3))
+    .mul(0.12)
+    .sub(0.06)
+    .toConst("roughNoise");
+
+  const openRoughness = float(0.92)
+    .add(roughNoise)
+    .clamp(0.86, 0.96)
+    .sub(viewThicknessT.mul(0.075))
+    .sub(viewFacingT.mul(viewThicknessT).mul(0.02))
+    .clamp(0.8, 0.96)
+    .toConst("openRoughness");
+
+  const glowFactor = smoothstep(float(0.12), float(0.46), particleHeat).toConst(
+    "glowFactor",
+  );
+
+  const openEmissive = vec3(0.36, 0.12, 0.03)
+    .mul(glowFactor)
+    .mul(float(0.01))
+    .mul(float(1).sub(albedoToLockedT))
+    .mul(float(1).sub(dissolveT))
+    .toConst("openEmissive");
+
+  const surfaceColor = mix(
+    particleColor,
+    lockedAlbedo,
+    albedoToLockedT,
+  ).toConst("surfaceColor");
+
+  const roughToLockedT = albedoToLockedT.toConst("roughToLockedT");
+
+  const surfaceRoughness = mix(openRoughness, lockedRoughness, roughToLockedT)
+    .clamp(0.82, 0.98)
+    .toConst("surfaceRoughness");
+
+  const surfaceEmissive = mix(
+    openEmissive,
+    lockedEmissive,
+    albedoToLockedT,
+  ).toConst("surfaceEmissive");
+
+  const cavityOcclusion = float(1)
+    .sub(bodyShape.mul(float(0.12)))
+    .clamp(0.62, 1)
+    .toConst("cavityOcclusion");
+
+  const aoOpen = mix(float(1.0), float(0.92), viewThicknessT)
+    .add(viewThicknessT.mul(0.02))
+    .clamp(0, 1)
+    .toConst("aoOpen");
+
+  const surfaceAo = mix(aoOpen, cavityOcclusion, roughToLockedT)
+    .clamp(0, 1)
+    .toConst("surfaceAo");
+
+  const opacityGate = max(
+    postEnterActive,
+    flightPhaseT,
+    smoothstep(float(0.04), float(0.55), dissolveT),
+  ).toConst("opacityGate");
+
+  const deadSurfaceT = step(float(3.99), flightPhaseRaw).toConst("deadSurfaceT");
+
+  const opacityEffective = mix(float(1), vOpacityMul, opacityGate)
+    .mul(mix(float(1), float(0.96), quietStep))
+    .mul(
+      mix(
+        float(1),
+        float(0.14),
+        vNearIntakePanel.mul(
+          smoothstep(float(0.06), float(0.72), captureWeight),
+        ),
+      ),
+    )
+    .mul(
+      mix(
+        float(1),
+        float(0.2),
+        vNearSpineAxis.mul(smoothstep(float(0.04), float(0.68), captureWeight)),
+      ),
+    )
+    .mul(float(1).sub(deadSurfaceT))
+    .clamp(0, 1)
+    .toConst("opacityEffective");
+
+  material.colorNode = surfaceColor;
+  material.roughnessNode = surfaceRoughness;
+  material.metalnessNode = float(0.015);
+  material.emissiveNode = surfaceEmissive;
+  material.aoNode = surfaceAo;
+  material.opacityNode = opacityEffective;
+
+  material.mrtNode = mrt({
+    bloomIntensity: smoothstep(
+      float(0.004),
+      float(0.035),
+      surfaceEmissive.r.max(surfaceEmissive.g).max(surfaceEmissive.b),
+    )
+      .mul(surfaceEmissive.r.max(surfaceEmissive.g).max(surfaceEmissive.b))
+      .mul(opacityEffective)
+      .clamp(0, 1),
+  });
+};
+
+const buildParticlePositionNode = ({
+  particle,
+  flight,
+  uniforms,
+  sizeUniform,
+  vNormalView,
+  vPreEnterThickness,
+  vOpacityMul,
+  vSurfaceAnchor,
+  vNearIntakePanel,
+  vNearSpineAxis,
+}) =>
+  Fn(() => {
+    const simPos = particle.get("position").xyz.toConst("simPos");
+    const particleDensity = particle.get("density");
+    const particleDirection = particle.get("direction");
+    const localPos = attribute("position").xyz;
+    const speed = particle.get("velocity").length();
+
+    const arrestT = uniforms.postEnterLockMix.clamp(0, 1).toConst("arrestT");
+    const extractT = uniforms.postEnterExtractMix
+      .clamp(0, 1)
+      .toConst("extractT");
+    const clearT = uniforms.postEnterClearMix.clamp(0, 1).toConst("clearT");
+    const quietT = uniforms.postEnterQuietMix.clamp(0, 1).toConst("quietT");
+
+    const dissolveFromFlight = flight.get("dissolve").clamp(0, 1);
+
+    const postEnterLife = arrestT
+      .add(extractT)
+      .add(max(clearT, dissolveFromFlight))
+      .add(quietT.mul(float(0.22)))
+      .clamp(0, 1)
+      .toConst("postEnterLife");
+
+    const particleProfile = buildParticleProfileState({
+      speed,
+      particleDensity,
+      convergenceFreeze: uniforms.convergenceFreeze.max(postEnterLife),
+    });
+
+    const drawState = buildParticleDrawState({
+      simPos,
+      particleDirection,
+      flight,
+      localPos,
+      rodWidth: particleProfile.rodWidth,
+      rodHeight: particleProfile.rodHeight,
+      rodLength: particleProfile.rodLength,
+      uniforms,
+      vNearIntakePanel,
+      vNearSpineAxis,
+    });
+
+    const viewState = buildParticleViewState({
+      formedDir: drawState.formedDir,
+      speed,
+      vNormalView,
+      vPreEnterThickness,
+    });
+
+    vOpacityMul.assign(drawState.opacityMul);
+    vSurfaceAnchor.assign(drawState.surfaceAnchor);
+
+    const vertexDensityScale = mix(
+      particleProfile.densityScale,
+      float(1),
+      step(float(1e-5), postEnterLife),
+    ).toConst("vertexDensityScale");
+
+    return viewState.mat
+      .mul(
+        drawState.shapedPos.mul(
+          sizeUniform.mul(PARTICLE_PROFILE_READ.instanceScale),
+        ),
+      )
+      .mul(vertexDensityScale)
+      .add(drawState.worldCenter);
+  })();
 
 const createRoundedBox = (width, height, depth, radius) => {
   const box = new THREE.BoxGeometry(
@@ -90,15 +767,18 @@ const createRoundedBox = (width, height, depth, radius) => {
   const vertices = [];
   const posMap = {};
   const edgeMap = {};
+
   for (let i = 0; i < positionArray.length / 3; i++) {
     const oldPosition = new THREE.Vector3(
       positionArray[i * 3],
       positionArray[i * 3 + 1],
       positionArray[i * 3 + 2],
     );
+
     positionArray[i * 3 + 0] += normalArray[i * 3 + 0] * radius;
     positionArray[i * 3 + 1] += normalArray[i * 3 + 1] * radius;
     positionArray[i * 3 + 2] += normalArray[i * 3 + 2] * radius;
+
     const vertex = new THREE.Vector3(
       positionArray[i * 3],
       positionArray[i * 3 + 1],
@@ -115,32 +795,38 @@ const createRoundedBox = (width, height, depth, radius) => {
       .toArray()
       .map((v) => Math.round(v / epsilon))
       .join("_");
+
     posMap[vertex.posHash] = [...(posMap[vertex.posHash] || []), vertex];
     vertices.push(vertex);
   }
+
   vertices.forEach((vertex) => {
     const face = vertex.normal
       .toArray()
       .map((v) => Math.round(v))
       .join("_");
     vertex.face = face;
-    posMap[vertex.posHash].forEach((vertex) => {
-      vertex.faces.push(face);
+    posMap[vertex.posHash].forEach((v) => {
+      v.faces.push(face);
     });
   });
+
   vertices.forEach((vertex) => {
-    const addVertexToEdgeMap = (vertex, entry) => {
+    const addVertexToEdgeMap = (entry) => {
       edgeMap[entry] = [...(edgeMap[entry] || []), vertex];
     };
+
     vertex.faces.sort();
     const f0 = vertex.faces[0];
     const f1 = vertex.faces[1];
     const f2 = vertex.faces[2];
     const face = vertex.face;
-    if (f0 === face || f1 === face) addVertexToEdgeMap(vertex, f0 + "_" + f1);
-    if (f0 === face || f2 === face) addVertexToEdgeMap(vertex, f0 + "_" + f2);
-    if (f1 === face || f2 === face) addVertexToEdgeMap(vertex, f1 + "_" + f2);
+
+    if (f0 === face || f1 === face) addVertexToEdgeMap(`${f0}_${f1}`);
+    if (f0 === face || f2 === face) addVertexToEdgeMap(`${f0}_${f2}`);
+    if (f1 === face || f2 === face) addVertexToEdgeMap(`${f1}_${f2}`);
   });
+
   const addFace = (v0, v1, v2) => {
     const a = v1.clone().sub(v0);
     const b = v2.clone().sub(v0);
@@ -150,9 +836,11 @@ const createRoundedBox = (width, height, depth, radius) => {
       indices.push(v0.id, v2.id, v1.id);
     }
   };
+
   Object.keys(posMap).forEach((key) => {
     addFace(...posMap[key]);
   });
+
   Object.keys(edgeMap).forEach((key) => {
     const edgeVertices = edgeMap[key];
     const v0 = edgeVertices[0];
@@ -160,733 +848,106 @@ const createRoundedBox = (width, height, depth, radius) => {
     addFace(...edgeVertices.slice(0, 3));
     addFace(...edgeVertices.slice(1, 4));
   });
+
   box.setIndex(indices);
   return box;
 };
 
 let particleGeometryTemplate = null;
-
-const getParticleGeometryTemplate = () => {
-  if (particleGeometryTemplate) return particleGeometryTemplate;
-
-  const boxGeometry = BufferGeometryUtils.mergeVertices(
-    new THREE.BoxGeometry(7, 7, 30),
-    3.0,
-  );
-  boxGeometry.attributes.position.array =
-    boxGeometry.attributes.position.array.map((v) => v * 0.1);
-
-  const roundedBoxGeometry = createRoundedBox(0.7, 0.7, 3, 0.1);
-  const defaultIndexCount = roundedBoxGeometry.index.count;
-  const geometry = BufferGeometryUtils.mergeGeometries([
-    roundedBoxGeometry,
-    boxGeometry,
-  ]);
-
-  particleGeometryTemplate = { defaultIndexCount, geometry };
-  return particleGeometryTemplate;
-};
+const getParticleGeometryTemplate = () =>
+  particleGeometryTemplate ??
+  (particleGeometryTemplate = createRoundedBox(0.7, 0.7, 3, 0.1));
 
 class ParticleRenderer {
   mlsMpmSim = null;
+  postEnterFlightSystem = null;
   object = null;
-  bloom = false;
-  hasFreezeSpace = false;
+  geometry = null;
+  material = null;
   uniforms = {};
 
-  constructor(mlsMpmSim) {
-    this.mlsMpmSim = mlsMpmSim;
+  runtime = {
+    particles: 8192 * 4,
+    actualSize: (1.6 / Math.pow(4, 1 / 3)) * 0.68,
+    convergenceFreeze: 0,
+  };
 
-    // ── Geometry ────────────────────────────────────────────────────────────
-    // Built once at module scope, copied per renderer instance so draw-range
-    // and instance-count remain instance-local.
-    const { defaultIndexCount, geometry } = getParticleGeometryTemplate();
-    this.defaultIndexCount = defaultIndexCount;
-    this.geometry = new THREE.InstancedBufferGeometry().copy(geometry);
-    this.geometry.setDrawRange(0, this.defaultIndexCount);
+  constructor(mlsMpmSim, postEnterFlightSystem) {
+    this.mlsMpmSim = mlsMpmSim;
+    this.postEnterFlightSystem = postEnterFlightSystem;
+
+    this.geometry = new THREE.InstancedBufferGeometry().copy(
+      getParticleGeometryTemplate(),
+    );
     this.geometry.instanceCount = this.mlsMpmSim.numParticles;
 
     this.material = new THREE.MeshStandardNodeMaterial({
       metalness: 0.015,
       roughness: 0.92,
+      transparent: true,
+      depthWrite: true,
     });
 
-    // ── Uniforms ─────────────────────────────────────────────────────────────
     this.uniforms.size = uniform(1);
-
-    // Convergence signals (driven by convergence-controller)
-    this.uniforms.convergenceFreeze = uniform(0); // 0→1 as mass freezes
-    this.uniforms.holdShapeMix = uniform(0); // 0→1 rod→hold-body morph
-
-    // Post-freeze signals (driven by engineBridge post-freeze timer)
-    this.uniforms.postFreezeLock = uniform(0); // gate: 1 = sim locked, renderer owns all animation
-    this.uniforms.postFreezeHoldProgress = uniform(0); // 0→1 claim/hold deepening before clear-flight
-    this.uniforms.postFreezeClearProgress = uniform(0); // 0→1 clear-flight progress
-
-    // Freeze-space reference — set from live snapshot at freeze moment
-    // Defines the spatial centroid and bounds of the frozen mass
+    this.uniforms.convergenceFreeze = uniform(0);
+    this.uniforms.postEnterLockMix = uniform(0);
+    this.uniforms.postEnterExtractMix = uniform(0);
+    this.uniforms.postEnterClearMix = uniform(0);
+    this.uniforms.postEnterQuietMix = uniform(0);
+    this.uniforms.chamberMin = uniform(new THREE.Vector3());
+    this.uniforms.chamberMax = uniform(new THREE.Vector3());
+    this.uniforms.riftSlitP0 = uniform(new THREE.Vector3());
+    this.uniforms.riftSlitP1 = uniform(new THREE.Vector3());
     this.uniforms.freezeCenter = uniform(new THREE.Vector3());
     this.uniforms.freezeBoundsMin = uniform(new THREE.Vector3());
     this.uniforms.freezeBoundsMax = uniform(new THREE.Vector3());
 
-    // Chamber bounds (world-to-sim converted from PREENTER_VESSEL)
-    this.uniforms.chamberMin = uniform(new THREE.Vector3());
-    this.uniforms.chamberMax = uniform(new THREE.Vector3());
-
     this._chamberMin = new THREE.Vector3();
     this._chamberMax = new THREE.Vector3();
-    this._wallMin = new THREE.Vector3();
-    this._wallMax = new THREE.Vector3();
-    this._monumentCenter = new THREE.Vector3();
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
 
-    // vAo: AO intensity computed in positionNode (vertex), consumed in colorNode (fragment)
-    const vAo = varying(0, "vAo");
     const vNormalView = varying(vec3(0), "vNormalView");
     const vPreEnterThickness = varying(0, "vPreEnterThickness");
+    const vOpacityMul = varying(1, "vOpacityMul");
+    const vSurfaceAnchor = varying(vec3(0), "vSurfaceAnchor");
+    const vNearIntakePanel = varying(0, "vNearIntakePanel");
+    const vNearSpineAxis = varying(0, "vNearSpineAxis");
 
     const particle = this.mlsMpmSim.particleBuffer.element(instanceIndex);
+    const flight = this.postEnterFlightSystem.flightBuffer.buffer.element(
+      instanceIndex,
+    );
 
-    // ════════════════════════════════════════════════════════════════════════
-    // POSITION NODE
-    // Runs per-vertex. Handles rod shape + clear-flight animation.
-    //
-    // Zone A — Play-state shape: velocity-driven stretch/thinning
-    //           + holdShapeMix morphs rods toward the held body
-    // Zone B — Clear-flight: particles fly toward rift back wall, shrink, vanish
-    // ════════════════════════════════════════════════════════════════════════
-    this.material.positionNode = Fn(() => {
-      // Particle data
-      const pos = particle.get("position").xyz.toConst("pos");
-      const particleDensity = particle.get("density");
-      const particleDirection = particle.get("direction");
-      const localPos = attribute("position").xyz;
-      const speed = particle.get("velocity").length();
-
-      // ── Zone A: Play-state rod shape ────────────────────────────────────
-      // Velocity stretch: fast-moving rods elongate along travel axis
-      const stretchT = smoothstep(float(1.2), float(3.5), speed);
-      const stretch = stretchT.mul(1.2).add(1.0);
-      const thinning = pow(stretch, -0.4);
-
-      // holdShapeMix morphs rod dims toward the held body at freeze
-      const shapeMix = this.uniforms.holdShapeMix.toConst("shapeMix");
-      const holdShapeT = shapeMix.toConst("holdShapeT");
-      const rodWidth = mix(thinning, float(1.0), holdShapeT).toConst("rodWidth");
-      const rodHeight = mix(thinning, float(1.6), holdShapeT).toConst(
-        "rodHeight",
-      );
-      const rodLength = mix(stretch, float(0.3), holdShapeT).toConst(
-        "rodLength",
-      );
-
-      // ── Zone B: Clear-flight setup ───────────────────────────────────────
-      const postFreezeLock =
-        this.uniforms.postFreezeLock.toConst("postFreezeLock");
-      const clearProgress = this.uniforms.postFreezeClearProgress
-        .clamp(0, 1)
-        .toConst("clearProgress");
-      const freezeCenter = this.uniforms.freezeCenter;
-      const freezeBoundsMin = this.uniforms.freezeBoundsMin;
-      const freezeBoundsMax = this.uniforms.freezeBoundsMax;
-      const cMin = this.uniforms.chamberMin;
-      const cMax = this.uniforms.chamberMax;
-
-      // Per-particle stable hash — no temporal flicker, pure instance-index function
-      const hashX = fract(
-        sin(instanceIndex.toFloat().mul(127.1)).mul(43758.5453),
-      )
-        .mul(2.0)
-        .sub(1.0);
-      const hashY = fract(
-        sin(instanceIndex.toFloat().mul(269.5)).mul(18642.3721),
-      )
-        .mul(2.0)
-        .sub(1.0);
-      const hashZ = fract(
-        sin(instanceIndex.toFloat().mul(419.2)).mul(29517.8134),
-      )
-        .mul(2.0)
-        .sub(1.0);
-      const hashDir = normalize(vec3(hashX, hashY, hashZ)).toConst("hashDir");
-
-      // Chamber geometry references
-      const chamberDepth = cMax.z
-        .sub(cMin.z)
-        .max(float(0.001))
-        .toConst("chamberDepth");
-      const chamberDiag = cMax
-        .sub(cMin)
-        .length()
-        .max(float(0.001))
-        .toConst("chamberDiag");
-
-      // Freeze-space: normalize pos relative to frozen centroid & bounds
-      // Result: fLocal in [-1..1] per axis, centerDist in [0..1]
-      // 0 = centroid (core), 1 = bounds edge (shell)
-      const {
-        span: fSpan,
-        half: fHalf,
-        local: fLocal,
-        centerDist,
-        frontT: frontFaceT,
-      } = buildFreezeSpaceMetrics({
-        position: pos,
-        center: freezeCenter,
-        boundsMin: freezeBoundsMin,
-        boundsMax: freezeBoundsMax,
-        spanName: "fSpan",
-        halfName: "fHalf",
-        localName: "fLocal",
-        centerDistName: "centerDist",
-        frontName: "frontFaceT",
-      });
-      const fDiag = fSpan.length().max(float(0.001)).toConst("fDiag");
-      // Shell/core masks
-      const denseCore = float(1)
-        .sub(smoothstep(float(0.18), float(0.42), centerDist))
-        .toConst("denseCore");
-      const shellEdge = smoothstep(
-        float(0.24),
-        float(0.92),
-        centerDist,
-      ).toConst("shellEdge");
-
-      // Staggered clear-launch timing
-      // Shell launches first (higher startOffset), front-facing launches first
-      const motionHash = hashX.mul(0.5).add(0.5).toConst("motionHash");
-      const clearOffset = shellEdge
-        .mul(0.16)
-        .add(frontFaceT.mul(0.1))
-        .add(motionHash.mul(0.05))
-        .toConst("clearOffset");
-
-      const launchT = smoothstep(
-        clearOffset,
-        clearOffset.add(float(0.2)),
-        clearProgress,
-      )
-        .mul(postFreezeLock)
-        .toConst("launchT");
-      const crossT = smoothstep(
-        clearOffset.add(float(0.08)),
-        clearOffset.add(float(0.42)),
-        clearProgress,
-      )
-        .mul(postFreezeLock)
-        .toConst("crossT");
-      const leaveT = smoothstep(
-        clearOffset.add(float(0.34)),
-        clearOffset.add(float(0.7)),
-        clearProgress,
-      )
-        .mul(postFreezeLock)
-        .toConst("leaveT");
-      const lateDeathT = smoothstep(
-        clearOffset.add(float(0.52)),
-        clearOffset.add(float(0.86)),
-        clearProgress,
-      )
-        .mul(postFreezeLock)
-        .toConst("lateDeathT");
-
-      // Radial direction from freeze centroid (used for rod orientation + lateral kick)
-      const radialDir = normalize(
-        pos.sub(freezeCenter).add(hashDir.mul(0.001)),
-      ).toConst("radialDir");
-      const chamberUp = vec3(0, 1, 0).toConst("chamberUp");
-
-      // Monument orientation: per-particle radial + facet jitter
-      const surfaceNormal = normalize(fLocal.add(hashDir.mul(0.001))).toConst(
-        "surfaceNormal",
-      );
-      const facetDir = normalize(
-        surfaceNormal.mul(0.45).add(radialDir.mul(0.48)).add(hashDir.mul(0.09)),
-      ).toConst("facetDir");
-      const monumentDir = normalize(
-        mix(radialDir, facetDir, shellEdge.mul(0.14).add(0.86))
-          .add(radialDir.mul(denseCore.mul(0.16)))
-          .add(hashDir.mul(0.006)),
-      ).toConst("monumentDir");
-
-      // Rod shape during flight: stretches along travel axis, thins laterally
-      const clearStretch = mix(float(1), float(1.22), launchT)
-        .mul(mix(float(1), float(1.08), crossT))
-        .toConst("clearStretch");
-      const clearThin = pow(clearStretch, float(-0.32)).toConst("clearThin");
-      const stretchedPos = vec3(
-        localPos.x.mul(rodWidth.mul(clearThin)),
-        localPos.y.mul(rodHeight.mul(clearThin)),
-        localPos.z.mul(rodLength.mul(clearStretch)),
-      );
-
-      // Direction C: toward the rift (back wall center)
-      const riftTarget = vec3(
-        cMin.x.add(cMax.x).mul(0.5),
-        cMin.y.add(cMax.y).mul(0.5),
-        cMax.z,
-      ).toConst("riftTarget");
-      const toRiftDir = normalize(
-        riftTarget.sub(pos).add(hashDir.mul(0.001)),
-      ).toConst("toRiftDir");
-
-      // Early flight: mostly rift-directed, slight radial spread and hash scatter
-      const earlyFlightDir = normalize(
-        toRiftDir
-          .mul(float(0.84))
-          .add(radialDir.mul(float(0.08)))
-          .add(chamberUp.mul(fLocal.y.mul(0.04)))
-          .add(hashDir.mul(0.04)),
-      ).toConst("earlyFlightDir");
-
-      // Late flight: tightens to rift axis with minor per-particle spread
-      const lateFlightDir = normalize(
-        toRiftDir
-          .mul(float(1.0))
-          .add(vec3(hashX.mul(0.018), fLocal.y.mul(0.012), float(0))),
-      ).toConst("lateFlightDir");
-
-      const flightDir = normalize(
-        mix(earlyFlightDir, lateFlightDir, leaveT),
-      ).toConst("flightDir");
-
-      // ── Flight position computation ──────────────────────────────────────
-      // Phase 1 (launchT): particle kicks slightly outward + forward from frozen solver pos
-      const launchDist = chamberDiag
-        .mul(mix(float(0.06), float(0.12), shellEdge))
-        .toConst("launchDist");
-      const lateralKick = vec3(
-        radialDir.x.mul(fDiag.mul(0.12)).add(hashX.mul(fDiag.mul(0.018))),
-        radialDir.y.mul(fDiag.mul(0.09)).add(hashY.mul(fDiag.mul(0.014))),
-        float(0),
-      ).toConst("lateralKick");
-      const launchPos = pos
-        .add(lateralKick)
-        .add(earlyFlightDir.mul(launchDist))
-        .toConst("launchPos");
-      const releasedPos = mix(pos, launchPos, launchT).toConst(
-        "releasedPos",
-      );
-
-      // Phase 2 (crossT): travels toward rift; phase 3 (leaveT): extra push through wall
-      const distToRift = cMax.z
-        .sub(releasedPos.z)
-        .max(chamberDepth.mul(0.05))
-        .toConst("distToRift");
-      const crossDist = distToRift
-        .add(chamberDepth.mul(mix(float(0.06), float(0.12), shellEdge)))
-        .add(fDiag.mul(0.06))
-        .toConst("crossDist");
-      const leaveDist = chamberDepth
-        .mul(mix(float(0.08), float(0.14), shellEdge))
-        .add(float(0.02))
-        .toConst("leaveDist");
-
-      // Lateral kick decays as particles converge toward rift axis
-      const latDecayX = launchT
-        .mul(mix(float(0.32), float(0.1), crossT))
-        .mul(mix(float(1.0), float(0.06), leaveT))
-        .toConst("latDecayX");
-      const latDecayY = launchT
-        .mul(mix(float(0.28), float(0.09), crossT))
-        .mul(mix(float(1.0), float(0.05), leaveT))
-        .toConst("latDecayY");
-      const decayedLateral = vec3(
-        lateralKick.x.mul(latDecayX),
-        lateralKick.y.mul(latDecayY),
-        float(0),
-      ).toConst("decayedLateral");
-
-      // Small per-particle jitter mid-flight, fades at leave
-      const lateNoise = vec3(
-        hashX.mul(0.006),
-        hashY.mul(0.004).add(fLocal.y.mul(0.003)),
-        hashZ.mul(0.003),
-      )
-        .mul(fDiag)
-        .mul(crossT)
-        .mul(float(1).sub(leaveT.mul(0.82)).clamp(0, 1))
-        .toConst("lateNoise");
-
-      const forwardDist = crossDist
-        .mul(crossT)
-        .add(leaveDist.mul(leaveT))
-        .toConst("forwardDist");
-      const renderPos = releasedPos
-        .add(decayedLateral)
-        .add(flightDir.mul(forwardDist))
-        .add(lateNoise)
-        .toConst("renderPos");
-
-      // Death: particles vanish as they reach/cross the rift back wall
-      const riftClaimT = smoothstep(
-        cMax.z.sub(chamberDepth.mul(0.14)),
-        cMax.z.add(chamberDepth.mul(0.02)),
-        renderPos.z,
-      ).toConst("riftClaimT");
-      const deathScale = mix(
-        float(1.0),
-        float(0.04),
-        lateDeathT.mul(riftClaimT).clamp(0, 1),
-      ).toConst("deathScale");
-
-      // Final orientation: sim direction → monument facet → flight direction
-      const formedDir = normalize(
-        mix(
-          mix(particleDirection.xyz, monumentDir, shapeMix),
-          flightDir,
-          crossT.add(leaveT.mul(0.22)).clamp(0, 1),
-        ),
-      ).toConst("formedDir");
-
-      const mat = calcLookAtMatrix(formedDir);
-      const orientedNormalView = normalize(
-        transformNormalToView(mat.mul(normalLocal)),
-      ).toConst("orientedNormalView");
-      const preEnterSpeedT = smoothstep(float(0.16), float(1.32), speed).toConst(
-        "preEnterSpeedT",
-      );
-      const preEnterThickness = orientedNormalView.z
-        .abs()
-        .oneMinus()
-        .mul(preEnterSpeedT.mul(0.72).add(0.28))
-        .clamp(0, 1)
-        .toConst("preEnterThickness");
-
-      vNormalView.assign(orientedNormalView);
-      vPreEnterThickness.assign(preEnterThickness);
-
-      // AO: tighter at core (core occluded), looser at shell (shell exposed)
-      vAo.assign(
-        mix(float(0.92), float(0.6), centerDist)
-          .add(denseCore.mul(0.06))
-          .clamp(0.5, 1.0),
-      );
-
-      // Density-driven size scale (play state only; locked at 0.975 during freeze)
-      const densityScale = mix(
-        particleDensity.mul(0.28).add(0.72).clamp(0, 1),
-        float(0.975),
-        shapeMix,
-      );
-
-      return mat
-        .mul(stretchedPos.mul(this.uniforms.size.mul(1.08)))
-        .mul(densityScale)
-        .mul(deathScale)
-        .add(renderPos);
-    })();
-
-    // ════════════════════════════════════════════════════════════════════════
-    // COLOR NODE
-    // Runs per-fragment.
-    //
-    // Two clean zones:
-    //   Play:  surfaceColor from the simulation (heat-driven, source-driven)
-    //   Hold:  amber ember palette, built independently, gated by materialFamilyT
-    //
-    // Gate:  materialFamilyT = 0 → play color, 1 → hold palette, fades out at clear
-    // Tune:  holdOuter/holdRim/holdBody/holdInner/holdCore palette colors below
-    // ════════════════════════════════════════════════════════════════════════
-    const particleColor = particle.get("color");
-    const particleHeat = particle.get("heat");
-    const surfaceColor = particleColor.toConst("surfaceColor");
-    const colorPos = particle.get("position").xyz.toConst("colorPos");
-
-    // View-facing: front-facing rod facets read brighter (exposition)
-    const viewNormal = normalize(vNormalView).toConst("viewNormal");
-    const viewFacingT = pow(viewNormal.z.mul(viewNormal.z), float(0.5))
-      .clamp(0, 1)
-      .toConst("viewFacingT");
-
-    // ── Hold-space classifiers ───────────────────────────────────────────────
-    // Mirror of positionNode freeze-space, computed independently for fragment stage.
-    // holdCenterDist: 0 = mass centroid (core), 1 = mass edge (shell)
-    const {
-      local: holdLocal,
-      centerDist: holdCenterDist,
-      frontT: holdFrontT,
-    } = buildFreezeSpaceMetrics({
-      position: colorPos,
-      center: this.uniforms.freezeCenter,
-      boundsMin: this.uniforms.freezeBoundsMin,
-      boundsMax: this.uniforms.freezeBoundsMax,
-      spanName: "holdFSpan",
-      halfName: "holdFHalf",
-      localName: "holdLocal",
-      centerDistName: "holdCenterDist",
-      frontName: "holdFrontT",
+    this.material.positionNode = buildParticlePositionNode({
+      particle,
+      flight,
+      uniforms: this.uniforms,
+      sizeUniform: this.uniforms.size,
+      vNormalView,
+      vPreEnterThickness,
+      vOpacityMul,
+      vSurfaceAnchor,
+      vNearIntakePanel,
+      vNearSpineAxis,
     });
-    const holdShell = smoothstep(
-      float(0.24),
-      float(0.92),
-      holdCenterDist,
-    ).toConst("holdShell"); // 0=core 1=shell
-    const holdCore = float(1)
-      .sub(smoothstep(float(0.16), float(0.46), holdCenterDist))
-      .toConst("holdCore"); // 1=core 0=shell
-    const readFocusT = mix(holdFrontT, viewFacingT, float(0.68)).toConst(
-      "readFocusT",
-    );
 
-    // ── materialFamilyT: the main gate for all hold material properties ──────
-    // 0 = fully play state, 1 = fully hold state
-    // convergenceFreeze drives it up; matLeaveT drives it back down during clear
-    const clearMatProgress = this.uniforms.postFreezeClearProgress
-      .clamp(0, 1)
-      .toConst("clearMatProgress");
-    const matHash = fract(
-      sin(instanceIndex.toFloat().mul(127.1)).mul(43758.5453),
-    ).toConst("matHash");
-    const matOffset = holdShell
-      .mul(0.16)
-      .add(holdFrontT.mul(0.1))
-      .add(matHash.mul(0.05))
-      .toConst("matOffset");
-    const matLeaveT = smoothstep(
-      matOffset.add(float(0.34)),
-      matOffset.add(float(0.7)),
-      clearMatProgress,
-    ).toConst("matLeaveT");
-    const frozenT = this.uniforms.convergenceFreeze.toConst("frozenT");
-    const shapeSupportT = this.uniforms.holdShapeMix.toConst("shapeSupportT");
-    const holdProgress = this.uniforms.postFreezeHoldProgress
-      .clamp(0, 1)
-      .toConst("holdProgress");
-    const claimOverlayT = shapeSupportT
-      .mul(float(0.42))
-      .add(holdProgress.mul(float(0.58)))
-      .clamp(0, 1)
-      .toConst("claimOverlayT");
-    const claimBandT = float(1)
-      .sub(
-        smoothstep(
-          float(0.12),
-          float(0.58),
-          holdLocal.y.abs().add(holdLocal.x.abs().mul(0.12)),
-        ),
-      )
-      .mul(float(1).sub(smoothstep(float(0.88), float(1.08), holdLocal.x.abs())))
-      .clamp(0, 1)
-      .toConst("claimBandT");
-    // Keep the darker freeze-settle read alive before the claimed hold fully takes over.
-    const materialHoldT = frozenT
-      .mul(mix(float(0.62), float(0.9), shapeSupportT))
-      .mul(float(1).sub(matLeaveT))
-      .toConst("materialHoldT");
-    const materialFamilyT = smoothstep(
-      float(0.26),
-      float(0.92),
-      materialHoldT,
-    ).toConst("materialFamilyT");
-    const preEnterMaterialT = float(1)
-      .sub(materialFamilyT)
-      .mul(float(1).sub(this.uniforms.postFreezeLock.clamp(0, 1)))
-      .toConst("preEnterMaterialT");
-    const preEnterThicknessT = vPreEnterThickness
-      .mul(preEnterMaterialT)
-      .clamp(0, 1)
-      .toConst("preEnterThicknessT");
+    buildUnifiedParticleSurfaceNodes({
+      particle,
+      flight,
+      uniforms: this.uniforms,
+      material: this.material,
+      vNormalView,
+      vPreEnterThickness,
+      vOpacityMul,
+      vSurfaceAnchor,
+      vNearIntakePanel,
+      vNearSpineAxis,
+    });
 
-    // ── Hold palette ─────────────────────────────────────────────────────────
-    // Five stops from outer shell → hot core. Linear RGB. Tune freely.
-    // Keep body values modest (0.1–0.6); emissive handles the visible glow.
-    const palOuter = vec3(0.026, 0.008, 0.004); // outer: basalt/coal
-    const palRim = vec3(0.074, 0.024, 0.009); // rim: restrained ember
-    const palBody = vec3(0.148, 0.046, 0.016); // body: dark ember body
-    const palInner = vec3(0.236, 0.082, 0.026); // inner: warm seam-adjacent body
-    const palCore = vec3(0.33, 0.126, 0.04); // core: controlled hot center
-
-    // Gradient: outer → inner → core using holdCenterDist (1=outer, 0=core)
-    // innerDist: 0=outer, 1=core (inverted for intuitive mixing)
-    const innerDist = float(1).sub(holdCenterDist).toConst("innerDist");
-    const outerToBody = mix(
-      palOuter,
-      palBody,
-      smoothstep(float(0.0), float(0.75), innerDist),
-    ).toConst("outerToBody");
-    const bodyToCore = mix(
-      palInner,
-      palCore,
-      smoothstep(float(0.5), float(0.85), innerDist),
-    ).toConst("bodyToCore");
-    // Blend rim in the outer-to-body transition
-    const rimBlend = mix(
-      palRim,
-      outerToBody,
-      smoothstep(float(0.15), float(0.45), innerDist),
-    ).toConst("rimBlend");
-    const baseGradient = mix(
-      rimBlend,
-      bodyToCore,
-      smoothstep(float(0.4), float(0.72), innerDist),
-    ).toConst("baseGradient");
-    // View-facing bonus: front-facing core particles mix toward palCore (no additive overflow)
-    const holdPalette = mix(
-      baseGradient,
-      palCore,
-      holdCore.mul(readFocusT).mul(float(0.12)).clamp(0, 1),
-    ).toConst("holdPalette");
-    const claimSeamBase = vec3(0.112, 0.036, 0.014);
-    const claimSeamHot = vec3(0.205, 0.074, 0.024);
-    const claimSeamColor = mix(
-      claimSeamBase,
-      claimSeamHot,
-      holdCore.mul(0.16).add(readFocusT.mul(0.12)).clamp(0, 1),
-    ).toConst("claimSeamColor");
-    const claimSeamT = claimBandT
-      .mul(claimOverlayT)
-      .mul(readFocusT.mul(0.08).add(0.92))
-      .mul(mix(float(0.08), float(0.28), materialFamilyT))
-      .clamp(0, 1)
-      .toConst("claimSeamT");
-
-    // ── Color: clean gate between play and hold ───────────────────────────────
-    const colorGlowFactor = smoothstep(float(0.12), float(0.46), particleHeat)
-      .toConst("colorGlowFactor");
-    const cooledSurfaceBase = mix(
-      vec3(0.03, 0.009, 0.004),
-      vec3(0.185, 0.052, 0.018),
-      colorGlowFactor,
-    ).toConst("cooledSurfaceBase");
-    const surfaceCoolingT = frozenT
-      .mul(float(0.22))
-      .add(materialFamilyT.mul(float(0.62)))
-      .clamp(0, 0.82)
-      .toConst("surfaceCoolingT");
-    const cooledSurfaceColor = mix(
-      surfaceColor,
-      cooledSurfaceBase,
-      surfaceCoolingT,
-    ).toConst("cooledSurfaceColor");
-    const finalColor = mix(
-      mix(cooledSurfaceColor, holdPalette, materialFamilyT),
-      claimSeamColor,
-      claimSeamT.mul(0.16),
-    );
-    this.material.colorNode = finalColor;
-
-    // ── Roughness ────────────────────────────────────────────────────────────
-    // Play: rough volcanic rock. Hold: ember surface, slightly less rough at core.
-    const roughNoise = fract(
-      sin(instanceIndex.toFloat().mul(483.1)).mul(19847.3),
-    )
-      .mul(0.12)
-      .sub(0.06)
-      .toConst("roughNoise");
-    const playRoughness = float(0.92)
-      .add(roughNoise)
-      .clamp(0.86, 0.96)
-      .toConst("playRoughness");
-    const preEnterRoughness = playRoughness
-      .sub(preEnterThicknessT.mul(0.075))
-      .sub(viewFacingT.mul(preEnterThicknessT).mul(0.02))
-      .clamp(0.8, 0.96)
-      .toConst("preEnterRoughness");
-    const holdRoughness = float(0.9)
-      .add(roughNoise)
-      .sub(holdCore.mul(materialFamilyT).mul(0.024))
-      .clamp(0.82, 0.96)
-      .toConst("holdRoughness");
-    this.material.roughnessNode = mix(
-      preEnterRoughness,
-      holdRoughness,
-      materialFamilyT,
-    )
-      .sub(claimSeamT.mul(0.008))
-      .clamp(0.82, 0.96);
-
-    // ── Metalness ────────────────────────────────────────────────────────────
-    // Ember is dielectric — keep metalness near-zero throughout.
-    this.material.metalnessNode = float(0.015);
-
-    // ── Emissive ─────────────────────────────────────────────────────────────
-    // Two contributions:
-    //   heatEmissive:  always-on, driven by particle heat (hot particles glow orange)
-    //   holdEmissive:  hold-state only, amber core glow from materialFamilyT
-    //                  core glows, shell stays dark → contrast reads as depth
-    //
-    // Tune holdEmissiveScale to control glow brightness without touching colors.
-    const glowFactor = smoothstep(float(0.12), float(0.46), particleHeat);
-    const heatEmissiveCarryT = float(1)
-      .sub(smoothstep(float(0.08), float(0.56), materialFamilyT))
-      .mul(float(1).sub(frozenT.mul(0.22)))
-      .clamp(0, 1)
-      .toConst("heatEmissiveCarryT");
-    const heatEmissive = palInner
-      .mul(glowFactor)
-      .mul(float(0.026))
-      .mul(heatEmissiveCarryT)
-      .toConst("heatEmissive");
-
-    // Hold emissive: concentrated at core, suppressed at shell
-    // holdCore=1 at centroid, holdShell=0 at centroid → product peaks at core
-    const holdEmissiveStr = holdCore
-      .mul(float(1).sub(holdShell.mul(0.82))) // core-only mask
-      .mul(readFocusT.mul(0.36).add(0.64)) // view-facing bonus
-      .mul(materialFamilyT) // gated by hold state
-      .toConst("holdEmissiveStr");
-    const holdEmissiveScale = float(0.045); // ← tune this for glow brightness
-    const holdEmissive = palCore
-      .mul(holdEmissiveStr)
-      .mul(holdEmissiveScale)
-      .toConst("holdEmissive");
-    const claimEmissive = claimSeamHot
-      .mul(claimSeamT)
-      .mul(float(0.008))
-      .toConst("claimEmissive");
-
-    const emissive = heatEmissive
-      .add(holdEmissive)
-      .add(claimEmissive)
-      .toConst("emissive");
-    this.material.emissiveNode = emissive;
-
-    // Bloom mask (bloom off by default, preserved for debug/enable)
-    const emissivePeak = emissive.r
-      .max(emissive.g)
-      .max(emissive.b)
-      .toConst("emissivePeak");
-    const emissiveBloomMask = smoothstep(
-      float(0.028),
-      float(0.16),
-      emissivePeak,
-    )
-      .mul(glowFactor.mul(0.08))
-      .mul(float(1).sub(holdShell.mul(0.36)))
-      .clamp(0, 1)
-      .toConst("emissiveBloomMask");
-    this._bloomIntensityNode = emissivePeak.mul(emissiveBloomMask).clamp(0, 1);
-
-    // ── AO ───────────────────────────────────────────────────────────────────
-    // Hold: core particles gain slight AO relief, shell particles darken slightly
-    const holdShellHoldT = holdShell
-      .mul(materialFamilyT)
-      .toConst("holdShellHoldT");
-    const preEnterAo = vAo
-      .mul(mix(float(1.0), float(0.9), preEnterThicknessT))
-      .add(preEnterThicknessT.mul(0.028))
-      .clamp(0, 1)
-      .toConst("preEnterAo");
-    const holdAo = vAo
-      .mul(mix(float(1.0), float(0.86), holdShellHoldT))
-      .add(holdCore.mul(materialFamilyT).mul(0.035))
-      .clamp(0, 1)
-      .toConst("holdAo");
-    this.material.aoNode = mix(preEnterAo, holdAo, materialFamilyT);
-
-    // ── Mesh ─────────────────────────────────────────────────────────────────
     this.object = new THREE.Mesh(this.geometry, this.material);
-
-    this.object.onBeforeShadow = () => {
-      this.geometry.setDrawRange(this.defaultIndexCount, Infinity);
-    };
-    this.object.onAfterShadow = () => {
-      this.geometry.setDrawRange(0, this.defaultIndexCount);
-    };
-
     this.object.frustumCulled = false;
+
     const s = 1 / 64;
     this.object.position.set(-32.0 * s * 1.6, -0.012, -0.12);
     this.object.rotation.x = 0.004;
@@ -899,21 +960,16 @@ class ParticleRenderer {
 
   worldPointToSimulation(worldPoint, target = new THREE.Vector3()) {
     this.object.updateWorldMatrix(true, false);
-    target.copy(worldPoint);
-    this.object.worldToLocal(target);
-    return target;
+    return this.object.worldToLocal(target.copy(worldPoint));
   }
 
   worldDirectionToSimulation(worldDirection, target = new THREE.Vector3()) {
     this.object.updateWorldMatrix(true, false);
-    return this.applyWorldDirectionToSimulation(worldDirection, target);
-  }
-
-  applyWorldDirectionToSimulation(worldDirection, target) {
     const worldQuaternion = this.object.getWorldQuaternion(
       this._worldQuaternion,
     );
     const worldScale = this.object.getWorldScale(this._worldScale);
+
     target
       .copy(worldDirection)
       .applyQuaternion(worldQuaternion.invert())
@@ -923,122 +979,130 @@ class ParticleRenderer {
         target.z / Math.max(worldScale.z, 0.0001),
       )
       .normalize();
+
     return target;
   }
 
-  setFreezeSnapshot(snapshot) {
-    if (!snapshot) {
-      this.clearFreezeSnapshot();
-      return;
-    }
-    this.uniforms.freezeCenter.value.copy(snapshot.center);
-    this.uniforms.freezeBoundsMin.value.copy(snapshot.boundsMin);
-    this.uniforms.freezeBoundsMax.value.copy(snapshot.boundsMax);
-    this.hasFreezeSpace = true;
+  applyPostEnterFrame(derived, context) {
+    this.uniforms.postEnterLockMix.value = derived?.lockMix ?? 0;
+    this.uniforms.postEnterExtractMix.value = derived?.extractMix ?? 0;
+    this.uniforms.postEnterClearMix.value = derived?.clearMix ?? 0;
+    this.uniforms.postEnterQuietMix.value = derived?.quietMix ?? 0;
+
+    // Idle: rift/freeze refresh in `updateChamberBounds` (no stale post-enter uniforms).
+    if (!context) return;
+
+    this.uniforms.chamberMin.value.copy(context.chamberBoundsSim.min);
+    this.uniforms.chamberMax.value.copy(context.chamberBoundsSim.max);
+    this.uniforms.riftSlitP0.value.copy(context.riftSlitP0Sim);
+    this.uniforms.riftSlitP1.value.copy(context.riftSlitP1Sim);
+    this.uniforms.freezeCenter.value.copy(context.freezeSpaceSim.center);
+    this.uniforms.freezeBoundsMin.value.copy(context.freezeSpaceSim.boundsMin);
+    this.uniforms.freezeBoundsMax.value.copy(context.freezeSpaceSim.boundsMax);
   }
 
-  clearFreezeSnapshot() {
-    this.hasFreezeSpace = false;
+  applyRuntime(runtime) {
+    if (runtime) this.runtime = runtime;
   }
 
   updateRuntimeUniforms() {
-    this.uniforms.size.value = conf.actualSize;
-    this.uniforms.convergenceFreeze.value = conf.convergenceFreeze || 0;
-    this.uniforms.holdShapeMix.value = conf.holdShapeMix || 0;
-    this.uniforms.postFreezeLock.value = conf.postFreezeSimLock || 0;
-    this.uniforms.postFreezeHoldProgress.value =
-      conf.postFreezeHoldProgress || 0;
-    this.uniforms.postFreezeClearProgress.value =
-      conf.postFreezeClearProgress || 0;
+    this.uniforms.size.value = this.runtime.actualSize;
+    this.uniforms.convergenceFreeze.value = this.runtime.convergenceFreeze;
+    this.material.envMapIntensity = 0.12;
+
+    // Stable policy: keep depthWrite on to reduce layer mush with transparency.
+    this.material.transparent = true;
+    this.material.depthWrite = true;
+
+    this.object.castShadow = true;
+    this.object.receiveShadow = true;
+    this.object.visible = true;
+  }
+
+  /**
+   * Idle path: chamber drives rift + freeze so uniforms never keep stale post-enter values.
+   */
+  syncIdleSpatialUniformsFromChamber() {
+    const cmin = this._chamberMin;
+    const cmax = this._chamberMax;
+    if (
+      ![
+        cmin.x,
+        cmin.y,
+        cmin.z,
+        cmax.x,
+        cmax.y,
+        cmax.z,
+      ].every(Number.isFinite)
+    ) {
+      return;
+    }
+    if (
+      !buildRiftAndExitFromChamberSim(
+        cmin,
+        cmax,
+        _idleExitScratch,
+        _idleRiftP0,
+        _idleRiftP1,
+      )
+    ) {
+      return;
+    }
+    this.uniforms.riftSlitP0.value.copy(_idleRiftP0);
+    this.uniforms.riftSlitP1.value.copy(_idleRiftP1);
+
+    _idleFreezeCenter.addVectors(cmin, cmax).multiplyScalar(0.5);
+    _idleFreezeHalf
+      .subVectors(cmax, cmin)
+      .multiplyScalar(0.5 * POST_ENTER_FREEZE_SPACE_FRAC);
+    this.uniforms.freezeCenter.value.copy(_idleFreezeCenter);
+    this.uniforms.freezeBoundsMin.value
+      .copy(_idleFreezeCenter)
+      .sub(_idleFreezeHalf);
+    this.uniforms.freezeBoundsMax.value
+      .copy(_idleFreezeCenter)
+      .add(_idleFreezeHalf);
   }
 
   updateChamberBounds() {
-    const v = PREENTER_VESSEL;
-    const wallMin = this._wallMin.set(
-      v.centerX - v.apertureWidth / 2,
-      v.centerY - v.apertureHeight / 2,
-      v.centerZ,
+    computeChamberBoundsSimFromParticleObject(
+      this.object,
+      PREENTER_VESSEL,
+      this._chamberMin,
+      this._chamberMax,
     );
-    const wallMax = this._wallMax.set(
-      v.centerX + v.apertureWidth / 2,
-      v.centerY + v.apertureHeight / 2,
-      v.centerZ + v.depth,
-    );
-
-    this.worldPointToSimulation(wallMin, this._chamberMin);
-    this.worldPointToSimulation(wallMax, this._chamberMax);
     this.uniforms.chamberMin.value.copy(this._chamberMin);
     this.uniforms.chamberMax.value.copy(this._chamberMax);
-  }
-
-  applyFallbackFreezeSpace() {
-    const v = PREENTER_VESSEL;
-    const src = PREENTER_SOURCE_ANCHOR.originLocal;
-    const monumentCenter = this._monumentCenter.set(
-      v.centerX + src.x,
-      v.centerY + src.y,
-      v.centerZ + src.z,
-    );
-
-    this.worldPointToSimulation(
-      monumentCenter,
-      this.uniforms.freezeCenter.value,
-    );
-    this.uniforms.freezeBoundsMin.value.copy(this._chamberMin);
-    this.uniforms.freezeBoundsMax.value.copy(this._chamberMax);
-  }
-
-  updateFreezeSpace() {
-    const holdOwnerRequired = conf.postFreezeSimLock > 0.5;
-
-    if (this.hasFreezeSpace) {
-      return;
-    }
-
-    if (holdOwnerRequired) {
-      throw new Error(
-        "VOLKANO hold owner missing: explicit freeze-space owner required before entering hold.",
-      );
-    }
-
-    this.applyFallbackFreezeSpace();
-  }
-
-  updateBloomState(nextBloom) {
-    if (nextBloom === this.bloom) {
-      return;
-    }
-
-    this.bloom = nextBloom;
-    if (nextBloom) {
-      this.material.mrtNode = mrt({
-        bloomIntensity: this._bloomIntensityNode,
-      });
-    } else {
-      this.material.mrtNode = null;
-    }
+    this.syncIdleSpatialUniformsFromChamber();
   }
 
   dispose() {
     if (this.object?.parent) {
       this.object.parent.remove(this.object);
     }
+
     this.object = null;
     this.geometry?.dispose?.();
     this.material?.dispose?.();
     this.geometry = null;
     this.material = null;
     this.mlsMpmSim = null;
+    this.postEnterFlightSystem = null;
     this.uniforms = {};
-    this.hasFreezeSpace = false;
   }
 
   update() {
+    const lock = this.uniforms.postEnterLockMix?.value ?? 0;
+    const ext = this.uniforms.postEnterExtractMix?.value ?? 0;
+    const clr = this.uniforms.postEnterClearMix?.value ?? 0;
+    const quiet = this.uniforms.postEnterQuietMix?.value ?? 0;
+
+    if (lock < 1e-4 && ext < 1e-4 && clr < 1e-4 && quiet < 1e-4) {
+      this.updateChamberBounds();
+    }
+
     this.updateRuntimeUniforms();
-    this.updateChamberBounds();
-    this.updateFreezeSpace();
-    this.geometry.instanceCount = conf.particles;
-    this.updateBloomState(conf.bloom);
+    this.geometry.instanceCount = this.runtime.particles;
   }
 }
 

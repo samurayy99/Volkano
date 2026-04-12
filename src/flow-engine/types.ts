@@ -10,23 +10,22 @@ export interface FlowEngineFrontRailMetrics {
 
 export interface FlowEngineApi {
   setConvergenceProgress: (progress: number) => void;
-  setConvergenceSettled: (settled: boolean) => void;
   setInteractiveEnabled: (enabled: boolean) => void;
   setPointer: (x: number, y: number, isDown: boolean) => void;
+  /** Release pointer capture for the sim (e.g. pointer leave); matches host usage. */
+  clearPointer: () => void;
   dispose: () => void;
 }
 
 export interface FlowEngineBridgeOptions {
   onError?: (error: unknown) => void;
-  onPostEnterHoldStart?: () => void;
-  onRiftReady?: () => void;
+  onRotationReady?: () => void;
   onFrontRailMetricsChange?: (metrics: FlowEngineFrontRailMetrics) => void;
 }
 
 export interface FlowEngineHostProps {
   onReady?: (api: FlowEngineApi) => void;
-  onPostEnterHoldStart?: () => void;
-  onRiftReady?: () => void;
+  onRotationReady?: () => void;
   onFrontRailMetricsChange?: (metrics: FlowEngineFrontRailMetrics) => void;
   onError?: (error: unknown) => void;
   className?: string;

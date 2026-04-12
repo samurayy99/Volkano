@@ -2,6 +2,7 @@
 
 import {
   type AnimationEvent as ReactAnimationEvent,
+  type CSSProperties,
   type RefObject,
   useEffect,
   useLayoutEffect,
@@ -15,7 +16,6 @@ import {
   createConvergenceEngineBridge,
   getSourceInteractive,
   type ConvergenceController,
-  type ConvergenceSnapshot,
 } from "../convergence";
 import { FlowEngineHost } from "../flow-engine";
 import type {
@@ -23,11 +23,16 @@ import type {
   FlowEngineFrontRailMetrics,
 } from "../flow-engine/types";
 
-type RoomPhase = "source" | "rotating" | "back";
-const FREEZE_FALLBACK_MS = 2500;
+type RoomPhase = "source" | "rotating" | "backface" | "interface";
+const ROOM_ROTATION_DURATION_MS = 1900;
+const ROOM_BACKFACE_SETTLE_DURATION_MS = 600;
 const TRIGGER_HEIGHT_RATIO = 0.72;
 const TRIGGER_WIDTH_RATIO = 0.115;
 const TRIGGER_VERTICAL_BIAS_RATIO = 0.02;
+const ROOM_TIMING_STYLE: CSSProperties = {
+  "--rotation-duration": `${ROOM_ROTATION_DURATION_MS}ms`,
+  "--hero-land-duration": `${ROOM_BACKFACE_SETTLE_DURATION_MS}ms`,
+} as CSSProperties;
 
 export function SpatialChamber() {
   const reducedMotion = useReducedMotionPreference();
@@ -36,125 +41,85 @@ export function SpatialChamber() {
   const engineBridgeRef = useRef<ReturnType<
     typeof createConvergenceEngineBridge
   > | null>(null);
-  const controllerRef = useRef<ConvergenceController | null>(null);
+  const [controller] = useState<ConvergenceController>(() =>
+    createConvergenceController(),
+  );
   const [engineFailed, setEngineFailed] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
-
-  if (controllerRef.current === null) {
-    controllerRef.current = createConvergenceController();
-  }
-
-  const controller = controllerRef.current;
   const snapshot = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getSnapshot,
   );
+  const [roomPhase, setRoomPhase] = useState<RoomPhase>("source");
+  const roomFrameRef = useRef<number | null>(null);
+  const roomPhaseStartedAtRef = useRef(0);
+  const roomPhaseRef = useRef<RoomPhase>("source");
+  roomPhaseRef.current = roomPhase;
 
-  const roomPhase = getRoomPhase(snapshot);
-  const view: RoomPhase =
-    reducedMotion && snapshot.rotationComplete ? "back" : roomPhase;
-  const rotationActive = snapshot.rotationActive;
-  const rotationComplete = snapshot.rotationComplete;
-  const heroLanded = snapshot.heroLanded;
-  const interfaceActive = snapshot.interfaceActive;
   const isFrontPointerActive =
     !reducedMotion &&
-    view === "source" &&
+    roomPhase === "source" &&
     getSourceInteractive(snapshot);
-  const isBackPointerActive = view === "back" && interfaceActive;
+  const isBackPointerActive = roomPhase === "interface";
   const shouldMountEngine = !reducedMotion && !engineFailed;
   /** Without this, `.chamber-stage` stays opacity:0 until WebGPU `onReady` — hangs, no-GPU, or failed init never call `onReady`. */
   const sourceShellVisible =
-    view === "source" && (engineReady || !shouldMountEngine);
-
-  // Safety fallback: if convergence settled but rotation never triggered, start after timeout
-  useEffect(() => {
-    if (
-      !snapshot.convergenceSettled ||
-      snapshot.rotationActive ||
-      snapshot.rotationComplete
-    ) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      controller.startRotation();
-    }, FREEZE_FALLBACK_MS);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    controller,
-    snapshot.convergenceSettled,
-    snapshot.rotationActive,
-    snapshot.rotationComplete,
-  ]);
-
-  // No-engine fallback: mark convergence settled after timeout
-  useEffect(() => {
-    if (
-      snapshot.progress < 100 ||
-      snapshot.convergenceSettled ||
-      (!reducedMotion && shouldMountEngine && !engineFailed && engineReady)
-    ) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      controller.markConvergenceSettled();
-    }, FREEZE_FALLBACK_MS);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    controller,
-    engineReady,
-    engineFailed,
-    reducedMotion,
-    shouldMountEngine,
-    snapshot.convergenceSettled,
-    snapshot.progress,
-  ]);
-
-  // Reduced-motion bypass: no hero-wall-land animation fires, so mark landed directly
-  useEffect(() => {
-    if (!reducedMotion || !snapshot.rotationComplete || snapshot.heroLanded) {
-      return;
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      controller.markHeroLanded();
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [controller, reducedMotion, snapshot.rotationComplete, snapshot.heroLanded]);
-
-  useEffect(() => {
-    if (!snapshot.heroLanded || snapshot.interfaceActive) {
-      return;
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      controller.markInterfaceActive();
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [controller, snapshot.heroLanded, snapshot.interfaceActive]);
+    roomPhase === "source" && (engineReady || !shouldMountEngine);
 
   useEffect(() => {
     engineBridgeRef.current?.sync(snapshot);
   }, [snapshot]);
 
   useEffect(() => {
+    if (snapshot.progress < 100 && roomPhase !== "source") {
+      roomPhaseStartedAtRef.current = 0;
+      setRoomPhase("source");
+    }
+  }, [roomPhase, snapshot.progress]);
+
+  /** Backface → interface only (rotation end is tied to CSS `chamber-rotate` end, not wall-clock RAF). */
+  useEffect(() => {
+    if (roomFrameRef.current != null) {
+      window.cancelAnimationFrame(roomFrameRef.current);
+      roomFrameRef.current = null;
+    }
+
+    if (roomPhase !== "backface") {
+      return;
+    }
+
+    const phaseStartedAt =
+      roomPhaseStartedAtRef.current > 0
+        ? roomPhaseStartedAtRef.current
+        : performance.now();
+    roomPhaseStartedAtRef.current = phaseStartedAt;
+
+    const tick = (now: number) => {
+      const elapsed = now - phaseStartedAt;
+
+      if (elapsed >= ROOM_BACKFACE_SETTLE_DURATION_MS) {
+        roomPhaseStartedAtRef.current = performance.now();
+        setRoomPhase("interface");
+        roomFrameRef.current = null;
+        return;
+      }
+
+      roomFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    roomFrameRef.current = window.requestAnimationFrame(tick);
+    return () => {
+      if (roomFrameRef.current != null) {
+        window.cancelAnimationFrame(roomFrameRef.current);
+        roomFrameRef.current = null;
+      }
+    };
+  }, [roomPhase]);
+
+  useEffect(() => {
     const scrollNode = backScrollRef.current;
-    if (!scrollNode || !rotationComplete) return;
+    if (!scrollNode || roomPhase === "source") return;
 
     const frameId = window.requestAnimationFrame(() => {
       scrollNode.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -163,14 +128,14 @@ export function SpatialChamber() {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [rotationComplete]);
+  }, [roomPhase]);
 
   useEffect(() => {
     const el = rootRef.current;
     if (!el || reducedMotion) return;
 
     const handler = (event: PointerEvent) => {
-      if (!isFrontPointerActive || view !== "source") return;
+      if (!isFrontPointerActive || roomPhase !== "source") return;
       const nx = event.clientX / window.innerWidth - 0.5;
       const ny = event.clientY / window.innerHeight - 0.5;
       el.style.setProperty("--mouse-x", nx.toFixed(3));
@@ -179,16 +144,16 @@ export function SpatialChamber() {
 
     el.addEventListener("pointermove", handler, { passive: true });
     return () => el.removeEventListener("pointermove", handler);
-  }, [isFrontPointerActive, reducedMotion, view]);
+  }, [isFrontPointerActive, reducedMotion, roomPhase]);
 
   return (
     <div
       className="site-root"
       ref={rootRef}
-      data-phase={view}
+      style={ROOM_TIMING_STYLE}
+      data-room-phase={roomPhase}
       data-front-interactive={isFrontPointerActive ? "true" : "false"}
       data-back-interactive={isBackPointerActive ? "true" : "false"}
-      data-view={view}
       data-engine-ready={engineReady ? "true" : undefined}
       data-source-shell-visible={sourceShellVisible ? "true" : undefined}
     >
@@ -197,59 +162,44 @@ export function SpatialChamber() {
           <div className="chamber-aperture">
             <div
               className="cube"
-              onAnimationEnd={(event) => {
+              onAnimationEnd={(event: ReactAnimationEvent<HTMLDivElement>) => {
                 if (
                   event.currentTarget !== event.target ||
-                  event.animationName !== "chamber-rotate" ||
-                  !rotationActive
+                  event.animationName !== "chamber-rotate"
                 ) {
                   return;
                 }
-
-                controller.completeRotation();
+                if (roomPhaseRef.current !== "rotating") {
+                  return;
+                }
+                roomPhaseStartedAtRef.current = performance.now();
+                setRoomPhase("backface");
               }}
             >
               <FrontFace
                 controller={controller}
-                interactive={isFrontPointerActive}
                 mountEngine={shouldMountEngine && !engineFailed}
                 triggerVisible={
                   shouldMountEngine &&
                   !engineFailed &&
-                  view === "source"
+                  roomPhase === "source"
                 }
-                triggerDisabled={rotationActive || rotationComplete}
+                triggerDisabled={roomPhase !== "source"}
                 onEngineReady={(api) => {
                   engineBridgeRef.current = createConvergenceEngineBridge(api);
                   engineBridgeRef.current.sync(snapshot);
                   requestAnimationFrame(() => setEngineReady(true));
                 }}
-                onPostEnterHoldStart={() => {
-                  controller.markConvergenceSettled();
-                }}
-                onRiftReady={() => {
-                  if (reducedMotion) {
-                    window.requestAnimationFrame(() => {
-                      controller.completeRotation();
-                    });
-                  }
-                  controller.startRotation();
+                onRotationReady={() => {
+                  roomPhaseStartedAtRef.current = performance.now();
+                  setRoomPhase(reducedMotion ? "interface" : "rotating");
                 }}
                 onEngineError={() => {
                   setEngineFailed(true);
                 }}
               />
 
-              <BackFace
-                interactive={isBackPointerActive}
-                rotationComplete={rotationComplete}
-                heroLanded={heroLanded}
-                interfaceActive={interfaceActive}
-                scrollRef={backScrollRef}
-                onHeroSettled={() => {
-                  controller.markHeroLanded();
-                }}
-              />
+              <BackFace scrollRef={backScrollRef} />
               <WallFace className="cube-face cube-face-left" />
               <WallFace className="cube-face cube-face-right" />
               <WallFace className="cube-face cube-face-top" />
@@ -264,23 +214,19 @@ export function SpatialChamber() {
 
 function FrontFace({
   controller,
-  interactive,
   mountEngine,
   triggerVisible,
   triggerDisabled,
   onEngineReady,
-  onPostEnterHoldStart,
-  onRiftReady,
+  onRotationReady,
   onEngineError,
 }: {
   controller: ConvergenceController;
-  interactive: boolean;
   mountEngine: boolean;
   triggerVisible: boolean;
   triggerDisabled: boolean;
   onEngineReady: (api: FlowEngineApi) => void;
-  onPostEnterHoldStart: () => void;
-  onRiftReady: () => void;
+  onRotationReady: () => void;
   onEngineError: (error: unknown) => void;
 }) {
   const triggerAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -301,16 +247,6 @@ function FrontFace({
     );
   }, [triggerAnchorReady]);
 
-  useEffect(() => {
-    if (mountEngine) {
-      return;
-    }
-
-    latestTriggerMetricsRef.current = null;
-    triggerAnchorReadyRef.current = false;
-    setTriggerAnchorReady(false);
-  }, [mountEngine]);
-
   return (
     <section className="cube-face cube-face-front" aria-label="Source chamber">
       <div className="front-source">
@@ -328,14 +264,13 @@ function FrontFace({
                   setTriggerAnchorReady(true);
                 }
               }}
-              onPostEnterHoldStart={onPostEnterHoldStart}
-              onRiftReady={onRiftReady}
+              onRotationReady={onRotationReady}
               onError={onEngineError}
             />
           ) : (
             <div className="front-engine-fallback" aria-hidden="true" />
           )}
-          {triggerAnchorReady ? (
+          {mountEngine && triggerAnchorReady ? (
             <div
               ref={triggerAnchorRef}
               className="front-trigger-anchor"
@@ -407,19 +342,9 @@ function writeFrontRailAnchorStyle(
 }
 
 function BackFace({
-  interactive,
-  rotationComplete,
-  heroLanded,
-  interfaceActive,
   scrollRef,
-  onHeroSettled,
 }: {
-  interactive: boolean;
-  rotationComplete: boolean;
-  heroLanded: boolean;
-  interfaceActive: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
-  onHeroSettled: () => void;
 }) {
   return (
     <section
@@ -441,22 +366,7 @@ function BackFace({
         </header>
 
         <div className="back-scroll" ref={scrollRef}>
-          <section
-            className="back-hero"
-            onAnimationEnd={(event: ReactAnimationEvent<HTMLElement>) => {
-              if (
-                event.currentTarget !== event.target ||
-                event.animationName !== "hero-wall-land" ||
-                !rotationComplete ||
-                heroLanded ||
-                interfaceActive
-              ) {
-                return;
-              }
-
-              onHeroSettled();
-            }}
-          >
+          <section className="back-hero">
             <h2>Built under pressure.</h2>
           </section>
 
@@ -528,11 +438,4 @@ function getReducedMotionSnapshot() {
 
 function getReducedMotionServerSnapshot() {
   return false;
-}
-
-
-function getRoomPhase(snapshot: ConvergenceSnapshot): RoomPhase {
-  if (snapshot.rotationActive) return "rotating";
-  if (snapshot.rotationComplete) return "back";
-  return "source";
 }

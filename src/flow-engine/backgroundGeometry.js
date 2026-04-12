@@ -5,6 +5,7 @@ const NORMAL_MAP_URL = "/flow-assets/concrete_0016_normal_opengl_1k.png";
 const COLOR_MAP_URL = "/flow-assets/concrete_0016_color_1k.jpg";
 const ROUGHNESS_MAP_URL = "/flow-assets/concrete_0016_roughness_1k.jpg";
 const BACK_PLATE_URL = "/images/rift-monolith.png";
+const BACK_PLATE_SOURCE_OPACITY = 0.98;
 
 const FRAME_BASE_COLOR = new THREE.Color(0x2d2a27);
 
@@ -116,22 +117,32 @@ class BackgroundGeometry {
 
     const originLocal = PREENTER_SOURCE_ANCHOR.originLocal.clone();
     const axisLocal = PREENTER_SOURCE_ANCHOR.axisLocal.clone();
-    const rightLocal = new THREE.Vector3(1, 0, 0);
-    const upLocal = new THREE.Vector3(0, 1, 0);
+
+    const axisWorld = axisLocal
+      .clone()
+      .transformDirection(this.object.matrixWorld)
+      .normalize();
+
+    // Orthonormal basis: axis from authored vent direction; right/up derived (stable for rotated groups).
+    const refUp = new THREE.Vector3(0, 1, 0);
+    let rightWorld = new THREE.Vector3().crossVectors(refUp, axisWorld);
+    if (rightWorld.lengthSq() < 1e-10) {
+      refUp.set(1, 0, 0);
+      rightWorld.crossVectors(refUp, axisWorld);
+    }
+    rightWorld.normalize();
+    const upWorld = new THREE.Vector3()
+      .crossVectors(axisWorld, rightWorld)
+      .normalize();
 
     return {
       originLocal,
       axisLocal,
       radiiLocal: PREENTER_SOURCE_ANCHOR.radiiLocal.clone(),
       originWorld: this.object.localToWorld(originLocal.clone()),
-      axisWorld: axisLocal
-        .clone()
-        .transformDirection(this.object.matrixWorld)
-        .normalize(),
-      rightWorld: rightLocal
-        .transformDirection(this.object.matrixWorld)
-        .normalize(),
-      upWorld: upLocal.transformDirection(this.object.matrixWorld).normalize(),
+      axisWorld,
+      rightWorld,
+      upWorld,
     };
   }
 
@@ -171,10 +182,10 @@ class BackgroundGeometry {
       this.backWallMaterial.envMapIntensity = 0.03;
       this.backWallMaterial.emissiveIntensity = backWallBase + response * 0.006;
     }
-
     if (this.backPlateMaterial) {
-      this.backPlateMaterial.opacity = 0.98;
-      this.backPlateMaterial.color.setRGB(1, 1, 1);
+      // The back plate becomes the later hero/UI surface; do not fade it out
+      // during post-enter just because particles are clearing away.
+      this.backPlateMaterial.opacity = BACK_PLATE_SOURCE_OPACITY;
     }
   }
 
@@ -206,7 +217,6 @@ class BackgroundGeometry {
       frameSide,
       frameTop: frameTopSize,
       frameDepth,
-      linerThickness,
       linerDepth: revealDepth,
       depth,
       centerX,
@@ -325,9 +335,12 @@ class BackgroundGeometry {
       side: THREE.DoubleSide,
       toneMapped: false,
       transparent: true,
-      opacity: 0.98,
+      opacity: BACK_PLATE_SOURCE_OPACITY,
       depthWrite: false,
       depthTest: true,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
     });
     setTextureOffset(leftWallMaterial, 0.14, 0.06);
     setTextureOffset(rightWallMaterial, 0.14, 0.06);
@@ -471,7 +484,6 @@ class BackgroundGeometry {
       backPlateMaterial,
     );
     backPlate.position.set(0, 0, depth - 0.006);
-    backPlate.renderOrder = 4;
     this.backPlate = backPlate;
     this.backPlateMaterial = backPlate.material;
 

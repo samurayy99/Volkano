@@ -10,7 +10,6 @@ export function createConvergenceEngineBridge(engine: FlowEngineApi): Convergenc
   return {
     sync(snapshot) {
       engine.setConvergenceProgress(snapshot.progress);
-      engine.setConvergenceSettled(snapshot.convergenceSettled);
       engine.setInteractiveEnabled(getSourceInteractive(snapshot));
     },
   };

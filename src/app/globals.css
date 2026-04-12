@@ -99,8 +99,7 @@ select {
   overflow: hidden;
   perspective: var(--cube-perspective);
   /* Pointer parallax: perspective-origin moves subtly with mouse (Phase 4) */
-  perspective-origin:
-    calc(50.3% + var(--mouse-x, 0) * -4%)
+  perspective-origin: calc(50.3% + var(--mouse-x, 0) * -4%)
     calc(29vh + var(--mouse-y, 0) * -6vh);
   transition: perspective-origin 0.14s ease-out;
   transform-style: preserve-3d;
@@ -154,7 +153,7 @@ select {
 
 .cube-face {
   position: absolute;
-  backface-visibility: visible;
+  backface-visibility: hidden;
   transform-style: preserve-3d;
   overflow: hidden;
 }
@@ -302,7 +301,11 @@ select {
       transparent 54%
     ),
     /* Cool zone tint — ceiling is coldest, most receding */
-    radial-gradient(ellipse 70% 50% at 50% 0%, var(--zone-cool), transparent 80%);
+    radial-gradient(
+        ellipse 70% 50% at 50% 0%,
+        var(--zone-cool),
+        transparent 80%
+      );
   box-shadow:
     inset 0 -1px 0 var(--seam-light),
     inset 0 1px 0 rgba(247, 241, 231, 0.04),
@@ -337,7 +340,11 @@ select {
       transparent 46%
     ),
     /* Hot zone tint — floor is warmest surface, lava proximity */
-    radial-gradient(ellipse 60% 40% at var(--source-focus-x) 0%, var(--zone-warm), transparent 70%);
+    radial-gradient(
+        ellipse 60% 40% at var(--source-focus-x) 0%,
+        var(--zone-warm),
+        transparent 70%
+      );
   box-shadow:
     inset 0 1px 0 var(--seam-light),
     inset 0 -1px 0 rgba(0, 0, 0, 0.24),
@@ -373,17 +380,21 @@ select {
     ),
     /* Micro grain: frequent fine lines */
     repeating-linear-gradient(
-      var(--light-angle),
-      transparent 0% 4%,
-      rgba(247, 241, 231, 0.018) 4% 4.5%
-    ),
+        var(--light-angle),
+        transparent 0% 4%,
+        rgba(247, 241, 231, 0.018) 4% 4.5%
+      ),
     /* Mineral shimmer: dense bright lines */
     repeating-linear-gradient(
-      var(--light-angle),
-      transparent 0% 1.2%,
-      rgba(247, 241, 231, 0.08) 1.2% 2.1%
+        var(--light-angle),
+        transparent 0% 1.2%,
+        rgba(247, 241, 231, 0.08) 1.2% 2.1%
+      ),
+    radial-gradient(
+      circle at 18% 16%,
+      rgba(247, 241, 231, 0.022),
+      transparent 14%
     ),
-    radial-gradient(circle at 18% 16%, rgba(247, 241, 231, 0.022), transparent 14%),
     radial-gradient(circle at 74% 66%, rgba(0, 0, 0, 0.08), transparent 22%);
   opacity: 0.38;
 }
@@ -399,17 +410,21 @@ select {
     ),
     /* Micro grain: frequent fine lines */
     repeating-linear-gradient(
-      calc(var(--light-angle) * -1),
-      transparent 0% 4%,
-      rgba(247, 241, 231, 0.016) 4% 4.5%
-    ),
+        calc(var(--light-angle) * -1),
+        transparent 0% 4%,
+        rgba(247, 241, 231, 0.016) 4% 4.5%
+      ),
     /* Mineral shimmer */
     repeating-linear-gradient(
-      calc(var(--light-angle) * -1),
-      transparent 0% 1.2%,
-      rgba(247, 241, 231, 0.07) 1.2% 2.1%
+        calc(var(--light-angle) * -1),
+        transparent 0% 1.2%,
+        rgba(247, 241, 231, 0.07) 1.2% 2.1%
+      ),
+    radial-gradient(
+      circle at 82% 16%,
+      rgba(247, 241, 231, 0.018),
+      transparent 14%
     ),
-    radial-gradient(circle at 82% 16%, rgba(247, 241, 231, 0.018), transparent 14%),
     radial-gradient(circle at 26% 66%, rgba(0, 0, 0, 0.08), transparent 22%);
   opacity: 0.34;
 }
@@ -458,7 +473,11 @@ select {
       transparent 0% 1.2%,
       rgba(247, 241, 231, 0.06) 1.2% 2%
     ),
-    radial-gradient(circle at 26% 22%, rgba(247, 241, 231, 0.016), transparent 14%),
+    radial-gradient(
+      circle at 26% 22%,
+      rgba(247, 241, 231, 0.016),
+      transparent 14%
+    ),
     radial-gradient(circle at 64% 58%, rgba(0, 0, 0, 0.08), transparent 16%);
   opacity: 0.28;
 }
@@ -481,7 +500,11 @@ select {
       transparent 0% 1.2%,
       rgba(247, 241, 231, 0.065) 1.2% 2%
     ),
-    radial-gradient(circle at var(--source-focus-x) 22%, rgba(247, 241, 231, 0.018), transparent 18%),
+    radial-gradient(
+      circle at var(--source-focus-x) 22%,
+      rgba(247, 241, 231, 0.018),
+      transparent 18%
+    ),
     radial-gradient(circle at 64% 58%, rgba(0, 0, 0, 0.07), transparent 16%);
   opacity: 0.3;
 }
@@ -836,13 +859,14 @@ select {
 
 /* ── State gates ────────────────────────────────────────────────────────── */
 
-.site-root[data-phase="rotating"] .cube {
+.site-root[data-room-phase="rotating"] .cube {
   animation: chamber-rotate var(--rotation-duration) var(--rotation-ease)
     forwards;
   will-change: transform;
 }
 
-.site-root[data-view="back"] .cube {
+.site-root[data-room-phase="backface"] .cube,
+.site-root[data-room-phase="interface"] .cube {
   transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
 }
 
@@ -856,60 +880,79 @@ select {
   pointer-events: auto;
 }
 
-.site-root[data-phase="rotating"] .front-source {
-  animation: front-yield var(--rotation-duration) linear forwards;
+/* Keep WebGL canvas visible through rotation so transparent chamber + backface stay continuous. */
+.site-root[data-room-phase="rotating"] .front-source {
+  opacity: 1;
+  filter: none;
+  pointer-events: none;
 }
 
-.site-root[data-view="back"] .front-source {
+.site-root[data-room-phase="rotating"] .front-flow-host,
+.site-root[data-room-phase="rotating"] .front-engine-fallback,
+.site-root[data-room-phase="rotating"] .front-source-host {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.site-root[data-room-phase="backface"] .front-source,
+.site-root[data-room-phase="interface"] .front-source {
   opacity: 0;
   pointer-events: none;
 }
 
-.site-root[data-view="source"] .cube-face-left,
-.site-root[data-view="source"] .cube-face-right,
-.site-root[data-view="source"] .cube-face-top,
-.site-root[data-view="source"] .cube-face-bottom {
+.site-root[data-room-phase="source"] .cube-face-left,
+.site-root[data-room-phase="source"] .cube-face-right,
+.site-root[data-room-phase="source"] .cube-face-top,
+.site-root[data-room-phase="source"] .cube-face-bottom {
   opacity: 0;
   pointer-events: none;
 }
 
-.site-root[data-view="source"] .cube-face-back {
+.site-root[data-room-phase="source"] .cube-face-back {
   opacity: 0;
   pointer-events: none;
 }
 
-.site-root[data-view="source"] .back-scene-media {
+.site-root[data-room-phase="source"] .back-scene-media {
   opacity: 0;
 }
 
-.site-root[data-view="source"] .chamber-stage {
+.site-root[data-room-phase="source"] .chamber-stage {
   opacity: 0;
   pointer-events: none;
 }
 
-.site-root[data-view="source"][data-source-shell-visible="true"] .chamber-stage {
+.site-root[data-room-phase="source"][data-source-shell-visible="true"]
+  .chamber-stage {
   opacity: 1;
   pointer-events: auto;
   transition: opacity 0.3s ease-out;
 }
 
-.site-root[data-view="source"] .back-scene-haze {
+.site-root[data-room-phase="source"] .back-scene-haze {
   opacity: 0;
 }
 
-.site-root[data-phase="rotating"] .back-chrome,
-.site-root[data-phase="rotating"] .back-hero {
+.site-root[data-room-phase="rotating"] .back-chrome,
+.site-root[data-room-phase="rotating"] .back-hero {
   animation: hero-copy-reveal var(--rotation-duration) linear forwards;
 }
 
-.site-root[data-view="back"] .back-chrome {
+.site-root[data-room-phase="backface"] .back-chrome,
+.site-root[data-room-phase="interface"] .back-chrome {
   opacity: 1;
 }
-.site-root[data-view="back"] .back-hero {
-  animation: hero-wall-land 0.6s ease-out forwards;
+
+.site-root[data-room-phase="backface"] .back-hero {
+  animation: hero-wall-land var(--hero-land-duration) ease-out forwards;
 }
 
-.site-root[data-view="back"] .back-scroll {
+.site-root[data-room-phase="interface"] .back-hero {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.site-root[data-room-phase="interface"] .back-scroll {
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(247, 241, 231, 0.16) transparent;
@@ -952,25 +995,6 @@ select {
 
   100% {
     transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
-  }
-}
-
-@keyframes front-yield {
-  0%,
-  20% {
-    opacity: 1;
-    filter: none;
-  }
-
-  34%,
-  56% {
-    opacity: 0.2;
-    filter: blur(8px) brightness(0.54) saturate(0.7);
-  }
-
-  100% {
-    opacity: 0;
-    filter: blur(14px) brightness(0.24) saturate(0.4);
   }
 }
 
