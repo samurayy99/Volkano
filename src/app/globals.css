@@ -596,6 +596,12 @@ select {
   pointer-events: none;
 }
 
+/* Without legacy choreography CSS, this gate must live in the base sheet: the WebGPU host
+   only receives hover / drag when the canvas subtree can be hit-tested. */
+.site-root[data-front-interactive="true"] .front-flow-host {
+  pointer-events: auto;
+}
+
 .front-flow-host canvas {
   display: block;
   width: 100%;
@@ -614,254 +620,16 @@ select {
   opacity: 0.58;
 }
 
-/* ── Backface / hero wall ───────────────────────────────────────────────── */
+/* ── Room shell: cube rotation & source visibility (no `.back-*` UI; those stay in legacy) ─ */
 
-.back-surface {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  padding: clamp(1rem, 2vw, 1.6rem);
-  border: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgba(8, 8, 8, 0.9), rgba(4, 4, 4, 0.98));
-  box-shadow:
-    /* Recessed inset — the back wall sits inside the room, not flush */
-    inset 0 0 0 1px rgba(247, 241, 231, 0.03),
-    inset 0 4rem 8rem rgba(0, 0, 0, 0.24),
-    inset 0 -3rem 6rem rgba(0, 0, 0, 0.18),
-    inset 4rem 0 8rem rgba(0, 0, 0, 0.14),
-    inset -4rem 0 8rem rgba(0, 0, 0, 0.14),
-    0 0 0 1px rgba(247, 241, 231, 0.04);
-}
-
-.back-surface::before,
-.back-surface::after {
-  content: "";
-  position: absolute;
+.site-root[data-front-interactive="false"] .cube-face-front,
+.site-root[data-front-interactive="false"] .front-source,
+.site-root[data-front-interactive="false"] .front-flow-host {
   pointer-events: none;
 }
-
-.back-scene-media,
-.back-scene-haze {
-  position: absolute;
-  inset: var(--backwall-seat-top) var(--backwall-seat-side)
-    var(--backwall-seat-bottom);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.back-scene-media {
-  background:
-    linear-gradient(180deg, rgba(4, 4, 4, 0.16), rgba(4, 4, 4, 0.06)),
-    url("/images/rift-monolith.png") center center / cover no-repeat;
-  transform: scale(1);
-  transform-origin: center center;
-  /* Contact shadow — grounds the image on the floor, kills the poster-float */
-  box-shadow:
-    inset 0 -4rem 5rem rgba(0, 0, 0, 0.52),
-    inset 4rem 0 5rem rgba(0, 0, 0, 0.18),
-    inset -4rem 0 5rem rgba(0, 0, 0, 0.18),
-    inset 0 0 0 1px rgba(247, 241, 231, 0.02);
-}
-
-.back-scene-haze {
-  background:
-    radial-gradient(
-      ellipse 36% 44% at var(--source-focus-x) var(--source-focus-y),
-      rgba(5, 5, 5, 0.5) 0%,
-      rgba(5, 5, 5, 0.14) 52%,
-      transparent 80%
-    ),
-    linear-gradient(
-      90deg,
-      rgba(5, 5, 5, 0.58) 0%,
-      rgba(5, 5, 5, 0.18) 24%,
-      rgba(5, 5, 5, 0.04) 52%,
-      rgba(0, 0, 0, 0.2) 100%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(3, 3, 3, 0.34) 0%,
-      rgba(3, 3, 3, 0.08) 34%,
-      rgba(3, 3, 3, 0.18) 100%
-    );
-}
-
-.back-surface::before {
-  inset: calc(var(--backwall-seat-top) - 1.1rem)
-    calc(var(--backwall-seat-side) - 1.15rem)
-    calc(var(--backwall-seat-bottom) - 1.1rem);
-  z-index: 0;
-  border: 1px solid rgba(247, 241, 231, 0.025);
-  background:
-    linear-gradient(180deg, rgba(9, 10, 12, 0.94), rgba(3, 3, 4, 0.98)),
-    linear-gradient(
-      var(--light-angle),
-      rgba(247, 241, 231, 0.018),
-      transparent 44%
-    );
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.22),
-    inset 0 2rem 3rem rgba(0, 0, 0, 0.14),
-    inset 0 -2.4rem 3.6rem rgba(0, 0, 0, 0.18),
-    inset 2.4rem 0 3.4rem rgba(0, 0, 0, 0.16),
-    inset -2.4rem 0 3.4rem rgba(0, 0, 0, 0.16);
-}
-
-.back-surface::after {
-  left: var(--backwall-seat-side);
-  right: var(--backwall-seat-side);
-  bottom: calc(var(--backwall-seat-bottom) - 0.05rem);
-  height: clamp(0.7rem, 1vw, 1rem);
-  z-index: 2;
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0)),
-    linear-gradient(
-      90deg,
-      rgba(247, 241, 231, 0.05),
-      transparent 8%,
-      transparent 92%,
-      rgba(247, 241, 231, 0.03)
-    );
-  opacity: 0.95;
-}
-
-.back-chrome {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: clamp(1.2rem, 2vw, 1.8rem) clamp(1.6rem, 2.8vw, 2.8rem);
-  opacity: 0;
-}
-
-.back-brand,
-.back-cta,
-.back-panel-label {
-  font-family: var(--font-mono);
-  font-size: clamp(0.72rem, 0.92vw, 0.88rem);
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-main);
-  text-decoration: none;
-}
-
-.back-cta {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.45rem;
-  padding: 0 0.92rem;
-  border: 1px solid rgba(247, 241, 231, 0.12);
-  background: rgba(10, 10, 10, 0.24);
-  transition:
-    border-color 160ms linear,
-    color 160ms linear,
-    background-color 160ms linear;
-}
-
-.back-cta:hover {
-  border-color: rgba(247, 241, 231, 0.24);
-  background: rgba(247, 241, 231, 0.06);
-}
-
-.back-scroll {
-  position: relative;
-  z-index: 1;
-  height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-  padding: clamp(5.8rem, 10vh, 7.4rem) clamp(1.6rem, 3vw, 3rem)
-    clamp(2rem, 6vh, 4rem);
-  display: flex;
-  flex-direction: column;
-  gap: clamp(2rem, 4vw, 3.4rem);
-}
-
-.back-hero {
-  min-height: calc(100vh - clamp(6.5rem, 11vh, 8rem));
-  max-width: min(30rem, 34vw);
-  display: flex;
-  align-items: flex-end;
-  padding-bottom: clamp(2rem, 9vh, 6.5rem);
-  opacity: 0;
-}
-
-.back-hero h2 {
-  font-family: var(--font-display);
-  font-size: clamp(2.9rem, 5.8vw, 5.8rem);
-  font-weight: 700;
-  line-height: 0.86;
-  letter-spacing: -0.06em;
-  text-transform: uppercase;
-  text-shadow: 0 0 28px rgba(0, 0, 0, 0.24);
-}
-
-.back-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(1rem, 1.8vw, 1.5rem);
-}
-
-.back-panel {
-  min-height: 15rem;
-  padding: clamp(1.15rem, 1.9vw, 1.6rem);
-  border: 1px solid rgba(247, 241, 231, 0.08);
-  background:
-    linear-gradient(180deg, rgba(15, 15, 15, 0.72), rgba(8, 8, 8, 0.86)),
-    linear-gradient(180deg, rgba(247, 241, 231, 0.014), transparent);
-  backdrop-filter: blur(14px);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.back-list {
-  list-style: none;
-  display: grid;
-  gap: 0.9rem;
-}
-
-.back-list li {
-  color: var(--text-main);
-  font-size: clamp(0.94rem, 1.02vw, 1rem);
-  line-height: 1.46;
-}
-
-.back-list-contact li {
-  color: var(--text-dim);
-}
-
-.back-list-contact a {
-  color: var(--text-main);
-  text-decoration: none;
-  border-bottom: 1px solid rgba(247, 241, 231, 0.16);
-}
-
-.back-scroll::-webkit-scrollbar {
-  width: 10px;
-}
-
-.back-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.back-scroll::-webkit-scrollbar-thumb {
-  background: rgba(247, 241, 231, 0.14);
-}
-
-/* ── State gates ────────────────────────────────────────────────────────── */
 
 .site-root[data-room-phase="rotating"] .cube {
-  animation: chamber-rotate var(--rotation-duration) var(--rotation-ease)
-    forwards;
+  animation: chamber-rotate var(--rotation-duration) var(--rotation-ease) forwards;
   will-change: transform;
 }
 
@@ -870,17 +638,6 @@ select {
   transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
 }
 
-.site-root[data-front-interactive="false"] .cube-face-front,
-.site-root[data-front-interactive="false"] .front-source,
-.site-root[data-front-interactive="false"] .front-flow-host {
-  pointer-events: none;
-}
-
-.site-root[data-front-interactive="true"] .front-flow-host {
-  pointer-events: auto;
-}
-
-/* Keep WebGL canvas visible through rotation so transparent chamber + backface stay continuous. */
 .site-root[data-room-phase="rotating"] .front-source {
   opacity: 1;
   filter: none;
@@ -913,70 +670,16 @@ select {
   pointer-events: none;
 }
 
-.site-root[data-room-phase="source"] .back-scene-media {
-  opacity: 0;
-}
-
 .site-root[data-room-phase="source"] .chamber-stage {
   opacity: 0;
   pointer-events: none;
 }
 
-.site-root[data-room-phase="source"][data-source-shell-visible="true"]
-  .chamber-stage {
+.site-root[data-room-phase="source"][data-source-shell-visible="true"] .chamber-stage {
   opacity: 1;
   pointer-events: auto;
   transition: opacity 0.3s ease-out;
 }
-
-.site-root[data-room-phase="source"] .back-scene-haze {
-  opacity: 0;
-}
-
-.site-root[data-room-phase="rotating"] .back-chrome,
-.site-root[data-room-phase="rotating"] .back-hero {
-  animation: hero-copy-reveal var(--rotation-duration) linear forwards;
-}
-
-.site-root[data-room-phase="backface"] .back-chrome,
-.site-root[data-room-phase="interface"] .back-chrome {
-  opacity: 1;
-}
-
-.site-root[data-room-phase="backface"] .back-hero {
-  animation: hero-wall-land var(--hero-land-duration) ease-out forwards;
-}
-
-.site-root[data-room-phase="interface"] .back-hero {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.site-root[data-room-phase="interface"] .back-scroll {
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 241, 231, 0.16) transparent;
-}
-
-.site-root[data-back-interactive="false"] .cube-face-back,
-.site-root[data-back-interactive="false"] .back-scroll {
-  pointer-events: none;
-}
-
-.site-root[data-back-interactive="true"] .cube-face-back,
-.site-root[data-back-interactive="true"] .back-scroll {
-  pointer-events: auto;
-}
-
-.site-root[data-back-interactive="true"] .back-scroll {
-  overflow: auto;
-}
-
-.site-root[data-back-interactive="false"] .back-scroll {
-  overflow: hidden;
-}
-
-/* ── Animations ─────────────────────────────────────────────────────────── */
 
 @keyframes chamber-rotate {
   0% {
@@ -998,108 +701,4 @@ select {
   }
 }
 
-@keyframes hero-copy-reveal {
-  0%,
-  70% {
-    opacity: 0;
-  }
-
-  88%,
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes hero-wall-land {
-  0% {
-    opacity: 0;
-    transform: translateY(1.2rem);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ── Responsive ─────────────────────────────────────────────────────────── */
-
-@media (max-width: 1040px) {
-  :root {
-    --cube-perspective: 1480px;
-    --cube-width: min(1000px, calc(100vw - 4rem));
-    --cube-height: min(720px, calc(100vh - 4.5rem));
-    --cube-depth: min(calc(var(--cube-width) * 1.14), 1120px);
-  }
-
-  .back-hero {
-    max-width: min(100%, 32rem);
-  }
-
-  .back-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .back-panel {
-    min-height: auto;
-  }
-}
-
-@media (max-width: 720px) {
-  :root {
-    --cube-perspective: 1120px;
-    --cube-width: calc(100vw - 1.5rem);
-    --cube-height: min(84vh, calc(var(--cube-width) * 0.88));
-    --cube-depth: calc(var(--cube-width) * 1.04);
-    --backwall-seat-side: clamp(0.55rem, 1.8vw, 0.75rem);
-    --backwall-seat-top: clamp(0.55rem, 1.2vh, 0.8rem);
-    --backwall-seat-bottom: clamp(0.6rem, 1.3vh, 0.85rem);
-  }
-
-  .cube-wrapper {
-    perspective-origin: 50.2% 30vh;
-  }
-
-  .back-chrome {
-    padding: 1rem 1.1rem;
-  }
-
-  .back-scroll {
-    padding: 4.9rem 1.1rem 1.4rem;
-  }
-
-  .back-hero {
-    min-height: calc(100vh - 5.5rem);
-    max-width: 100%;
-    padding-bottom: 2rem;
-  }
-
-  .back-hero h2 {
-    font-size: clamp(2.4rem, 11vw, 4.8rem);
-  }
-}
-
-/* ── Reduced motion ─────────────────────────────────────────────────────── */
-
-@media (prefers-reduced-motion: reduce) {
-  .cube {
-    transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
-  }
-
-  .cube-face-front,
-  .cube-face-right {
-    display: none;
-  }
-
-  .cube-face-back {
-    pointer-events: auto;
-  }
-
-  .back-chrome,
-  .back-hero {
-    opacity: 1;
-  }
-
-  .back-scroll {
-    overflow: auto;
-  }
-}
+/* Backface panels / hero / scroll chrome: `legacy-room-choreography.css` (optional). */

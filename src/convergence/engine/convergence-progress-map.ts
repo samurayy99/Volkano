@@ -26,9 +26,9 @@ export function mapProgressToEngineSignals(
   const compressionGlowMix = smoothstep(progress, 62, 82);
   /**
    * Thermal wash in MLS-MPM (`buildThermalState`) was ramping 82→96 while the UI timeline
-   * still had a long tail before 100 — colors went dull *before* post-enter arrest / rift.
+   * still had a long tail before 100 — colors went dull before the run felt “finished”.
    * Keep the buffer vivid through most of convergence; only apply extinction in the final
-   * approach to 100 (post-enter still handles the locked read in the renderer).
+   * approach to 100 (post-enter is a separate phase after progress hits 100).
    */
   const thermalExtinctionMix = smoothstep(progress, 97, 100) * 0.58;
   return {

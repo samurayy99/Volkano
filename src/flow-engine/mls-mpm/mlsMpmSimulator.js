@@ -643,8 +643,7 @@ class mlsMpmSimulator {
         .xyz.toVar("particlePosition");
       const particleVelocity = vec3(0).toVar();
       If(shouldSkipParticleMotion(this.uniforms), () => {
-        // Once convergence freeze or post-enter handoff is active, solver
-        // motion fully yields to the renderer-owned read.
+        // Post-enter lock: solver stops integrating particle motion.
         this.particleBuffer.element(instanceIndex).get("C").assign(mat3(0));
         this.particleBuffer
           .element(instanceIndex)
@@ -692,8 +691,8 @@ class mlsMpmSimulator {
 
       // Late convergence smoothing: calm local rod chatter without reintroducing
       // any shape-building pull. This is only a neighborhood velocity average.
-      // Slowdown-only neighbor blend. Freeze band removed: high `convergenceFreeze`
-      // must not re-average velocities into a collective pre-handoff shape.
+      // Slowdown-only neighbor blend; high `convergenceFreeze` must not drive this
+      // into a single artificial velocity blob.
       const xsphStrength = smoothstep(
         float(CONVERGENCE_TUNING.xsph.slowdownBand[0]),
         float(CONVERGENCE_TUNING.xsph.slowdownBand[1]),
@@ -1001,68 +1000,6 @@ class mlsMpmSimulator {
     this.initialParticlePositions = basePositions;
   }
 
-  captureFreezeSpace() {
-    const positionLayout = this.particleBuffer?.layout?.position;
-    if (
-      !this.particleBuffer?.floatArray ||
-      !positionLayout ||
-      !this.particleBuffer?.structSize
-    ) {
-      return null;
-    }
-
-    const particleCount = this.numParticles || 0;
-    if (particleCount <= 0) {
-      return null;
-    }
-
-    const boundsMin = new THREE.Vector3(Infinity, Infinity, Infinity);
-    const boundsMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-    const center = new THREE.Vector3();
-    const positionOffset = positionLayout.offset;
-    let validCount = 0;
-
-    for (let i = 0; i < particleCount; i += 1) {
-      const index = i * this.particleBuffer.structSize + positionOffset;
-      const x = this.particleBuffer.floatArray[index + 0];
-      const y = this.particleBuffer.floatArray[index + 1];
-      const z = this.particleBuffer.floatArray[index + 2];
-
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-        continue;
-      }
-
-      center.x += x;
-      center.y += y;
-      center.z += z;
-      boundsMin.min(new THREE.Vector3(x, y, z));
-      boundsMax.max(new THREE.Vector3(x, y, z));
-      validCount += 1;
-    }
-
-    if (validCount <= 0) {
-      return null;
-    }
-
-    center.divideScalar(validCount);
-
-    if (
-      !Number.isFinite(center.x) ||
-      !Number.isFinite(center.y) ||
-      !Number.isFinite(center.z) ||
-      !Number.isFinite(boundsMin.x) ||
-      !Number.isFinite(boundsMin.y) ||
-      !Number.isFinite(boundsMin.z) ||
-      !Number.isFinite(boundsMax.x) ||
-      !Number.isFinite(boundsMax.y) ||
-      !Number.isFinite(boundsMax.z)
-    ) {
-      return null;
-    }
-
-    return { center, boundsMin, boundsMax };
-  }
-
   carvePopulationSlit({ splitPush = 1.8, gapWidth = 3.2 } = {}) {
     if (
       !this.runtime ||
@@ -1134,13 +1071,6 @@ class mlsMpmSimulator {
     }
 
     this.markParticleBufferDirty();
-  }
-
-  prepareStartupFromVent() {
-    this.carvePopulationSlit({
-      splitPush: 1.05,
-      gapWidth: 3.2,
-    });
   }
 
   seedMatureIdlePopulation() {

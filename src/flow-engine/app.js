@@ -5,7 +5,6 @@ import { Lights } from "./lights";
 import { float, Fn, mrt, output, pass, vec4 } from "three/tsl";
 import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
-import { PostEnterFlightSystem } from "./post-enter/postEnterFlightSystem";
 import { IDLE_POST_ENTER_DERIVED } from "./post-enter/PostEnterDirector";
 import {
   buildPostEnterSpatialBasis,
@@ -131,6 +130,11 @@ class App {
 
   camera = null;
 
+  /** @type {number} */
+  _viewportWidth = 0;
+  /** @type {number} */
+  _viewportHeight = 0;
+
   scene = null;
   environmentTexture = null;
 
@@ -216,11 +220,7 @@ class App {
 
     this.mlsMpmSim = new MlsMpmSimulator(this.renderer);
     await this.mlsMpmSim.init(this.runtime.maxParticles);
-    this.postEnterFlightSystem = new PostEnterFlightSystem(this.mlsMpmSim);
-    this.particleRenderer = new ParticleRenderer(
-      this.mlsMpmSim,
-      this.postEnterFlightSystem,
-    );
+    this.particleRenderer = new ParticleRenderer(this.mlsMpmSim);
     this.mlsMpmSim.applyRuntime?.(this.runtime);
     this.particleRenderer.applyRuntime?.(this.runtime);
     this.backgroundGeometry = new BackgroundGeometry();
@@ -236,10 +236,15 @@ class App {
     this.raycaster = new THREE.Raycaster();
     this.plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0.2);
 
+    this._viewportWidth = width;
+    this._viewportHeight = height;
+
     await progressCallback(1.0, 100);
   }
 
   resize(width, height) {
+    this._viewportWidth = width;
+    this._viewportHeight = height;
     this.camera.aspect = width / height;
     this.applyCameraFraming(width, height);
   }
@@ -277,7 +282,6 @@ class App {
     }
     this.backgroundGeometry?.update?.(0);
     this.syncSourceAnchors();
-    this.mlsMpmSim?.prepareStartupFromVent?.();
   }
 
   promoteIdlePopulation() {
@@ -505,51 +509,29 @@ class App {
   }
 
   /**
-   * @param {import("./post-enter/PostEnterDirector").PostEnterPhaseAdvanceContext} ctx
-   * @returns {boolean} true = allow director to leave `ctx.from` for `ctx.to`
+   * Body alpha: single director channel (`clearMix` / ash timeline) until a resolve system owns display.
+   * @param {import("./post-enter/PostEnterDirector").PostEnterDerived | null | undefined} derived
    */
-  allowPostEnterPhaseAdvance(ctx) {
-    if (!ctx || !this.postEnterFlightSystem) {
-      return true;
+  particleBodyOpacityMulFromDerived(derived) {
+    if (!derived || derived.postEnterPhase === "idle") {
+      return 1;
     }
-    if (ctx.from === "extract" && ctx.to === "clear_hold") {
-      if (!this.postEnterFlightSystem.shouldHoldExtractPastNominal) {
-        return true;
-      }
-      const hold = this.postEnterFlightSystem.shouldHoldExtractPastNominal({
-        nominalDurationSec: ctx.nominalDurationSec,
-        overshootPastNominalSec: ctx.overshootPastNominalSec,
-      });
-      return !hold;
-    }
-    if (ctx.from === "clear_hold" && ctx.to === "quiet") {
-      if (!this.postEnterFlightSystem.shouldHoldClearPastNominal) {
-        return true;
-      }
-      const holdClear = this.postEnterFlightSystem.shouldHoldClearPastNominal({
-        nominalDurationSec: ctx.nominalDurationSec,
-        overshootPastNominalSec: ctx.overshootPastNominalSec,
-      });
-      return !holdClear;
-    }
-    return true;
+    const clr = derived.clearMix ?? 0;
+    return Math.max(0.02, 1 - clr * 0.98);
   }
 
   /**
    * Stateless post-enter broadcast: runs before the sim/render pass in `update`.
    * @param {import("./post-enter/PostEnterDirector").PostEnterDerived | null | undefined} derived
-   * @param {import("./post-enter/PostEnterDirector").PostEnterContext | null | undefined} context
    */
-  broadcastPostEnterFrame(derived, context = null) {
-    this.postEnterFlightSystem?.devResetApplyCycleTelemetry?.();
-    this.postEnterFlightSystem?.onDirectorFrame?.(derived);
+  broadcastPostEnterFrame(derived) {
+    const bodyOpacityMul = this.particleBodyOpacityMulFromDerived(derived);
     this.mlsMpmSim?.applyPostEnterFrame?.(derived);
-    this.particleRenderer?.applyPostEnterFrame?.(derived, context);
+    this.particleRenderer?.applyPostEnterFrame?.(bodyOpacityMul);
   }
 
-  resetPostEnterFlight() {
-    this.postEnterFlightSystem?.resetForCycle?.();
-    this.broadcastPostEnterFrame(IDLE_POST_ENTER_DERIVED, null);
+  resetPostEnterState() {
+    this.broadcastPostEnterFrame(IDLE_POST_ENTER_DERIVED);
   }
 
   getFrontRailMetrics() {
@@ -617,25 +599,14 @@ class App {
    */
   async update(delta, postEnterFrame) {
     const derived = postEnterFrame?.derived ?? IDLE_POST_ENTER_DERIVED;
-    const context = postEnterFrame?.context ?? null;
-    this.broadcastPostEnterFrame(derived, context);
+    this.broadcastPostEnterFrame(derived);
 
     this.backgroundGeometry?.update?.(delta);
-
-    this.postEnterFlightSystem?.devResetEngineFrameTelemetry?.();
 
     this.syncSourceAnchors();
     this.mlsMpmSim?.applyRuntime?.(this.runtime);
     this.particleRenderer?.applyRuntime?.(this.runtime);
     await this.mlsMpmSim.update(delta);
-    await this.postEnterFlightSystem?.dispatchFreezeCommitIfNeeded?.();
-    this.postEnterFlightSystem?.syncTransportFrame?.(derived, context, delta);
-    await this.postEnterFlightSystem?.dispatchTransportPass?.();
-    this.postEnterFlightSystem?.devLogExtractLifecycleIfEnabled?.(
-      derived,
-      context,
-      !!this.particleRenderer,
-    );
     this.particleRenderer?.update();
     await this.postProcessing.renderAsync();
   }
@@ -644,8 +615,6 @@ class App {
     this.particleRenderer?.dispose?.();
     this.backgroundGeometry?.dispose?.();
     this.lights?.dispose?.();
-    this.postEnterFlightSystem?.dispose?.();
-    this.postEnterFlightSystem = null;
     this.mlsMpmSim?.dispose?.();
     this.postProcessing?.dispose?.();
     this.environmentTexture?.dispose?.();

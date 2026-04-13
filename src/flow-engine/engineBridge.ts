@@ -7,7 +7,6 @@ import {
   type PostEnterContext,
   type PostEnterDerived,
   type PostEnterFrame,
-  type PostEnterPhaseAdvanceContext,
 } from "./post-enter/PostEnterDirector";
 import type {
   FlowEngineApi,
@@ -73,7 +72,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app.primeStartupSource?.();
     this.app.promoteIdlePopulation?.();
     this.app.clearPointer?.();
-    this.app.broadcastPostEnterFrame?.(IDLE_POST_ENTER_DERIVED, null);
+    this.app.broadcastPostEnterFrame?.(IDLE_POST_ENTER_DERIVED);
     document.addEventListener("visibilitychange", this.onVisibilityChange);
 
     this.clock.start();
@@ -211,10 +210,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     }
 
     if (!startedThisFrame && this.postEnterContext) {
-      this.postEnterDirector.setAdvanceGate(
-        (ctx: PostEnterPhaseAdvanceContext) =>
-          this.app?.allowPostEnterPhaseAdvance?.(ctx) ?? true,
-      );
       this.postEnterDirector.tick(delta);
     }
 
@@ -272,7 +267,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.postEnterDirector.reset();
     this.postEnterContext = null;
     this.rotationReadyEmitted = false;
-    this.app?.resetPostEnterFlight?.();
+    this.app?.resetPostEnterState?.();
   }
 
   private applyConvergenceSignals(): void {

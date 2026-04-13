@@ -11,7 +11,8 @@ export const POST_ENTER_FREEZE_SPACE_FRAC = 0.9;
  * - chamber AABB in particle local space
  * - **narrow intake rectangle** on the back wall (`riftSlitP0Sim` / `riftSlitP1Sim`, min/max xy).
  *
- * Out of scope: capture thickness, dissolve width, renderer look, flight tuning.
+ * Out of scope here: particle look, dissolve choreography, image-resolve — those live in the
+ * director timeline + renderer only.
  */
 
 const RIFT_CENTER_X_FRAC = 0.5;

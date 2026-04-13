@@ -1,40 +1,25 @@
 import type { Vector3 } from "three/webgpu";
 
 /**
- * Wall-clock durations per phase. Optional `setAdvanceGate` may still block advance,
- * but gates must not sample GPU-owned flight buffers on the CPU (no reliable mirror).
+ * Post-enter v2: time-only director. `extractMix` / `clearMix` are timeline channels for the
+ * renderer (resolve + ash depletion), not the old rift-flight semantics.
  */
 const POST_ENTER_PHASE_DURATIONS = Object.freeze({
   arrest: 0.36,
-  /** Room for spatial stagger + claim; phase advance uses authored time + safe gates only. */
-  extract: 3.85,
-  /** Through-wall / vanish tail — must not feel like a snap cut. */
-  clear_hold: 0.78,
-  /** Earned quiet: chamber reads calm before `rotation_ready`. */
+  resolve: 2.4,
+  hold: 0.35,
+  ash: 1.35,
   quiet: 1.12,
 });
 
 export type PostEnterPhase =
   | "idle"
   | "arrest"
-  | "extract"
-  | "clear_hold"
+  | "resolve"
+  | "hold"
+  | "ash"
   | "quiet"
   | "rotation_ready";
-
-/** Optional gate before leaving `from` for `to` (must not use CPU mirrors of GPU flight buffers). */
-export type PostEnterPhaseAdvanceContext = {
-  from: PostEnterPhase;
-  to: PostEnterPhase;
-  /** Nominal authored duration of `from` (seconds). */
-  nominalDurationSec: number;
-  /** Seconds past nominal end already accumulated while held in `from`. */
-  overshootPastNominalSec: number;
-};
-
-export type PostEnterPhaseAdvanceGate = (
-  ctx: PostEnterPhaseAdvanceContext,
-) => boolean;
 
 export interface PostEnterContext {
   freezeSpaceSim: {
@@ -46,7 +31,6 @@ export interface PostEnterContext {
     min: Vector3;
     max: Vector3;
   };
-  /** Back-wall intake rectangle: opposite corners in sim space (claim / capture choreography). */
   riftSlitP0Sim: Vector3;
   riftSlitP1Sim: Vector3;
 }
@@ -61,15 +45,15 @@ export interface PostEnterDerived {
   phaseElapsed: number;
   phaseT: number;
   lockMix: number;
+  /** Resolve / coherence loss (timeline channel for host / future resolve system). */
   extractMix: number;
+  /** Ash / depletion (timeline channel for host / future resolve system). */
   clearMix: number;
-  /** 0..1 during `quiet` only; eases optional polish. */
   quietMix: number;
   solverLocked: boolean;
   rotationReady: boolean;
 }
 
-/** One RAF handoff: director derived state + spatial context (null when idle / pre-start). */
 export type PostEnterFrame = {
   derived: PostEnterDerived;
   context: PostEnterContext | null;
@@ -93,10 +77,12 @@ function getPhaseDuration(phase: PostEnterPhase): number {
   switch (phase) {
     case "arrest":
       return POST_ENTER_PHASE_DURATIONS.arrest;
-    case "extract":
-      return POST_ENTER_PHASE_DURATIONS.extract;
-    case "clear_hold":
-      return POST_ENTER_PHASE_DURATIONS.clear_hold;
+    case "resolve":
+      return POST_ENTER_PHASE_DURATIONS.resolve;
+    case "hold":
+      return POST_ENTER_PHASE_DURATIONS.hold;
+    case "ash":
+      return POST_ENTER_PHASE_DURATIONS.ash;
     case "quiet":
       return POST_ENTER_PHASE_DURATIONS.quiet;
     default:
@@ -107,10 +93,12 @@ function getPhaseDuration(phase: PostEnterPhase): number {
 function getNextPhase(phase: PostEnterPhase): PostEnterPhase {
   switch (phase) {
     case "arrest":
-      return "extract";
-    case "extract":
-      return "clear_hold";
-    case "clear_hold":
+      return "resolve";
+    case "resolve":
+      return "hold";
+    case "hold":
+      return "ash";
+    case "ash":
       return "quiet";
     case "quiet":
       return "rotation_ready";
@@ -144,23 +132,8 @@ export const IDLE_POST_ENTER_DERIVED = IDLE_DERIVED;
 export class PostEnterDirector {
   private state: PostEnterState = { ...IDLE_STATE };
 
-  /** Seconds spent past nominal phase end while advance was blocked (extract slack only for now). */
-  private holdPastNominalSec = 0;
-
-  private advanceGate: PostEnterPhaseAdvanceGate | null = null;
-
   reset(): void {
     this.state = { ...IDLE_STATE };
-    this.holdPastNominalSec = 0;
-    this.advanceGate = null;
-  }
-
-  /**
-   * When set, `tick` may refuse to leave `from` for `to` until the gate returns true.
-   * Must use only authored / uniform truth — not CPU mirrors of GPU flight buffers.
-   */
-  setAdvanceGate(gate: PostEnterPhaseAdvanceGate | null): void {
-    this.advanceGate = gate;
   }
 
   isIdle(): boolean {
@@ -192,9 +165,6 @@ export class PostEnterDirector {
     return true;
   }
 
-  /**
-   * Phase clock with optional `setAdvanceGate` — otherwise same authored durations (Option A).
-   */
   tick(delta: number): void {
     if (
       this.state.postEnterPhase === "idle" ||
@@ -213,23 +183,7 @@ export class PostEnterDirector {
       }
 
       const nextPhase = getNextPhase(phase);
-      const overflowSec = elapsed - duration;
 
-      if (this.advanceGate) {
-        const allow = this.advanceGate({
-          from: phase,
-          to: nextPhase,
-          nominalDurationSec: duration,
-          overshootPastNominalSec: this.holdPastNominalSec + overflowSec,
-        });
-        if (!allow) {
-          this.holdPastNominalSec += overflowSec;
-          elapsed = duration;
-          break;
-        }
-      }
-
-      this.holdPastNominalSec = 0;
       elapsed -= duration;
       phase = nextPhase;
 
@@ -271,7 +225,7 @@ export class PostEnterDirector {
           solverLocked: true,
           rotationReady: false,
         };
-      case "extract":
+      case "resolve":
         return {
           postEnterPhase,
           phaseElapsed,
@@ -283,7 +237,19 @@ export class PostEnterDirector {
           solverLocked: true,
           rotationReady: false,
         };
-      case "clear_hold":
+      case "hold":
+        return {
+          postEnterPhase,
+          phaseElapsed,
+          phaseT,
+          lockMix: 1,
+          extractMix: 1,
+          clearMix: 0,
+          quietMix: 0,
+          solverLocked: true,
+          rotationReady: false,
+        };
+      case "ash":
         return {
           postEnterPhase,
           phaseElapsed,
