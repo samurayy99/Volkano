@@ -7,9 +7,14 @@ import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
 import { IDLE_POST_ENTER_DERIVED } from "./post-enter/PostEnterDirector";
 import {
-  buildPostEnterSpatialBasis,
+  buildPostEnterPlacementBasis,
   POST_ENTER_FREEZE_SPACE_FRAC,
 } from "./post-enter/postEnterChamberBasis";
+import {
+  buildPostEnterImageTargetField,
+  POST_ENTER_APPARITION_IMAGE_URL,
+} from "./post-enter/postEnterImageTargetField.js";
+import { PostEnterApparitionLayer } from "./post-enter/PostEnterApparitionLayer.js";
 import BackgroundGeometry from "./backgroundGeometry";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { PREENTER_VESSEL } from "./vesselDescriptors";
@@ -159,6 +164,21 @@ class App {
   };
   runtime = null;
 
+  /** @type {Awaited<ReturnType<typeof buildPostEnterImageTargetField>> | null} */
+  postEnterImageTargetField = null;
+
+  /** When true, lazy M1 build failed; do not spin every frame. */
+  _postEnterImageTargetFieldBuildFailed = false;
+
+  /** Dedupes concurrent target-field builds; avoids stacking awaits in `update`. */
+  _postEnterTargetFieldBuildPromise = null;
+
+  /** Bumped on `resetPostEnterState` so late async builds do not repopulate after reset. */
+  _postEnterTargetFieldGeneration = 0;
+
+  /** @type {import("./post-enter/PostEnterApparitionLayer.js").PostEnterApparitionLayer | null} */
+  postEnterApparitionLayer = null;
+
   constructor(renderer) {
     this.renderer = renderer;
   }
@@ -240,6 +260,54 @@ class App {
     this._viewportHeight = height;
 
     await progressCallback(1.0, 100);
+
+    queueMicrotask(() => {
+      void this._ensurePostEnterImageTargetFieldAsync();
+    });
+  }
+
+  /**
+   * Prefetch / build image targets off the first interaction frame (avoids giant `getDelta` after a long `await`).
+   * Safe to call from `update` and from init microtask.
+   */
+  async _ensurePostEnterImageTargetFieldAsync() {
+    if (this.postEnterImageTargetField != null) return;
+    if (this._postEnterImageTargetFieldBuildFailed) return;
+    if (!this.particleRenderer?.object) return;
+    if (this._postEnterTargetFieldBuildPromise) {
+      await this._postEnterTargetFieldBuildPromise;
+      return;
+    }
+
+    const gen = this._postEnterTargetFieldGeneration;
+    this._postEnterTargetFieldBuildPromise = (async () => {
+      try {
+        this.syncSourceAnchors?.();
+        const placementBasis = buildPostEnterPlacementBasis(
+          this.particleRenderer.object,
+          PREENTER_VESSEL,
+        );
+        if (!placementBasis) return;
+        const built = await buildPostEnterImageTargetField({
+          chamberBoundsSim: placementBasis.chamberBoundsSim,
+          apparitionPlacementSim: placementBasis.apparitionPlacementSim,
+          imageUrl: POST_ENTER_APPARITION_IMAGE_URL,
+          keepBrightStrokes: true,
+          luminanceThreshold: 0.34,
+        });
+        if (gen !== this._postEnterTargetFieldGeneration) return;
+        this.postEnterImageTargetField = built;
+      } catch (err) {
+        if (gen === this._postEnterTargetFieldGeneration) {
+          console.warn("[post-enter] image target field build failed", err);
+          this._postEnterImageTargetFieldBuildFailed = true;
+        }
+      } finally {
+        this._postEnterTargetFieldBuildPromise = null;
+      }
+    })();
+
+    await this._postEnterTargetFieldBuildPromise;
   }
 
   resize(width, height) {
@@ -473,7 +541,7 @@ class App {
 
     this.syncSourceAnchors();
 
-    const rendererBasis = buildPostEnterSpatialBasis(
+    const rendererBasis = buildPostEnterPlacementBasis(
       this.particleRenderer.object,
       PREENTER_VESSEL,
     );
@@ -503,13 +571,12 @@ class App {
         boundsMax: freezeBoundsMax,
       },
       chamberBoundsSim: rendererBasis.chamberBoundsSim,
-      riftSlitP0Sim: rendererBasis.riftSlitP0Sim,
-      riftSlitP1Sim: rendererBasis.riftSlitP1Sim,
+      apparitionPlacementSim: rendererBasis.apparitionPlacementSim,
     };
   }
 
   /**
-   * Body alpha: single director channel (`clearMix` / ash timeline) until a resolve system owns display.
+   * Body alpha: `clearMix` (ash) until a separate hero pass owns the read.
    * @param {import("./post-enter/PostEnterDirector").PostEnterDerived | null | undefined} derived
    */
   particleBodyOpacityMulFromDerived(derived) {
@@ -527,10 +594,16 @@ class App {
   broadcastPostEnterFrame(derived) {
     const bodyOpacityMul = this.particleBodyOpacityMulFromDerived(derived);
     this.mlsMpmSim?.applyPostEnterFrame?.(derived);
-    this.particleRenderer?.applyPostEnterFrame?.(bodyOpacityMul);
+    this.particleRenderer?.applyPostEnterFrame?.(bodyOpacityMul, derived);
   }
 
   resetPostEnterState() {
+    this._postEnterTargetFieldGeneration += 1;
+    this.postEnterApparitionLayer?.dispose();
+    this.postEnterApparitionLayer = null;
+    this.postEnterImageTargetField = null;
+    this._postEnterImageTargetFieldBuildFailed = false;
+    this._postEnterTargetFieldBuildPromise = null;
     this.broadcastPostEnterFrame(IDLE_POST_ENTER_DERIVED);
   }
 
@@ -604,6 +677,31 @@ class App {
     this.backgroundGeometry?.update?.(delta);
 
     this.syncSourceAnchors();
+
+    await this._ensurePostEnterImageTargetFieldAsync();
+
+    const postEnterCtx = postEnterFrame?.context ?? null;
+
+    if (
+      this.postEnterImageTargetField &&
+      !this.postEnterApparitionLayer &&
+      postEnterCtx &&
+      derived.postEnterPhase !== "idle"
+    ) {
+      const layer = new PostEnterApparitionLayer();
+      if (layer.initFromTargetField(this.postEnterImageTargetField, postEnterCtx)) {
+        layer.attachTo(this.particleRenderer.object);
+        this.postEnterApparitionLayer = layer;
+      }
+    }
+
+    this.postEnterApparitionLayer?.update(
+      delta,
+      derived,
+      postEnterCtx,
+      this.postEnterImageTargetField,
+    );
+
     this.mlsMpmSim?.applyRuntime?.(this.runtime);
     this.particleRenderer?.applyRuntime?.(this.runtime);
     await this.mlsMpmSim.update(delta);
@@ -630,6 +728,12 @@ class App {
     this.sourceFieldAnchorOffsets = null;
     this.startupSourceFieldAnchorOffsets = null;
     this.runtime = null;
+    this.postEnterApparitionLayer?.dispose();
+    this.postEnterApparitionLayer = null;
+    this.postEnterImageTargetField = null;
+    this._postEnterImageTargetFieldBuildFailed = false;
+    this._postEnterTargetFieldBuildPromise = null;
+    this._postEnterTargetFieldGeneration += 1;
   }
 
   applyCameraFraming(width = window.innerWidth, height = window.innerHeight) {

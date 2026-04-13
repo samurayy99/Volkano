@@ -10,6 +10,7 @@ export function FlowEngineHost({
   onFrontRailMetricsChange,
   onError,
   className,
+  syncConvergenceFromHost,
 }: FlowEngineHostProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<FlowEngineBridge | null>(null);
@@ -20,6 +21,7 @@ export function FlowEngineHost({
     onRotationReady,
     onFrontRailMetricsChange,
     onError,
+    syncConvergenceFromHost,
   });
 
   useEffect(() => {
@@ -28,12 +30,14 @@ export function FlowEngineHost({
       onRotationReady,
       onFrontRailMetricsChange,
       onError,
+      syncConvergenceFromHost,
     };
   }, [
     onReady,
     onRotationReady,
     onFrontRailMetricsChange,
     onError,
+    syncConvergenceFromHost,
   ]);
 
   useEffect(() => {
@@ -58,6 +62,12 @@ export function FlowEngineHost({
       .init()
       .then(() => {
         if (!cancelled) {
+          const pull = callbacksRef.current.syncConvergenceFromHost;
+          if (pull) {
+            const { progress, interactiveEnabled } = pull();
+            bridge.setConvergenceProgress(progress);
+            bridge.setInteractiveEnabled(interactiveEnabled);
+          }
           callbacksRef.current.onReady?.(bridge);
         }
       })

@@ -31,8 +31,12 @@ export interface PostEnterContext {
     min: Vector3;
     max: Vector3;
   };
-  riftSlitP0Sim: Vector3;
-  riftSlitP1Sim: Vector3;
+  /** Back-wall plane + inward normal + relief budget for image apparition targets (sim space). */
+  apparitionPlacementSim: {
+    planeZ: number;
+    normal: Vector3;
+    reliefMax: number;
+  };
 }
 
 export interface PostEnterState {
@@ -58,6 +62,9 @@ export type PostEnterFrame = {
   derived: PostEnterDerived;
   context: PostEnterContext | null;
 };
+
+/** Max seconds advanced per tick so a long `await` in the host cannot skip the whole timeline. */
+const POST_ENTER_TICK_DELTA_CAP = 1 / 24;
 
 const IDLE_STATE: PostEnterState = Object.freeze({
   postEnterPhase: "idle",
@@ -147,8 +154,9 @@ export class PostEnterDirector {
     if (!hasFiniteVector(context.freezeSpaceSim.boundsMax)) return false;
     if (!hasFiniteVector(context.chamberBoundsSim.min)) return false;
     if (!hasFiniteVector(context.chamberBoundsSim.max)) return false;
-    if (!hasFiniteVector(context.riftSlitP0Sim)) return false;
-    if (!hasFiniteVector(context.riftSlitP1Sim)) return false;
+    if (!Number.isFinite(context.apparitionPlacementSim.planeZ)) return false;
+    if (!Number.isFinite(context.apparitionPlacementSim.reliefMax)) return false;
+    if (!hasFiniteVector(context.apparitionPlacementSim.normal)) return false;
     return true;
   }
 
@@ -174,7 +182,8 @@ export class PostEnterDirector {
     }
 
     let phase: PostEnterPhase = this.state.postEnterPhase;
-    let elapsed = this.state.phaseElapsed + Math.max(delta, 0);
+    const dt = Math.min(Math.max(delta, 0), POST_ENTER_TICK_DELTA_CAP);
+    let elapsed = this.state.phaseElapsed + dt;
 
     for (;;) {
       const duration = getPhaseDuration(phase);

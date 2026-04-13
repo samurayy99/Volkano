@@ -32,6 +32,8 @@ export class FlowEngineBridge implements FlowEngineApi {
   private rotationReadyEmitted = false;
   private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
 
+  private postEnterStartFailLogged = false;
+
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
     this.options = options;
@@ -203,9 +205,21 @@ export class FlowEngineBridge implements FlowEngineApi {
     let startedThisFrame = false;
     if (this.postEnterDirector.isIdle()) {
       const context = this.app?.buildPostEnterContext?.() ?? null;
-      if (this.postEnterDirector.start(context)) {
+      const started = this.postEnterDirector.start(context);
+      if (started) {
         this.postEnterContext = context;
         startedThisFrame = true;
+      } else if (
+        this.convergenceProgress >= 100 &&
+        !this.postEnterStartFailLogged
+      ) {
+        this.postEnterStartFailLogged = true;
+        console.warn(
+          "[post-enter] Director start skipped at 100%:",
+          context == null
+            ? "buildPostEnterContext() returned null (placement/renderer not ready)."
+            : "canStart(context) returned false (invalid placement or bounds).",
+        );
       }
     }
 
@@ -267,6 +281,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.postEnterDirector.reset();
     this.postEnterContext = null;
     this.rotationReadyEmitted = false;
+    this.postEnterStartFailLogged = false;
     this.app?.resetPostEnterState?.();
   }
 

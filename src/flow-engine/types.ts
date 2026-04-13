@@ -29,4 +29,13 @@ export interface FlowEngineHostProps {
   onFrontRailMetricsChange?: (metrics: FlowEngineFrontRailMetrics) => void;
   onError?: (error: unknown) => void;
   className?: string;
+  /**
+   * Called once immediately after WebGPU init succeeds, before `onReady`.
+   * Use the live convergence controller (not a render snapshot) so progress 100
+   * is applied even if the user finished the trigger before the bridge existed.
+   */
+  syncConvergenceFromHost?: () => {
+    progress: number;
+    interactiveEnabled: boolean;
+  };
 }

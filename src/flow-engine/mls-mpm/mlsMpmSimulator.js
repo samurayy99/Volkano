@@ -89,6 +89,8 @@ const forEachNeighbor3x3x3 = (
   { cellIndex, weights },
   particlePosition,
   callback,
+  /** Unique TSL name per call site in the same `Fn()` to avoid THREE.TSL rename warnings. */
+  neighborDistName = "cellDist",
 ) => {
   Loop(
     { start: 0, end: 3, type: "int", name: "gx", condition: "<" },
@@ -107,7 +109,7 @@ const forEachNeighbor3x3x3 = (
               const cellDist = vec3(cellX)
                 .add(0.5)
                 .sub(particlePosition)
-                .toConst("cellDist");
+                .toConst(neighborDistName);
 
               callback({ cellX, weight, cellDist });
             },
@@ -511,6 +513,7 @@ class mlsMpmSimulator {
           atomicAdd(cell.get("z"), encodeFixedPoint(velContrib.z));
           atomicAdd(cell.get("mass"), encodeFixedPoint(massContrib));
         },
+        "nbrDistP2g1",
       );
     })().compute(1);
 
@@ -544,6 +547,7 @@ class mlsMpmSimulator {
           const cell = getCell(cellX);
           density.addAssign(decodeFixedPoint(cell.get("mass")).mul(weight));
         },
+        "nbrDistP2g2Density",
       );
       const densityStore = this.particleBuffer
         .element(instanceIndex)
@@ -590,6 +594,7 @@ class mlsMpmSimulator {
           atomicAdd(cell.get("y"), encodeFixedPoint(momentum.y));
           atomicAdd(cell.get("z"), encodeFixedPoint(momentum.z));
         },
+        "nbrDistP2g2Momentum",
       );
     })().compute(1);
 
@@ -687,6 +692,7 @@ class mlsMpmSimulator {
           B.addAssign(term);
           particleVelocity.addAssign(weightedVelocity);
         },
+        "nbrDistG2p",
       );
 
       // Late convergence smoothing: calm local rod chatter without reintroducing

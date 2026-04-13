@@ -391,6 +391,12 @@ class ParticleRenderer {
     this.uniforms.convergenceFreeze = uniform(0);
     this.uniforms.bodyOpacityMul = uniform(1);
 
+    /**
+     * While post-enter runs (arrest→quiet), MLS rods stay transparent but must not
+     * win the depth buffer — otherwise the apparition layer reads as occluded.
+     */
+    this._postEnterRelaxBodyDepth = false;
+
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
 
@@ -416,8 +422,19 @@ class ParticleRenderer {
       vOpacityMul,
     });
 
-    this.object = new THREE.Mesh(this.geometry, this.material);
+    /** MLS rods only — must not be the same node as `object`, so post-enter apparition can sibling-render. */
+    this._particleBodyMesh = new THREE.Mesh(this.geometry, this.material);
+    this._particleBodyMesh.frustumCulled = false;
+    this._particleBodyMesh.castShadow = true;
+    this._particleBodyMesh.receiveShadow = true;
+
+    /**
+     * Root transform for chamber sim space. Group (not Mesh) so `PostEnterApparitionLayer`
+     * can attach as a sibling; WebGPU was not reliably drawing InstancedMesh children of Mesh.
+     */
+    this.object = new THREE.Group();
     this.object.frustumCulled = false;
+    this.object.add(this._particleBodyMesh);
 
     const s = 1 / 64;
     this.object.position.set(-32.0 * s * 1.6, -0.012, -0.12);
@@ -425,8 +442,6 @@ class ParticleRenderer {
     this.object.rotation.y = -0.04;
     this.object.rotation.z = -0.01;
     this.object.scale.set(s * 1.6, s * 0.88, s * 1.1);
-    this.object.castShadow = true;
-    this.object.receiveShadow = true;
   }
 
   worldPointToSimulation(worldPoint, target = new THREE.Vector3()) {
@@ -454,11 +469,22 @@ class ParticleRenderer {
     return target;
   }
 
-  /** @param {number} bodyOpacityMul */
-  applyPostEnterFrame(bodyOpacityMul = 1) {
+  /**
+   * @param {number} bodyOpacityMul
+   * @param {import("../post-enter/PostEnterDirector").PostEnterDerived | null | undefined} [derived]
+   */
+  applyPostEnterFrame(bodyOpacityMul = 1, derived) {
     this.uniforms.bodyOpacityMul.value = Number.isFinite(bodyOpacityMul)
       ? bodyOpacityMul
       : 1;
+
+    const phase = derived?.postEnterPhase ?? "idle";
+    this._postEnterRelaxBodyDepth =
+      phase === "arrest" ||
+      phase === "resolve" ||
+      phase === "hold" ||
+      phase === "ash" ||
+      phase === "quiet";
   }
 
   applyRuntime(runtime) {
@@ -470,12 +496,16 @@ class ParticleRenderer {
     this.uniforms.convergenceFreeze.value = this.runtime.convergenceFreeze;
     this.material.envMapIntensity = 0.12;
 
-    // Stable policy: keep depthWrite on to reduce layer mush with transparency.
+    // Default: depthWrite on to reduce translucent sorting mush. Post-enter turns
+    // it off so the image apparition layer is not Z-occluded by a semi-faded body.
     this.material.transparent = true;
-    this.material.depthWrite = true;
+    this.material.depthWrite = !this._postEnterRelaxBodyDepth;
 
-    this.object.castShadow = true;
-    this.object.receiveShadow = true;
+    if (this._particleBodyMesh) {
+      this._particleBodyMesh.castShadow = true;
+      this._particleBodyMesh.receiveShadow = true;
+      this._particleBodyMesh.visible = true;
+    }
     this.object.visible = true;
   }
 
@@ -484,6 +514,7 @@ class ParticleRenderer {
       this.object.parent.remove(this.object);
     }
 
+    this._particleBodyMesh = null;
     this.object = null;
     this.geometry?.dispose?.();
     this.material?.dispose?.();

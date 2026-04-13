@@ -7,12 +7,10 @@ const MIN_SEGMENT_LEN = 1e-5;
 export const POST_ENTER_FREEZE_SPACE_FRAC = 0.9;
 
 /**
- * Spatial contract (post-enter wall / rift in sim space):
- * - chamber AABB in particle local space
- * - **narrow intake rectangle** on the back wall (`riftSlitP0Sim` / `riftSlitP1Sim`, min/max xy).
+ * Chamber AABB in particle local space (always used for post-enter freeze + placement).
  *
- * Out of scope here: particle look, dissolve choreography, image-resolve — those live in the
- * director timeline + renderer only.
+ * Legacy slit helpers (`buildRiftAndExitFromChamberSim`, `buildPostEnterSpatialBasis`) remain
+ * for reference; v2 post-enter uses `buildPostEnterPlacementBasis` only (no rift in the start path).
  */
 
 const RIFT_CENTER_X_FRAC = 0.5;
@@ -184,5 +182,66 @@ export function buildPostEnterSpatialBasis(
     },
     riftSlitP0Sim,
     riftSlitP1Sim,
+  };
+}
+
+/** Inset from `chamberMax.z` toward the interior (sim units), capped relative to Z span. */
+const APPARITION_Z_INSET_FRAC = 0.02;
+const APPARITION_Z_INSET_CAP = 0.15;
+/** Max displacement into the chamber along `-Z`, as a fraction of chamber Z span. */
+const APPARITION_RELIEF_FRAC_OF_Z_SPAN = 0.08;
+
+/**
+ * Slit-free post-enter placement: full back face of the chamber AABB in sim space, plus
+ * a plane Z and inward normal for shallow relief (image apparition targets).
+ *
+ * @param {THREE.Object3D | null | undefined} object
+ * @param {typeof PREENTER_VESSEL} [vessel]
+ * @returns {null | {
+ *   chamberBoundsSim: { min: THREE.Vector3; max: THREE.Vector3 };
+ *   apparitionPlacementSim: {
+ *     planeZ: number;
+ *     normal: THREE.Vector3;
+ *     reliefMax: number;
+ *   };
+ * }}
+ */
+export function buildPostEnterPlacementBasis(object, vessel = PREENTER_VESSEL) {
+  if (!object) {
+    return null;
+  }
+
+  const chamberMin = new THREE.Vector3();
+  const chamberMax = new THREE.Vector3();
+  computeChamberBoundsSimFromParticleObject(object, vessel, chamberMin, chamberMax);
+
+  if (
+    ![
+      chamberMin.x,
+      chamberMin.y,
+      chamberMin.z,
+      chamberMax.x,
+      chamberMax.y,
+      chamberMax.z,
+    ].every(Number.isFinite)
+  ) {
+    return null;
+  }
+
+  const zSpan = Math.max(chamberMax.z - chamberMin.z, 1e-6);
+  const zInset = Math.min(APPARITION_Z_INSET_CAP, zSpan * APPARITION_Z_INSET_FRAC);
+  const planeZ = chamberMax.z - zInset;
+  const reliefMax = zSpan * APPARITION_RELIEF_FRAC_OF_Z_SPAN;
+
+  return {
+    chamberBoundsSim: {
+      min: chamberMin.clone(),
+      max: chamberMax.clone(),
+    },
+    apparitionPlacementSim: {
+      planeZ,
+      normal: new THREE.Vector3(0, 0, -1),
+      reliefMax,
+    },
   };
 }

@@ -67,9 +67,14 @@ export function SpatialChamber() {
   const sourceShellVisible =
     roomPhase === "source" && (engineReady || !shouldMountEngine);
 
+  /**
+   * Keep engine convergence in sync with the controller. Uses `controller.getSnapshot()`
+   * (not render `snapshot`) so we never send a stale progress when the bridge attaches late.
+   * `engineReady` is a dep so we re-sync once the bridge exists even if progress did not change.
+   */
   useEffect(() => {
-    engineBridgeRef.current?.sync(snapshot);
-  }, [snapshot]);
+    engineBridgeRef.current?.sync(controller.getSnapshot());
+  }, [snapshot, engineReady, controller]);
 
   useEffect(() => {
     if (snapshot.progress < 100 && roomPhase !== "source") {
@@ -156,6 +161,15 @@ export function SpatialChamber() {
       data-back-interactive={isBackPointerActive ? "true" : "false"}
       data-engine-ready={engineReady ? "true" : undefined}
       data-source-shell-visible={sourceShellVisible ? "true" : undefined}
+      data-volkano-flow={
+        !shouldMountEngine
+          ? "engine-off-reduced-motion"
+          : engineFailed
+            ? "engine-failed"
+            : engineReady
+              ? "engine-live"
+              : "engine-loading"
+      }
     >
       <div className="cube-wrapper">
         <div className="chamber-stage">
@@ -187,7 +201,7 @@ export function SpatialChamber() {
                 triggerDisabled={roomPhase !== "source"}
                 onEngineReady={(api) => {
                   engineBridgeRef.current = createConvergenceEngineBridge(api);
-                  engineBridgeRef.current.sync(snapshot);
+                  engineBridgeRef.current.sync(controller.getSnapshot());
                   requestAnimationFrame(() => setEngineReady(true));
                 }}
                 onRotationReady={() => {
@@ -254,6 +268,13 @@ function FrontFace({
           {mountEngine ? (
             <FlowEngineHost
               className="flow-engine-host front-flow-host"
+              syncConvergenceFromHost={() => {
+                const snap = controller.getSnapshot();
+                return {
+                  progress: snap.progress,
+                  interactiveEnabled: getSourceInteractive(snap),
+                };
+              }}
               onReady={onEngineReady}
               onFrontRailMetricsChange={(metrics) => {
                 latestTriggerMetricsRef.current = metrics;
