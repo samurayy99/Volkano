@@ -12,7 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Temporary while flow-engine is ported 1:1 from reference.
+    ".agents/**",
+    "docs+examples/**",
+    // WebGPU flow-engine is plain JS; lint separately when tightening rules.
     "src/flow-engine/**",
   ]),
 ]);

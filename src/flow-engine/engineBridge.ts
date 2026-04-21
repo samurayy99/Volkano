@@ -1,23 +1,29 @@
 import * as THREE from "three/webgpu";
-import { mapProgressToEngineSignals } from "../convergence/engine/convergence-progress-map";
 import App from "./app.js";
-import {
-  IDLE_POST_ENTER_DERIVED,
-  PostEnterDirector,
-  type PostEnterContext,
-  type PostEnterDerived,
-  type PostEnterFrame,
-} from "./post-enter/PostEnterDirector";
 import type {
   FlowEngineApi,
   FlowEngineBridgeOptions,
-  FlowEngineFrontRailMetrics,
+  PostEnterDebugSnapshot,
+  PostEnterStage,
 } from "./types";
+
+/** MLS runtime for perpetual source-chamber play (no Enter / convergence tail). */
+function sourcePlayEngineRuntime() {
+  return {
+    gravity: 1,
+    noise: 1.08,
+    speed: 1.02,
+    dynamicViscosity: 0.034,
+    convergenceSlowdown: 0,
+    convergenceFreeze: 0,
+    convergenceHeatRetention: 0,
+    convergenceThermalExtinction: 0,
+  };
+}
 
 export class FlowEngineBridge implements FlowEngineApi {
   private readonly container: HTMLElement;
   private readonly options: FlowEngineBridgeOptions;
-  private readonly postEnterDirector = new PostEnterDirector();
   private renderer: any | null = null;
   private app: any | null = null;
   private clock = new THREE.Clock();
@@ -26,13 +32,13 @@ export class FlowEngineBridge implements FlowEngineApi {
   private interactiveEnabled = true;
   private hidden = false;
   private resizeObserver: ResizeObserver | null = null;
-  private convergenceProgress = 0;
-  private currentPointerInfluence = 1;
-  private postEnterContext: PostEnterContext | null = null;
-  private rotationReadyEmitted = false;
-  private lastFrontRailMetrics: FlowEngineFrontRailMetrics | null = null;
-
-  private postEnterStartFailLogged = false;
+  private postEnterActive = false;
+  private postEnterElapsed = 0;
+  private lastPostEnterStage: PostEnterStage = "none";
+  private postEnterDebugAccum = 0;
+  /** After final `hero` snapshot, stop dev telemetry (otherwise logs forever). */
+  private postEnterDebugMuted = false;
+  private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
@@ -64,43 +70,40 @@ export class FlowEngineBridge implements FlowEngineApi {
 
     const app = new App(renderer);
     this.app = app;
-    await app.init(async () => {}, width, height);
+    await app.init(width, height);
 
-    window.addEventListener("resize", this.onResize);
     this.resizeObserver = new ResizeObserver(this.onResize);
     this.resizeObserver.observe(this.container);
     this.onResize();
 
-    this.app.primeStartupSource?.();
-    this.app.promoteIdlePopulation?.();
-    this.app.clearPointer?.();
-    this.app.broadcastPostEnterFrame?.(IDLE_POST_ENTER_DERIVED);
+    this.app.promoteIdlePopulation();
+    this.app.clearPointer();
+    this.app.applyEngineRuntime(sourcePlayEngineRuntime());
     document.addEventListener("visibilitychange", this.onVisibilityChange);
 
     this.clock.start();
     this.rafId = requestAnimationFrame(this.animate);
   }
 
-  setConvergenceProgress(progress: number): void {
-    if (this.disposed) return;
-    const clampedProgress = THREE.MathUtils.clamp(progress, 0, 100);
-    if (this.convergenceProgress === clampedProgress) return;
-
-    this.convergenceProgress = clampedProgress;
-
-    if (clampedProgress < 100) {
-      this.resetPostEnter();
-    }
-  }
-
   setInteractiveEnabled(enabled: boolean): void {
     if (this.disposed) return;
 
     this.interactiveEnabled = enabled;
-    this.app?.setPointerInfluence?.(enabled ? this.currentPointerInfluence : 0);
+    if (!this.app) return;
+
+    if (this.postEnterActive) {
+      this.app.setPointerInfluence(0);
+      if (!enabled) {
+        this.app.clearPointer();
+      }
+      return;
+    }
+
+    this.app.applyEngineRuntime(sourcePlayEngineRuntime());
+    this.app.setPointerInfluence(enabled ? 1 : 0);
 
     if (!enabled) {
-      this.app?.clearPointer?.();
+      this.app.clearPointer();
     }
   }
 
@@ -114,7 +117,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     const localX = (x - rect.left) / width;
     const localY = (y - rect.top) / height;
 
-    if (!this.interactiveEnabled) {
+    if (!this.interactiveEnabled || this.postEnterActive) {
       return;
     }
 
@@ -126,17 +129,39 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app.clearPointer();
   }
 
+  beginPostEnter(): void {
+    if (this.disposed || !this.app || this.postEnterActive) return;
+    this.postEnterActive = true;
+    this.postEnterElapsed = 0;
+    this.postEnterDebugMuted = false;
+    this.app.beginPostEnterDrive();
+    this.app.clearPointer();
+    this.app.setPointerInfluence(0);
+    const stage = this.app.drivePostEnter(0) as PostEnterStage;
+    this.emitPostEnterStageIfChanged(stage);
+    this.postEnterDebugAccum = 0;
+    const snap0 = this.app.getPostEnterDebugSnapshot?.() as
+      | PostEnterDebugSnapshot
+      | null
+      | undefined;
+    if (snap0 && this.options.onPostEnterDebugSnapshot) {
+      this.options.onPostEnterDebugSnapshot(snap0);
+      if (snap0.stage === "hero") {
+        this.postEnterDebugMuted = true;
+      }
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
 
     cancelAnimationFrame(this.rafId);
-    window.removeEventListener("resize", this.onResize);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
 
-    if (this.app?.dispose) {
+    if (this.app) {
       this.app.dispose();
     }
     this.app = null;
@@ -150,6 +175,18 @@ export class FlowEngineBridge implements FlowEngineApi {
     }
 
     this.renderer = null;
+    this.postEnterActive = false;
+    this.postEnterElapsed = 0;
+    this.lastPostEnterStage = "none";
+    this.postEnterDebugAccum = 0;
+    this.postEnterDebugMuted = false;
+  }
+
+  private emitPostEnterStageIfChanged(stage: PostEnterStage): void {
+    if (stage !== this.lastPostEnterStage) {
+      this.lastPostEnterStage = stage;
+      this.options.onPostEnterStageChange?.(stage);
+    }
   }
 
   private onResize = (): void => {
@@ -160,12 +197,12 @@ export class FlowEngineBridge implements FlowEngineApi {
 
     this.renderer.setSize(width, height);
     this.app.resize(width, height);
-    this.emitFrontRailMetrics();
   };
 
   private onVisibilityChange = (): void => {
     this.hidden = document.hidden;
 
+    // After a hidden tab, discard accumulated clock delta so the next frame is not a spike.
     if (!this.hidden && this.disposed === false) {
       this.clock.getDelta();
     }
@@ -180,170 +217,46 @@ export class FlowEngineBridge implements FlowEngineApi {
       return;
     }
 
-    const delta = this.clock.getDelta();
+    const rawDelta = this.clock.getDelta();
+    const delta = this.postEnterActive ? Math.min(rawDelta, 1 / 60) : rawDelta;
     try {
-      this.applyConvergenceSignals();
-      const postEnterFrame = this.stepPostEnter(delta);
-      await this.app.update(delta, postEnterFrame);
-      this.emitRotationReady(postEnterFrame.derived);
+      if (this.postEnterActive) {
+        this.postEnterElapsed += delta;
+        const stage = this.app.drivePostEnter(
+          this.postEnterElapsed,
+        ) as PostEnterStage;
+        this.emitPostEnterStageIfChanged(stage);
+
+        const onDbg = this.options.onPostEnterDebugSnapshot;
+        if (onDbg && !this.postEnterDebugMuted) {
+          this.postEnterDebugAccum += delta;
+          if (
+            this.postEnterDebugAccum >=
+            FlowEngineBridge.POST_ENTER_DEBUG_INTERVAL_SEC
+          ) {
+            this.postEnterDebugAccum = 0;
+            const snap = this.app.getPostEnterDebugSnapshot?.() as
+              | PostEnterDebugSnapshot
+              | null
+              | undefined;
+            if (snap) {
+              onDbg(snap);
+              if (snap.stage === "hero") {
+                this.postEnterDebugMuted = true;
+              }
+            }
+          }
+        }
+      }
+
+      const pointerInfluence =
+        this.interactiveEnabled && !this.postEnterActive ? 1 : 0;
+      this.app.setPointerInfluence(pointerInfluence);
+      await this.app.update(delta);
     } catch (error) {
       this.options.onError?.(error);
     }
 
     this.rafId = requestAnimationFrame(this.animate);
   };
-
-  private stepPostEnter(delta: number): PostEnterFrame {
-    if (this.convergenceProgress < 100) {
-      this.resetPostEnter();
-      return {
-        derived: IDLE_POST_ENTER_DERIVED,
-        context: null,
-      };
-    }
-
-    let startedThisFrame = false;
-    if (this.postEnterDirector.isIdle()) {
-      const context = this.app?.buildPostEnterContext?.() ?? null;
-      const started = this.postEnterDirector.start(context);
-      if (started) {
-        this.postEnterContext = context;
-        startedThisFrame = true;
-      } else if (
-        this.convergenceProgress >= 100 &&
-        !this.postEnterStartFailLogged
-      ) {
-        this.postEnterStartFailLogged = true;
-        console.warn(
-          "[post-enter] Director start skipped at 100%:",
-          context == null
-            ? "buildPostEnterContext() returned null (placement/renderer not ready)."
-            : "canStart(context) returned false (invalid placement or bounds).",
-        );
-      }
-    }
-
-    if (!startedThisFrame && this.postEnterContext) {
-      this.postEnterDirector.tick(delta);
-    }
-
-    return {
-      derived: this.postEnterDirector.getDerived(),
-      context: this.postEnterContext,
-    };
-  }
-
-  private emitRotationReady(derived: PostEnterDerived): void {
-    if (!derived.rotationReady || this.rotationReadyEmitted) {
-      return;
-    }
-
-    this.rotationReadyEmitted = true;
-    this.options.onRotationReady?.();
-  }
-
-  private emitFrontRailMetrics(): void {
-    const normalizedMetrics = this.app?.getFrontRailMetrics?.();
-    if (!normalizedMetrics) {
-      return;
-    }
-
-    const width = this.container.clientWidth || window.innerWidth;
-    const height = this.container.clientHeight || window.innerHeight;
-
-    const nextMetrics = {
-      left: normalizedMetrics.left * width,
-      top: normalizedMetrics.top * height,
-      width: normalizedMetrics.width * width,
-      height: normalizedMetrics.height * height,
-      centerX: normalizedMetrics.centerX * width,
-      centerY: normalizedMetrics.centerY * height,
-    };
-
-    const previousMetrics = this.lastFrontRailMetrics;
-    if (
-      previousMetrics &&
-      Math.abs(previousMetrics.left - nextMetrics.left) < 0.25 &&
-      Math.abs(previousMetrics.top - nextMetrics.top) < 0.25 &&
-      Math.abs(previousMetrics.width - nextMetrics.width) < 0.25 &&
-      Math.abs(previousMetrics.height - nextMetrics.height) < 0.25 &&
-      Math.abs(previousMetrics.centerX - nextMetrics.centerX) < 0.25 &&
-      Math.abs(previousMetrics.centerY - nextMetrics.centerY) < 0.25
-    ) {
-      return;
-    }
-
-    this.lastFrontRailMetrics = nextMetrics;
-    this.options.onFrontRailMetricsChange?.(nextMetrics);
-  }
-
-  private resetPostEnter(): void {
-    this.postEnterDirector.reset();
-    this.postEnterContext = null;
-    this.rotationReadyEmitted = false;
-    this.postEnterStartFailLogged = false;
-    this.app?.resetPostEnterState?.();
-  }
-
-  private applyConvergenceSignals(): void {
-    const convergenceSignals = mapProgressToEngineSignals(
-      this.convergenceProgress,
-    );
-    const slowdownMix = convergenceSignals.slowdownMix;
-    const viscosityMix = convergenceSignals.viscosityMix;
-    const freezeMix = convergenceSignals.freezeMix;
-    const thermalExtinctionMix = convergenceSignals.thermalExtinctionMix;
-
-    if (this.convergenceProgress <= 0) {
-      this.app?.applyEngineRuntime?.({
-        gravity: 1,
-        noise: 1.08,
-        speed: 1.02,
-        dynamicViscosity: 0.034,
-        convergenceSlowdown: 0,
-        convergenceFreeze: 0,
-        convergenceHeatRetention: 0,
-        convergenceThermalExtinction: 0,
-      });
-      this.currentPointerInfluence = 1;
-      this.app?.setPointerInfluence?.(
-        this.interactiveEnabled ? this.currentPointerInfluence : 0,
-      );
-      return;
-    }
-
-    const heatRetentionMix = THREE.MathUtils.lerp(
-      convergenceSignals.heatRetentionMix,
-      0,
-      thermalExtinctionMix,
-    );
-
-    let noise = THREE.MathUtils.lerp(1.08, 0.2, slowdownMix);
-    noise = THREE.MathUtils.lerp(noise, 0.06, freezeMix);
-    const speed = THREE.MathUtils.lerp(
-      THREE.MathUtils.lerp(1.02, 0.72, slowdownMix),
-      0.12,
-      freezeMix,
-    );
-    const dynamicViscosity = THREE.MathUtils.lerp(0.034, 0.052, viscosityMix);
-    this.app?.applyEngineRuntime?.({
-      gravity: 0,
-      noise,
-      speed,
-      dynamicViscosity,
-      convergenceSlowdown: slowdownMix,
-      convergenceFreeze: freezeMix,
-      convergenceHeatRetention: heatRetentionMix,
-      convergenceThermalExtinction: thermalExtinctionMix,
-    });
-
-    this.currentPointerInfluence = THREE.MathUtils.lerp(
-      1,
-      0.08,
-      convergenceSignals.pointerInfluenceMix,
-    );
-    this.app?.setPointerInfluence?.(
-      this.interactiveEnabled ? this.currentPointerInfluence : 0,
-    );
-  }
 }

@@ -2,15 +2,15 @@
 
 import { useEffect, useRef } from "react";
 import { FlowEngineBridge } from "./engineBridge";
-import type { FlowEngineFrontRailMetrics, FlowEngineHostProps } from "./types";
+import type { FlowEngineHostProps, PostEnterDebugSnapshot } from "./types";
 
 export function FlowEngineHost({
   onReady,
-  onRotationReady,
-  onFrontRailMetricsChange,
   onError,
   className,
-  syncConvergenceFromHost,
+  syncInteractiveFromHost,
+  onPostEnterStageChange,
+  onPostEnterDebugSnapshot,
 }: FlowEngineHostProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<FlowEngineBridge | null>(null);
@@ -18,26 +18,26 @@ export function FlowEngineHost({
   const capturedPointerIdRef = useRef<number | null>(null);
   const callbacksRef = useRef({
     onReady,
-    onRotationReady,
-    onFrontRailMetricsChange,
     onError,
-    syncConvergenceFromHost,
+    syncInteractiveFromHost,
+    onPostEnterStageChange,
+    onPostEnterDebugSnapshot,
   });
 
   useEffect(() => {
     callbacksRef.current = {
       onReady,
-      onRotationReady,
-      onFrontRailMetricsChange,
       onError,
-      syncConvergenceFromHost,
+      syncInteractiveFromHost,
+      onPostEnterStageChange,
+      onPostEnterDebugSnapshot,
     };
   }, [
     onReady,
-    onRotationReady,
-    onFrontRailMetricsChange,
     onError,
-    syncConvergenceFromHost,
+    syncInteractiveFromHost,
+    onPostEnterStageChange,
+    onPostEnterDebugSnapshot,
   ]);
 
   useEffect(() => {
@@ -45,14 +45,14 @@ export function FlowEngineHost({
     if (!host) return;
 
     const bridge = new FlowEngineBridge(host, {
-      onRotationReady: () => {
-        callbacksRef.current.onRotationReady?.();
-      },
-      onFrontRailMetricsChange: (metrics: FlowEngineFrontRailMetrics) => {
-        callbacksRef.current.onFrontRailMetricsChange?.(metrics);
-      },
       onError: (error) => {
         callbacksRef.current.onError?.(error);
+      },
+      onPostEnterStageChange: (stage) => {
+        callbacksRef.current.onPostEnterStageChange?.(stage);
+      },
+      onPostEnterDebugSnapshot: (snapshot: PostEnterDebugSnapshot) => {
+        callbacksRef.current.onPostEnterDebugSnapshot?.(snapshot);
       },
     });
     bridgeRef.current = bridge;
@@ -62,10 +62,9 @@ export function FlowEngineHost({
       .init()
       .then(() => {
         if (!cancelled) {
-          const pull = callbacksRef.current.syncConvergenceFromHost;
+          const pull = callbacksRef.current.syncInteractiveFromHost;
           if (pull) {
-            const { progress, interactiveEnabled } = pull();
-            bridge.setConvergenceProgress(progress);
+            const { interactiveEnabled } = pull();
             bridge.setInteractiveEnabled(interactiveEnabled);
           }
           callbacksRef.current.onReady?.(bridge);

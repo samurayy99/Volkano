@@ -22,6 +22,11 @@ import {
   max,
 } from "three/tsl";
 
+import { forensicSuppressCompressVisual } from "../post-enter/forensicPostEnter.js";
+
+const COMPRESS_EASE_EDGE0 = 0.03;
+const COMPRESS_EASE_EDGE1 = 0.94;
+
 const PARTICLE_PROFILE_READ = Object.freeze({
   speedBandStart: 1.2,
   speedBandEnd: 3.5,
@@ -33,14 +38,24 @@ const PARTICLE_PROFILE_READ = Object.freeze({
   frozenWidth: 1.0,
   frozenHeight: 1.45,
   frozenLength: 0.34,
+  compressedWidth: 0.88,
+  compressedHeight: 0.78,
+  compressedLength: 0.64,
   densityLift: 0.28,
   densityBias: 0.72,
   frozenDensity: 0.975,
-  instanceScale: 1.08,
-  preEnterSpeedStart: 0.16,
-  preEnterSpeedEnd: 1.32,
-  preEnterThicknessGain: 0.72,
-  preEnterThicknessBias: 0.28,
+  compressedDensity: 1.12,
+  instanceScale: 1.04,
+  facingThicknessSpeedMin: 0.16,
+  facingThicknessSpeedMax: 1.32,
+  facingThicknessGain: 0.72,
+  facingThicknessBias: 0.28,
+});
+
+const WITHDRAW_READ = Object.freeze({
+  thinWidthReduction: 0.92,
+  thinHeightReduction: 0.9,
+  thinLengthReduction: 0.82,
 });
 
 const calcLookAtMatrix = /*#__PURE__*/ Fn(([target_immutable]) => {
@@ -59,10 +74,159 @@ const calcLookAtMatrix = /*#__PURE__*/ Fn(([target_immutable]) => {
   inputs: [{ name: "direction", type: "vec3" }],
 });
 
+const buildCompressTVisualRead = (uniforms) =>
+  mix(
+    uniforms.compressT.clamp(0, 1),
+    float(0),
+    uniforms.forensicSuppressCompressVisual,
+  ).toConst("compressTVisualRead");
+
+/**
+ * Spatial relief for held/compressed read: slit vs outer shoulder vs mid vs apex
+ * (sim space vs mirrored hero center). Gated by compressEase * freezeShapeT.
+ */
+const buildHeroReliefModulation = ({ simPos, uniforms, compressT }) => {
+  const freezeShapeT = smoothstep(
+    float(PARTICLE_PROFILE_READ.freezeBandStart),
+    float(PARTICLE_PROFILE_READ.freezeBandEnd),
+    uniforms.convergenceFreeze,
+  ).toConst("reliefFreezeShapeT");
+
+  const compressLocal = compressT.clamp(0, 1).toConst("reliefCompressLocal");
+  const compressEase = smoothstep(
+    float(COMPRESS_EASE_EDGE0),
+    float(COMPRESS_EASE_EDGE1),
+    compressLocal,
+  ).toConst("reliefCompressEase");
+
+  const reliefT = compressEase.mul(freezeShapeT).toConst("heroReliefT");
+
+  const hx = uniforms.heroSimCenter.x;
+  const hy = uniforms.heroSimCenter.y;
+  const dx = simPos.x.sub(hx).abs().toConst("heroReliefDx");
+  const creaseCore = smoothstep(float(2.2), float(9.0), dx)
+    .oneMinus()
+    .toConst("heroCreaseCore");
+  const outerCore = smoothstep(float(3.5), float(13.0), dx).toConst(
+    "heroOuterCore",
+  );
+  const apexCore = smoothstep(
+    float(-3.0),
+    float(-11.0),
+    simPos.y.sub(hy),
+  ).toConst("heroApexCore");
+
+  const creaseT = reliefT.mul(creaseCore).toConst("heroCreaseT");
+  const outerT = reliefT.mul(outerCore).toConst("heroOuterT");
+  const midT = reliefT
+    .mul(float(1).sub(max(creaseCore, outerCore)).clamp(0, 1))
+    .toConst("heroMidT");
+  const apexT = reliefT.mul(apexCore).toConst("heroApexT");
+
+  const widthMul = mix(float(1), float(0.88), creaseT)
+    .mul(mix(float(1), float(1.1), outerT))
+    .mul(mix(float(1), float(0.78), apexT))
+    .mul(mix(float(1), float(0.94), midT))
+    .toConst("heroReliefWidthMul");
+
+  const lengthMul = mix(float(1), float(1.08), creaseT)
+    .mul(mix(float(1), float(1.04), outerT))
+    .mul(mix(float(1), float(0.82), apexT))
+    .toConst("heroReliefLengthMul");
+
+  const heightMul = mix(float(1), float(0.94), creaseT)
+    .mul(mix(float(1), float(1.05), outerT))
+    .mul(mix(float(1), float(0.88), apexT))
+    .mul(mix(float(1), float(0.96), midT))
+    .toConst("heroReliefHeightMul");
+
+  const opacityMul = mix(float(1), float(0.72), creaseT)
+    .mul(mix(float(1), float(0.65), apexT))
+    .mul(mix(float(1), float(1.06), outerT))
+    .mul(mix(float(1), float(0.92), midT))
+    .clamp(float(0.5), float(1.12))
+    .toConst("heroReliefOpacityMul");
+
+  return { widthMul, heightMul, lengthMul, opacityMul };
+};
+
+const buildLateReleaseState = ({ uniforms }) => {
+  const structuralReleaseT = smoothstep(
+    float(0.24),
+    float(0.94),
+    uniforms.opacityT.clamp(0, 1),
+  ).toConst("structuralReleaseT");
+
+  const structuralSurvival = float(1)
+    .sub(structuralReleaseT)
+    .clamp(0, 1)
+    .toConst("structuralSurvival");
+
+  // Cohort classification is a pure function of instanceIndex — reproduced
+  // here with the same hash + seed + thresholds as HERO_POINT_CLOUD in the
+  // simulator generator. No buffer/struct field is hijacked.
+  const roleU = fract(
+    sin(instanceIndex.toFloat().add(float(1)).mul(float(91.4271))).mul(
+      float(43758.5453),
+    ),
+  ).toConst("cohortRoleU");
+  const cohortGate = smoothstep(
+    float(0.28),
+    float(0.9),
+    uniforms.heroCohortT.clamp(0, 1),
+  ).toConst("cohortGate");
+  const heroMask = step(float(0.85), roleU).toConst("cohortHeroMask");
+  const supportMask = step(float(0.62), roleU)
+    .mul(float(1).sub(heroMask))
+    .toConst("cohortSupportMask");
+  const bulkMask = float(1)
+    .sub(step(float(0.62), roleU))
+    .toConst("cohortBulkMask");
+
+  const cohortSizeTarget = heroMask
+    .mul(float(1.0))
+    .add(supportMask.mul(float(0.82)))
+    .add(bulkMask.mul(float(0.55)));
+  const cohortOpacityTarget = heroMask
+    .mul(float(1.0))
+    .add(supportMask.mul(float(0.72)))
+    .add(bulkMask.mul(float(0.36)));
+  const cohortEmissiveTarget = heroMask
+    .mul(float(1.0))
+    .add(supportMask.mul(float(0.30)))
+    .add(bulkMask.mul(float(0.08)));
+
+  const cohortSizeMul = mix(float(1), cohortSizeTarget, cohortGate).toConst(
+    "cohortSizeMul",
+  );
+  const cohortOpacityMul = mix(
+    float(1),
+    cohortOpacityTarget,
+    cohortGate,
+  ).toConst("cohortOpacityMul");
+  const cohortEmissiveMul = mix(
+    float(1),
+    cohortEmissiveTarget,
+    cohortGate,
+  ).toConst("cohortEmissiveMul");
+
+  return {
+    structuralReleaseT,
+    structuralSurvival,
+    cohortSizeMul,
+    cohortOpacityMul,
+    cohortEmissiveMul,
+  };
+};
+
 const buildParticleProfileState = ({
   speed,
   particleDensity,
   convergenceFreeze,
+  compressT,
+  thinT,
+  simPos,
+  uniforms,
 }) => {
   const stretch = smoothstep(
     float(PARTICLE_PROFILE_READ.speedBandStart),
@@ -84,31 +248,85 @@ const buildParticleProfileState = ({
     convergenceFreeze.toConst("shapeFrozenT"),
   ).toConst("freezeShapeT");
 
-  const rodWidth = mix(
+  const compressLocal = compressT.clamp(0, 1).toConst("compressLocal");
+  const compressEase = smoothstep(
+    float(COMPRESS_EASE_EDGE0),
+    float(COMPRESS_EASE_EDGE1),
+    compressLocal,
+  ).toConst("compressEase");
+
+  const rodWidthFreeze = mix(
     thinning,
     float(PARTICLE_PROFILE_READ.frozenWidth),
     freezeShapeT,
-  ).toConst("rodWidth");
+  ).toConst("rodWidthFreeze");
 
-  const rodHeight = mix(
+  const rodHeightFreeze = mix(
     thinning,
     float(PARTICLE_PROFILE_READ.frozenHeight),
     freezeShapeT,
-  ).toConst("rodHeight");
+  ).toConst("rodHeightFreeze");
 
-  const rodLength = mix(
+  const rodLengthFreeze = mix(
     stretch,
     float(PARTICLE_PROFILE_READ.frozenLength),
     freezeShapeT,
-  ).toConst("rodLength");
+  ).toConst("rodLengthFreeze");
 
-  const densityScale = mix(
+  const rodWidthCompressed = mix(
+    rodWidthFreeze,
+    float(PARTICLE_PROFILE_READ.compressedWidth),
+    compressEase,
+  ).toConst("rodWidthCompressed");
+
+  const rodHeightCompressed = mix(
+    rodHeightFreeze,
+    float(PARTICLE_PROFILE_READ.compressedHeight),
+    compressEase,
+  ).toConst("rodHeightCompressed");
+
+  const rodLengthCompressed = mix(
+    rodLengthFreeze,
+    float(PARTICLE_PROFILE_READ.compressedLength),
+    compressEase,
+  ).toConst("rodLengthCompressed");
+
+  const thinLocal = thinT.clamp(0, 1).toConst("thinLocal");
+
+  const relief = buildHeroReliefModulation({ simPos, uniforms, compressT });
+
+  const rodWidth = rodWidthCompressed
+    .mul(float(1).sub(thinLocal.mul(float(WITHDRAW_READ.thinWidthReduction))))
+    .mul(relief.widthMul)
+    .toConst("rodWidth");
+
+  const rodHeight = rodHeightCompressed
+    .mul(float(1).sub(thinLocal.mul(float(WITHDRAW_READ.thinHeightReduction))))
+    .mul(relief.heightMul)
+    .toConst("rodHeight");
+
+  const rodLength = rodLengthCompressed
+    .mul(float(1).sub(thinLocal.mul(float(WITHDRAW_READ.thinLengthReduction))))
+    .mul(relief.lengthMul)
+    .toConst("rodLength");
+
+  const frozenDensity = mix(
     particleDensity
       .mul(PARTICLE_PROFILE_READ.densityLift)
       .add(PARTICLE_PROFILE_READ.densityBias)
       .clamp(0, 1),
     float(PARTICLE_PROFILE_READ.frozenDensity),
     freezeShapeT,
+  ).toConst("frozenDensity");
+
+  const densityScale = mix(
+    mix(
+      frozenDensity,
+      float(PARTICLE_PROFILE_READ.compressedDensity),
+      compressEase.mul(float(0.65)),
+    ).clamp(0, 1.08),
+    float(0.08),
+    thinLocal,
   ).toConst("densityScale");
 
   return { rodWidth, rodHeight, rodLength, densityScale };
@@ -118,7 +336,7 @@ const buildParticleViewState = ({
   formedDir,
   speed,
   vNormalView,
-  vPreEnterThickness,
+  vFacingThickness,
 }) => {
   const mat = calcLookAtMatrix(formedDir);
 
@@ -126,24 +344,24 @@ const buildParticleViewState = ({
     transformNormalToView(mat.mul(normalLocal)),
   ).toConst("orientedNormalView");
 
-  const preEnterThickness = orientedNormalView.z
+  const facingThickness = orientedNormalView.z
     .abs()
     .oneMinus()
     .mul(
       smoothstep(
-        float(PARTICLE_PROFILE_READ.preEnterSpeedStart),
-        float(PARTICLE_PROFILE_READ.preEnterSpeedEnd),
+        float(PARTICLE_PROFILE_READ.facingThicknessSpeedMin),
+        float(PARTICLE_PROFILE_READ.facingThicknessSpeedMax),
         speed,
       )
-        .toConst("preEnterSpeedT")
-        .mul(PARTICLE_PROFILE_READ.preEnterThicknessGain)
-        .add(PARTICLE_PROFILE_READ.preEnterThicknessBias),
+        .toConst("facingThicknessBandT")
+        .mul(PARTICLE_PROFILE_READ.facingThicknessGain)
+        .add(PARTICLE_PROFILE_READ.facingThicknessBias),
     )
     .clamp(0, 1)
-    .toConst("preEnterThickness");
+    .toConst("facingThickness");
 
   vNormalView.assign(orientedNormalView);
-  vPreEnterThickness.assign(preEnterThickness);
+  vFacingThickness.assign(facingThickness);
 
   return { mat };
 };
@@ -152,36 +370,54 @@ const buildUnifiedParticleSurfaceNodes = ({
   particle,
   material,
   vNormalView,
-  vPreEnterThickness,
-  vOpacityMul,
+  vFacingThickness,
+  uniforms,
 }) => {
   const particleHeat = particle.get("heat");
   const particleColor = particle.get("color").toConst("particleColor");
+  const lateRelease = buildLateReleaseState({ uniforms });
   const viewNormal = normalize(vNormalView).toConst("viewNormal");
   const viewFacingT = viewNormal.z.abs().clamp(0, 1).toConst("viewFacingT");
 
-  const viewThicknessT = vPreEnterThickness.clamp(0, 1).toConst("viewThicknessT");
+  const viewThicknessT = vFacingThickness.clamp(0, 1).toConst("viewThicknessT");
 
   const roughNoise = fract(sin(instanceIndex.toFloat().mul(483.1)).mul(19847.3))
     .mul(0.12)
     .sub(0.06)
     .toConst("roughNoise");
 
-  const surfaceRoughness = float(0.92)
+  const baseSurfaceRoughness = float(0.92)
     .add(roughNoise)
     .clamp(0.86, 0.96)
     .sub(viewThicknessT.mul(0.075))
     .sub(viewFacingT.mul(viewThicknessT).mul(0.02))
     .clamp(0.8, 0.96)
-    .toConst("surfaceRoughness");
+    .toConst("baseSurfaceRoughness");
 
   const glowFactor = smoothstep(float(0.12), float(0.46), particleHeat).toConst(
     "glowFactor",
   );
+  const massDimT = uniforms.massDimT.clamp(0, 1).toConst("massDimT");
+  const decayProgress = particle
+    .get("dissolveState")
+    .y.clamp(0, 1)
+    .toConst("decayProgress");
+  const surfaceColor = particleColor
+    .mul(mix(float(1), float(0.0), massDimT))
+    .toConst("surfaceColor");
 
-  const surfaceEmissive = vec3(0.36, 0.12, 0.03)
+  const surfaceRoughness = baseSurfaceRoughness
+    .add(massDimT.mul(float(0.02)))
+    .clamp(0.8, 0.98)
+    .toConst("surfaceRoughness");
+
+  const baseEmissive = vec3(0.36, 0.12, 0.03)
     .mul(glowFactor)
-    .mul(float(0.012))
+    .mul(float(0.0095))
+    .toConst("baseEmissive");
+  const surfaceEmissive = baseEmissive
+    .mul(mix(float(1), float(0.0), massDimT))
+    .mul(lateRelease.cohortEmissiveMul)
     .toConst("surfaceEmissive");
 
   const surfaceAo = mix(float(1.0), float(0.92), viewThicknessT)
@@ -189,9 +425,25 @@ const buildUnifiedParticleSurfaceNodes = ({
     .clamp(0, 1)
     .toConst("surfaceAo");
 
-  const opacityEffective = vOpacityMul.clamp(0, 1).toConst("opacityEffective");
+  const simPosSurface = particle.get("position").xyz;
+  const compressTVisualSurface = buildCompressTVisualRead(uniforms);
+  const reliefSurface = buildHeroReliefModulation({
+    simPos: simPosSurface,
+    uniforms,
+    compressT: compressTVisualSurface,
+  });
 
-  material.colorNode = particleColor;
+  const opacityEffective = float(1)
+    .sub(uniforms.opacityT.clamp(0, 1))
+    .mul(lateRelease.structuralSurvival)
+    .mul(float(1).sub(massDimT.mul(float(0.92))))
+    .mul(float(1).sub(decayProgress))
+    .mul(lateRelease.cohortOpacityMul)
+    .mul(reliefSurface.opacityMul)
+    .clamp(0, 1)
+    .toConst("opacityEffective");
+
+  material.colorNode = surfaceColor;
   material.roughnessNode = surfaceRoughness;
   material.metalnessNode = float(0.015);
   material.emissiveNode = surfaceEmissive;
@@ -215,8 +467,7 @@ const buildParticlePositionNode = ({
   uniforms,
   sizeUniform,
   vNormalView,
-  vPreEnterThickness,
-  vOpacityMul,
+  vFacingThickness,
 }) =>
   Fn(() => {
     const simPos = particle.get("position").xyz.toConst("simPos");
@@ -225,10 +476,16 @@ const buildParticlePositionNode = ({
     const localPos = attribute("position").xyz;
     const speed = particle.get("velocity").length();
 
+    const compressTVisualRead = buildCompressTVisualRead(uniforms);
+
     const particleProfile = buildParticleProfileState({
       speed,
       particleDensity,
       convergenceFreeze: uniforms.convergenceFreeze,
+      compressT: compressTVisualRead,
+      thinT: uniforms.thinT,
+      simPos,
+      uniforms,
     });
 
     const formedDir = normalize(particleDirection.xyz).toConst("formedDir");
@@ -238,18 +495,28 @@ const buildParticlePositionNode = ({
       localPos.z.mul(particleProfile.rodLength),
     ).toConst("shapedPos");
 
+    const lateRelease = buildLateReleaseState({ uniforms });
+    const structureScale = lateRelease.structuralSurvival
+      .mul(lateRelease.cohortSizeMul)
+      .toConst("structureScale");
+
     const viewState = buildParticleViewState({
       formedDir,
       speed,
       vNormalView,
-      vPreEnterThickness,
+      vFacingThickness,
     });
-
-    vOpacityMul.assign(uniforms.bodyOpacityMul.clamp(0, 1));
 
     return viewState.mat
       .mul(
-        shapedPos.mul(sizeUniform.mul(PARTICLE_PROFILE_READ.instanceScale)),
+        shapedPos.mul(
+          structureScale,
+        ),
+      )
+      .mul(
+        sizeUniform
+          .mul(PARTICLE_PROFILE_READ.instanceScale)
+          .mul(uniforms.bodyScaleMul),
       )
       .mul(particleProfile.densityScale)
       .add(simPos);
@@ -355,7 +622,7 @@ const createRoundedBox = (width, height, depth, radius) => {
 };
 
 let particleGeometryTemplate = null;
-const getParticleGeometryTemplate = () =>
+export const getParticleGeometryTemplate = () =>
   particleGeometryTemplate ??
   (particleGeometryTemplate = createRoundedBox(0.7, 0.7, 3, 0.1));
 
@@ -370,6 +637,12 @@ class ParticleRenderer {
     particles: 8192 * 4,
     actualSize: (1.6 / Math.pow(4, 1 / 3)) * 0.68,
     convergenceFreeze: 0,
+    bodyScaleMul: 1,
+    massDimT: 0,
+    compressT: 0,
+    thinT: 0,
+    opacityT: 0,
+    solverLocked: false,
   };
 
   constructor(mlsMpmSim) {
@@ -389,20 +662,21 @@ class ParticleRenderer {
 
     this.uniforms.size = uniform(1);
     this.uniforms.convergenceFreeze = uniform(0);
-    this.uniforms.bodyOpacityMul = uniform(1);
-
-    /**
-     * While post-enter runs (arrest→quiet), MLS rods stay transparent but must not
-     * win the depth buffer — otherwise the apparition layer reads as occluded.
-     */
-    this._postEnterRelaxBodyDepth = false;
+    this.uniforms.bodyScaleMul = uniform(1);
+    this.uniforms.massDimT = uniform(0);
+    this.uniforms.compressT = uniform(0);
+    this.uniforms.forensicSuppressCompressVisual = uniform(0);
+    this.uniforms.thinT = uniform(0);
+    this.uniforms.opacityT = uniform(0);
+    this.uniforms.heroCohortT = uniform(0);
+    this.uniforms.heroSimCenter = uniform(new THREE.Vector3(32, 31.8, 30.4));
+    this.uniforms.solverLockedFloat = uniform(0);
 
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
 
     const vNormalView = varying(vec3(0), "vNormalView");
-    const vPreEnterThickness = varying(0, "vPreEnterThickness");
-    const vOpacityMul = varying(1, "vOpacityMul");
+    const vFacingThickness = varying(0, "vFacingThickness");
     const particle = this.mlsMpmSim.particleBuffer.element(instanceIndex);
 
     this.material.positionNode = buildParticlePositionNode({
@@ -410,16 +684,15 @@ class ParticleRenderer {
       uniforms: this.uniforms,
       sizeUniform: this.uniforms.size,
       vNormalView,
-      vPreEnterThickness,
-      vOpacityMul,
+      vFacingThickness,
     });
 
     buildUnifiedParticleSurfaceNodes({
       particle,
       material: this.material,
       vNormalView,
-      vPreEnterThickness,
-      vOpacityMul,
+      vFacingThickness,
+      uniforms: this.uniforms,
     });
 
     /** MLS rods only — must not be the same node as `object`, so post-enter apparition can sibling-render. */
@@ -428,10 +701,6 @@ class ParticleRenderer {
     this._particleBodyMesh.castShadow = true;
     this._particleBodyMesh.receiveShadow = true;
 
-    /**
-     * Root transform for chamber sim space. Group (not Mesh) so `PostEnterApparitionLayer`
-     * can attach as a sibling; WebGPU was not reliably drawing InstancedMesh children of Mesh.
-     */
     this.object = new THREE.Group();
     this.object.frustumCulled = false;
     this.object.add(this._particleBodyMesh);
@@ -469,24 +738,6 @@ class ParticleRenderer {
     return target;
   }
 
-  /**
-   * @param {number} bodyOpacityMul
-   * @param {import("../post-enter/PostEnterDirector").PostEnterDerived | null | undefined} [derived]
-   */
-  applyPostEnterFrame(bodyOpacityMul = 1, derived) {
-    this.uniforms.bodyOpacityMul.value = Number.isFinite(bodyOpacityMul)
-      ? bodyOpacityMul
-      : 1;
-
-    const phase = derived?.postEnterPhase ?? "idle";
-    this._postEnterRelaxBodyDepth =
-      phase === "arrest" ||
-      phase === "resolve" ||
-      phase === "hold" ||
-      phase === "ash" ||
-      phase === "quiet";
-  }
-
   applyRuntime(runtime) {
     if (runtime) this.runtime = runtime;
   }
@@ -494,19 +745,30 @@ class ParticleRenderer {
   updateRuntimeUniforms() {
     this.uniforms.size.value = this.runtime.actualSize;
     this.uniforms.convergenceFreeze.value = this.runtime.convergenceFreeze;
+    this.uniforms.bodyScaleMul.value = this.runtime.bodyScaleMul ?? 1;
+    this.uniforms.massDimT.value = this.runtime.massDimT ?? 0;
+    this.uniforms.compressT.value = this.runtime.compressT ?? 0;
+    this.uniforms.forensicSuppressCompressVisual.value =
+      forensicSuppressCompressVisual() ? 1 : 0;
+    this.uniforms.thinT.value = this.runtime.thinT ?? 0;
+    this.uniforms.opacityT.value = this.runtime.opacityT ?? 0;
+    this.uniforms.heroCohortT.value = this.runtime.heroBodyWeight ?? 0;
+    const heroCenter = this.mlsMpmSim?.uniforms?.heroCenter?.value;
+    if (heroCenter) {
+      this.uniforms.heroSimCenter.value.copy(heroCenter);
+    }
+    this.uniforms.solverLockedFloat.value = this.runtime.solverLocked ? 1 : 0;
     this.material.envMapIntensity = 0.12;
 
-    // Default: depthWrite on to reduce translucent sorting mush. Post-enter turns
-    // it off so the image apparition layer is not Z-occluded by a semi-faded body.
+    const lockedDissolve =
+      !!this.runtime.solverLocked && (this.runtime.opacityT ?? 0) > 0.001;
     this.material.transparent = true;
-    this.material.depthWrite = !this._postEnterRelaxBodyDepth;
+    this.material.depthWrite = !lockedDissolve;
 
     if (this._particleBodyMesh) {
-      this._particleBodyMesh.castShadow = true;
-      this._particleBodyMesh.receiveShadow = true;
+      this._particleBodyMesh.castShadow = !this.runtime.solverLocked;
       this._particleBodyMesh.visible = true;
     }
-    this.object.visible = true;
   }
 
   dispose() {

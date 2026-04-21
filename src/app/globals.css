@@ -33,8 +33,6 @@
   /* Architectural edge seam color */
   --seam-light: rgba(247, 241, 231, 0.12);
   --seam-warm: rgba(255, 200, 140, 0.08);
-  --rotation-duration: 1900ms;
-  --rotation-ease: cubic-bezier(0.76, 0, 0.18, 1);
   /* Material families — per surface identity */
   --mat-graphite: hsl(220, 4%, 11%);
   --mat-obsidian: hsl(230, 5%, 7%);
@@ -620,40 +618,11 @@ select {
   opacity: 0.58;
 }
 
-/* ── Room shell: cube rotation & source visibility (no `.back-*` UI; those stay in legacy) ─ */
+/* ── Room shell: source-only layout (back wall UI: `legacy-room-choreography.css`) ─ */
 
 .site-root[data-front-interactive="false"] .cube-face-front,
 .site-root[data-front-interactive="false"] .front-source,
 .site-root[data-front-interactive="false"] .front-flow-host {
-  pointer-events: none;
-}
-
-.site-root[data-room-phase="rotating"] .cube {
-  animation: chamber-rotate var(--rotation-duration) var(--rotation-ease) forwards;
-  will-change: transform;
-}
-
-.site-root[data-room-phase="backface"] .cube,
-.site-root[data-room-phase="interface"] .cube {
-  transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
-}
-
-.site-root[data-room-phase="rotating"] .front-source {
-  opacity: 1;
-  filter: none;
-  pointer-events: none;
-}
-
-.site-root[data-room-phase="rotating"] .front-flow-host,
-.site-root[data-room-phase="rotating"] .front-engine-fallback,
-.site-root[data-room-phase="rotating"] .front-source-host {
-  opacity: 1;
-  pointer-events: none;
-}
-
-.site-root[data-room-phase="backface"] .front-source,
-.site-root[data-room-phase="interface"] .front-source {
-  opacity: 0;
   pointer-events: none;
 }
 
@@ -681,24 +650,192 @@ select {
   transition: opacity 0.3s ease-out;
 }
 
-@keyframes chamber-rotate {
-  0% {
-    transform: rotateY(0deg) translateX(0vw) translateZ(0vw);
-  }
-
-  34% {
-    transform: rotateY(-84deg) translateX(calc(var(--cube-depth) * -0.5))
-      translateZ(calc(var(--cube-depth) * 0.46));
-  }
-
-  56% {
-    transform: rotateY(-90deg) translateX(calc(var(--cube-depth) * -0.5))
-      translateZ(calc(var(--cube-depth) * 0.5));
-  }
-
-  100% {
-    transform: rotateY(-180deg) translateX(0vw) translateZ(var(--cube-depth));
-  }
+/* Post-enter: Enter affordance (removed once sequence starts). */
+.chamber-enter-wrap {
+  position: absolute;
+  inset-inline: 0;
+  bottom: clamp(0.65rem, 2.2vh, 1.1rem);
+  display: flex;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 8;
 }
 
-/* Backface panels / hero / scroll chrome: `legacy-room-choreography.css` (optional). */
+.chamber-enter-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(214, 168, 118, 0.45);
+  color: rgba(250, 236, 216, 0.92);
+  background: rgba(12, 10, 8, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.chamber-enter-btn:hover {
+  border-color: rgba(247, 206, 150, 0.65);
+  color: #fff7eb;
+}
+
+/* ── Post-enter sequence (handbook v3, withdrawal architecture) ─────────
+   Stage flow: none → impact → cool → withdraw → quiet → push_in →
+   page_lock → hero. Camera leads the reframe; CSS completes the page
+   lock late. Hero UI gated by `heroAllowed` truth chain (emitted as
+   stage === "hero"). */
+
+/* Back-wall spatial authority (readable hierarchy, not UI interact):
+   set from `quiet` onward — separate from `data-back-interface-ready`. */
+.site-root[data-room-phase="source"][data-backwall-authority="true"]
+  .back-chrome,
+.site-root[data-room-phase="source"][data-backwall-authority="true"]
+  .back-scroll {
+  color: rgba(252, 244, 228, 0.94);
+  text-shadow: 0 1px 14px rgba(8, 6, 4, 0.45);
+}
+
+/* Scene presence (NOT UI): back-wall media/haze become present starting
+   at `quiet`. The front canvas is already empty by then, so the back
+   wall is readable through it — no dimension change yet. */
+.site-root[data-room-phase="source"][data-post-enter-stage="quiet"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-post-enter-stage="quiet"]
+  .back-scene-haze,
+.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
+  .back-scene-haze,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .back-scene-haze,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .back-scene-haze {
+  opacity: 1;
+  transition: opacity 0.6s ease;
+}
+
+/* Front face fade starts at `push_in`: camera dolly + canvas fade land
+   together so the back wall reads through without a flatten yet. */
+.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
+  .cube-face-front,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .cube-face-front,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .cube-face-front {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Dimension reframe — ONLY at `page_lock` / `hero`, after camera arrived.
+   The CSS variable cascade drives `.chamber-stage`, `.cube`,
+   `.cube-face-back`, and back-surface insets. */
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"],
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"] {
+  --cube-width: 100vw;
+  --cube-height: 100vh;
+  --backwall-seat-top: 0px;
+  --backwall-seat-side: 0px;
+  --backwall-seat-bottom: 0px;
+}
+
+/* Transitions scoped to the active sequence so they don't fire on load. */
+.site-root[data-post-enter-active="true"] .chamber-stage,
+.site-root[data-post-enter-active="true"] .cube,
+.site-root[data-post-enter-active="true"] .cube-face-back,
+.site-root[data-post-enter-active="true"] .cube-face-front {
+  transition:
+    width 0.6s ease,
+    height 0.6s ease,
+    opacity 0.5s ease;
+}
+
+/* Flatten the 3D hierarchy only after the camera has arrived. Without
+   this, the back face stays at translateZ(-cube-depth) rotateY(180deg)
+   and projects smaller than the viewport. */
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .cube-wrapper,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .cube-wrapper {
+  perspective: none;
+  overflow: visible;
+}
+
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"] .cube,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"] .cube {
+  transform-style: flat;
+  transform: none;
+}
+
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .cube-face-back,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .cube-face-back {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  backface-visibility: visible;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Side / top / bottom faces release once the frame yields. */
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .cube-face-left,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .cube-face-right,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .cube-face-top,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .cube-face-bottom,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .cube-face-left,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .cube-face-right,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .cube-face-top,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .cube-face-bottom {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Back-surface interactivity unlocks once the back wall takes authority. */
+.site-root[data-room-phase="source"][data-back-interface-ready="true"]
+  .cube-face-back,
+.site-root[data-room-phase="source"][data-back-interface-ready="true"]
+  .back-surface {
+  pointer-events: auto;
+}
+
+/* Hero beat — chrome + hero type + scroll unlock. Gated by `hero` stage,
+   which the truth chain emits only after withdrawalDone + quietLocked +
+   cameraArrived + pageLocked. */
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .back-chrome {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.4s ease 0s;
+}
+
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .back-hero {
+  opacity: 1;
+  transition: opacity 0.5s ease 0.35s;
+}
+
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .back-scroll {
+  pointer-events: auto;
+  transition: opacity 0.4s ease 0.6s;
+}
+
+/* Backface panels / hero / scroll chrome structural layout:
+   `legacy-room-choreography.css`. */

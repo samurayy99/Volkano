@@ -1,6 +1,6 @@
 /**
- * Backface UI + reveal choreography: `.back-*`, back-wall phase animations, responsive,
- * reduced-motion. Cube rotation / front pointer / source shell gates live in `globals.css`.
+ * Backface UI: `.back-*` hero wall, responsive layout, reduced-motion overrides.
+ * Source-chamber shell / pointer gates live in `globals.css`.
  */
 
 /* ── Backface / hero wall ───────────────────────────────────────────────── */
@@ -246,7 +246,7 @@
   background: rgba(247, 241, 231, 0.14);
 }
 
-/* ── Backface phase gates (cube / front shell: see globals.css) ─────────── */
+/* Source layout: hide decorative back-plate layers (see `globals.css` room phase). */
 
 .site-root[data-room-phase="source"] .back-scene-media {
   opacity: 0;
@@ -256,72 +256,34 @@
   opacity: 0;
 }
 
-.site-root[data-room-phase="rotating"] .back-chrome,
-.site-root[data-room-phase="rotating"] .back-hero {
-  animation: hero-copy-reveal var(--rotation-duration) linear forwards;
-}
-
-.site-root[data-room-phase="backface"] .back-chrome,
-.site-root[data-room-phase="interface"] .back-chrome {
+/* Post-enter stages: re-show decorative back layers once matter has
+   withdrawn (`quiet` onward), while `data-room-phase` stays `source`. */
+.site-root[data-room-phase="source"][data-post-enter-stage="quiet"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .back-scene-media,
+.site-root[data-room-phase="source"][data-back-interface-ready="true"]
+  .back-scene-media {
   opacity: 1;
+  transition: opacity 0.6s ease;
 }
 
-.site-root[data-room-phase="backface"] .back-hero {
-  animation: hero-wall-land var(--hero-land-duration) ease-out forwards;
-}
-
-.site-root[data-room-phase="interface"] .back-hero {
+.site-root[data-room-phase="source"][data-post-enter-stage="quiet"]
+  .back-scene-haze,
+.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
+  .back-scene-haze,
+.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
+  .back-scene-haze,
+.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
+  .back-scene-haze,
+.site-root[data-room-phase="source"][data-back-interface-ready="true"]
+  .back-scene-haze {
   opacity: 1;
-  transform: translateY(0);
-}
-
-.site-root[data-room-phase="interface"] .back-scroll {
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 241, 231, 0.16) transparent;
-}
-
-.site-root[data-back-interactive="false"] .cube-face-back,
-.site-root[data-back-interactive="false"] .back-scroll {
-  pointer-events: none;
-}
-
-.site-root[data-back-interactive="true"] .cube-face-back,
-.site-root[data-back-interactive="true"] .back-scroll {
-  pointer-events: auto;
-}
-
-.site-root[data-back-interactive="true"] .back-scroll {
-  overflow: auto;
-}
-
-.site-root[data-back-interactive="false"] .back-scroll {
-  overflow: hidden;
-}
-
-/* ── Animations (backface only; `chamber-rotate` in globals.css) ───────── */
-
-@keyframes hero-copy-reveal {
-  0%,
-  70% {
-    opacity: 0;
-  }
-
-  88%,
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes hero-wall-land {
-  0% {
-    opacity: 0;
-    transform: translateY(1.2rem);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  transition: opacity 0.6s ease;
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */

@@ -1,146 +1,71 @@
 "use client";
 
 import {
-  type AnimationEvent as ReactAnimationEvent,
-  type CSSProperties,
-  type RefObject,
+  useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
-import {
-  ConvergenceTrigger,
-  createConvergenceController,
-  createConvergenceEngineBridge,
-  getSourceInteractive,
-  type ConvergenceController,
-} from "../convergence";
 import { FlowEngineHost } from "../flow-engine";
 import type {
   FlowEngineApi,
-  FlowEngineFrontRailMetrics,
+  PostEnterDebugSnapshot,
+  PostEnterStage,
 } from "../flow-engine/types";
 
-type RoomPhase = "source" | "rotating" | "backface" | "interface";
-const ROOM_ROTATION_DURATION_MS = 1900;
-const ROOM_BACKFACE_SETTLE_DURATION_MS = 600;
-const TRIGGER_HEIGHT_RATIO = 0.72;
-const TRIGGER_WIDTH_RATIO = 0.115;
-const TRIGGER_VERTICAL_BIAS_RATIO = 0.02;
-const ROOM_TIMING_STYLE: CSSProperties = {
-  "--rotation-duration": `${ROOM_ROTATION_DURATION_MS}ms`,
-  "--hero-land-duration": `${ROOM_BACKFACE_SETTLE_DURATION_MS}ms`,
-} as CSSProperties;
+/** Chamber always reads as the same room; post-enter uses `data-post-enter-*` only. */
+const ROOM_PHASE = "source" as const;
 
 export function SpatialChamber() {
   const reducedMotion = useReducedMotionPreference();
-  const backScrollRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const engineBridgeRef = useRef<ReturnType<
-    typeof createConvergenceEngineBridge
-  > | null>(null);
-  const [controller] = useState<ConvergenceController>(() =>
-    createConvergenceController(),
-  );
+  const engineApiRef = useRef<FlowEngineApi | null>(null);
+  const postEnterStageRef = useRef<PostEnterStage>("none");
   const [engineFailed, setEngineFailed] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
-  const snapshot = useSyncExternalStore(
-    controller.subscribe,
-    controller.getSnapshot,
-    controller.getSnapshot,
-  );
-  const [roomPhase, setRoomPhase] = useState<RoomPhase>("source");
-  const roomFrameRef = useRef<number | null>(null);
-  const roomPhaseStartedAtRef = useRef(0);
-  const roomPhaseRef = useRef<RoomPhase>("source");
-  roomPhaseRef.current = roomPhase;
+  const [postEnterStage, setPostEnterStage] = useState<PostEnterStage>("none");
+  const postEnterActive = postEnterStage !== "none";
 
-  const isFrontPointerActive =
-    !reducedMotion &&
-    roomPhase === "source" &&
-    getSourceInteractive(snapshot);
-  const isBackPointerActive = roomPhase === "interface";
   const shouldMountEngine = !reducedMotion && !engineFailed;
-  /** Without this, `.chamber-stage` stays opacity:0 until WebGPU `onReady` — hangs, no-GPU, or failed init never call `onReady`. */
-  const sourceShellVisible =
-    roomPhase === "source" && (engineReady || !shouldMountEngine);
-
+  const isFrontPointerActive =
+    !reducedMotion && shouldMountEngine && !postEnterActive;
   /**
-   * Keep engine convergence in sync with the controller. Uses `controller.getSnapshot()`
-   * (not render `snapshot`) so we never send a stale progress when the bridge attaches late.
-   * `engineReady` is a dep so we re-sync once the bridge exists even if progress did not change.
+   * Keep `.chamber-stage` visible after WebGPU `onReady`, when the engine is intentionally off
+   * (reduced motion / failed init), and **during post-enter** so a transient `onError` (e.g.
+   * device loss) does not drop `data-source-shell-visible` and hide the whole cube shell.
    */
-  useEffect(() => {
-    engineBridgeRef.current?.sync(controller.getSnapshot());
-  }, [snapshot, engineReady, controller]);
+  const sourceShellVisible =
+    engineReady || !shouldMountEngine || postEnterActive;
+
+  const postEnterDebugHandler =
+    process.env.NODE_ENV === "development"
+      ? (snap: PostEnterDebugSnapshot) => {
+          console.debug("[volkano post-enter]", snap);
+        }
+      : undefined;
+
+  const backwallAuthority =
+    postEnterStage === "quiet" ||
+    postEnterStage === "push_in" ||
+    postEnterStage === "page_lock" ||
+    postEnterStage === "hero";
+
+  const setPostEnterStageTracked = useCallback((stage: PostEnterStage) => {
+    postEnterStageRef.current = stage;
+    setPostEnterStage(stage);
+  }, []);
 
   useEffect(() => {
-    if (snapshot.progress < 100 && roomPhase !== "source") {
-      roomPhaseStartedAtRef.current = 0;
-      setRoomPhase("source");
-    }
-  }, [roomPhase, snapshot.progress]);
-
-  /** Backface → interface only (rotation end is tied to CSS `chamber-rotate` end, not wall-clock RAF). */
-  useEffect(() => {
-    if (roomFrameRef.current != null) {
-      window.cancelAnimationFrame(roomFrameRef.current);
-      roomFrameRef.current = null;
-    }
-
-    if (roomPhase !== "backface") {
-      return;
-    }
-
-    const phaseStartedAt =
-      roomPhaseStartedAtRef.current > 0
-        ? roomPhaseStartedAtRef.current
-        : performance.now();
-    roomPhaseStartedAtRef.current = phaseStartedAt;
-
-    const tick = (now: number) => {
-      const elapsed = now - phaseStartedAt;
-
-      if (elapsed >= ROOM_BACKFACE_SETTLE_DURATION_MS) {
-        roomPhaseStartedAtRef.current = performance.now();
-        setRoomPhase("interface");
-        roomFrameRef.current = null;
-        return;
-      }
-
-      roomFrameRef.current = window.requestAnimationFrame(tick);
-    };
-
-    roomFrameRef.current = window.requestAnimationFrame(tick);
-    return () => {
-      if (roomFrameRef.current != null) {
-        window.cancelAnimationFrame(roomFrameRef.current);
-        roomFrameRef.current = null;
-      }
-    };
-  }, [roomPhase]);
-
-  useEffect(() => {
-    const scrollNode = backScrollRef.current;
-    if (!scrollNode || roomPhase === "source") return;
-
-    const frameId = window.requestAnimationFrame(() => {
-      scrollNode.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [roomPhase]);
+    engineApiRef.current?.setInteractiveEnabled(shouldMountEngine);
+  }, [engineReady, shouldMountEngine]);
 
   useEffect(() => {
     const el = rootRef.current;
     if (!el || reducedMotion) return;
 
     const handler = (event: PointerEvent) => {
-      if (!isFrontPointerActive || roomPhase !== "source") return;
+      if (!isFrontPointerActive) return;
       const nx = event.clientX / window.innerWidth - 0.5;
       const ny = event.clientY / window.innerHeight - 0.5;
       el.style.setProperty("--mouse-x", nx.toFixed(3));
@@ -149,20 +74,28 @@ export function SpatialChamber() {
 
     el.addEventListener("pointermove", handler, { passive: true });
     return () => el.removeEventListener("pointermove", handler);
-  }, [isFrontPointerActive, reducedMotion, roomPhase]);
+  }, [isFrontPointerActive, reducedMotion]);
 
   return (
     <div
       className="site-root"
       ref={rootRef}
-      style={ROOM_TIMING_STYLE}
-      data-room-phase={roomPhase}
+      data-room-phase={ROOM_PHASE}
       data-front-interactive={isFrontPointerActive ? "true" : "false"}
-      data-back-interactive={isBackPointerActive ? "true" : "false"}
+      data-post-enter-active={postEnterActive ? "true" : undefined}
+      data-post-enter-stage={
+        postEnterStage === "none" ? undefined : postEnterStage
+      }
+      data-back-interface-ready={
+        postEnterStage === "page_lock" || postEnterStage === "hero"
+          ? "true"
+          : undefined
+      }
+      data-backwall-authority={backwallAuthority ? "true" : undefined}
       data-engine-ready={engineReady ? "true" : undefined}
       data-source-shell-visible={sourceShellVisible ? "true" : undefined}
       data-volkano-flow={
-        !shouldMountEngine
+        reducedMotion
           ? "engine-off-reduced-motion"
           : engineFailed
             ? "engine-failed"
@@ -174,46 +107,40 @@ export function SpatialChamber() {
       <div className="cube-wrapper">
         <div className="chamber-stage">
           <div className="chamber-aperture">
-            <div
-              className="cube"
-              onAnimationEnd={(event: ReactAnimationEvent<HTMLDivElement>) => {
-                if (
-                  event.currentTarget !== event.target ||
-                  event.animationName !== "chamber-rotate"
-                ) {
-                  return;
-                }
-                if (roomPhaseRef.current !== "rotating") {
-                  return;
-                }
-                roomPhaseStartedAtRef.current = performance.now();
-                setRoomPhase("backface");
-              }}
-            >
+            <div className="cube">
               <FrontFace
-                controller={controller}
-                mountEngine={shouldMountEngine && !engineFailed}
-                triggerVisible={
-                  shouldMountEngine &&
-                  !engineFailed &&
-                  roomPhase === "source"
+                engineEnabled={shouldMountEngine}
+                showEnterControl={
+                  engineReady && shouldMountEngine && !postEnterActive
                 }
-                triggerDisabled={roomPhase !== "source"}
+                onEnter={() => {
+                  // First `drivePostEnter(0)` beat is always `impact`; keep ref in sync before
+                  // the next paint so a same-tick engine error does not unmount the host.
+                  postEnterStageRef.current = "impact";
+                  engineApiRef.current?.beginPostEnter();
+                }}
                 onEngineReady={(api) => {
-                  engineBridgeRef.current = createConvergenceEngineBridge(api);
-                  engineBridgeRef.current.sync(controller.getSnapshot());
+                  engineApiRef.current = api;
+                  api.setInteractiveEnabled(shouldMountEngine);
                   requestAnimationFrame(() => setEngineReady(true));
                 }}
-                onRotationReady={() => {
-                  roomPhaseStartedAtRef.current = performance.now();
-                  setRoomPhase(reducedMotion ? "interface" : "rotating");
-                }}
-                onEngineError={() => {
+                onEngineError={(err) => {
+                  // Do not unmount FlowEngineHost mid-sequence: bridge `catch` would drop the
+                  // canvas and leave only `.front-engine-fallback` (reads as “black / no chamber”).
+                  if (postEnterStageRef.current !== "none") {
+                    console.error(
+                      "[SpatialChamber] engine error during post-enter",
+                      err,
+                    );
+                    return;
+                  }
                   setEngineFailed(true);
                 }}
+                onPostEnterStageChange={setPostEnterStageTracked}
+                onPostEnterDebugSnapshot={postEnterDebugHandler}
               />
 
-              <BackFace scrollRef={backScrollRef} />
+              <BackFace />
               <WallFace className="cube-face cube-face-left" />
               <WallFace className="cube-face cube-face-right" />
               <WallFace className="cube-face cube-face-top" />
@@ -227,146 +154,59 @@ export function SpatialChamber() {
 }
 
 function FrontFace({
-  controller,
-  mountEngine,
-  triggerVisible,
-  triggerDisabled,
+  engineEnabled,
+  showEnterControl,
+  onEnter,
   onEngineReady,
-  onRotationReady,
   onEngineError,
+  onPostEnterStageChange,
+  onPostEnterDebugSnapshot,
 }: {
-  controller: ConvergenceController;
-  mountEngine: boolean;
-  triggerVisible: boolean;
-  triggerDisabled: boolean;
+  /** WebGPU host mounted and pointer gating follows this flag. */
+  engineEnabled: boolean;
+  showEnterControl: boolean;
+  onEnter: () => void;
   onEngineReady: (api: FlowEngineApi) => void;
-  onRotationReady: () => void;
   onEngineError: (error: unknown) => void;
+  onPostEnterStageChange?: (stage: PostEnterStage) => void;
+  onPostEnterDebugSnapshot?: (snapshot: PostEnterDebugSnapshot) => void;
 }) {
-  const triggerAnchorRef = useRef<HTMLDivElement | null>(null);
-  const latestTriggerMetricsRef = useRef<FlowEngineFrontRailMetrics | null>(
-    null,
-  );
-  const triggerAnchorReadyRef = useRef(false);
-  const [triggerAnchorReady, setTriggerAnchorReady] = useState(false);
-
-  useLayoutEffect(() => {
-    if (!triggerAnchorReady) {
-      return;
-    }
-
-    writeFrontRailAnchorStyle(
-      triggerAnchorRef.current,
-      latestTriggerMetricsRef.current,
-    );
-  }, [triggerAnchorReady]);
-
   return (
     <section className="cube-face cube-face-front" aria-label="Source chamber">
       <div className="front-source">
         <div className="front-source-host">
-          {mountEngine ? (
+          {engineEnabled ? (
             <FlowEngineHost
               className="flow-engine-host front-flow-host"
-              syncConvergenceFromHost={() => {
-                const snap = controller.getSnapshot();
-                return {
-                  progress: snap.progress,
-                  interactiveEnabled: getSourceInteractive(snap),
-                };
-              }}
+              syncInteractiveFromHost={() => ({
+                interactiveEnabled: engineEnabled,
+              })}
+              onPostEnterStageChange={onPostEnterStageChange}
+              onPostEnterDebugSnapshot={onPostEnterDebugSnapshot}
               onReady={onEngineReady}
-              onFrontRailMetricsChange={(metrics) => {
-                latestTriggerMetricsRef.current = metrics;
-                writeFrontRailAnchorStyle(triggerAnchorRef.current, metrics);
-
-                if (!triggerAnchorReadyRef.current) {
-                  triggerAnchorReadyRef.current = true;
-                  setTriggerAnchorReady(true);
-                }
-              }}
-              onRotationReady={onRotationReady}
               onError={onEngineError}
             />
           ) : (
             <div className="front-engine-fallback" aria-hidden="true" />
           )}
-          {mountEngine && triggerAnchorReady ? (
-            <div
-              ref={triggerAnchorRef}
-              className="front-trigger-anchor"
-              aria-hidden={triggerVisible ? undefined : true}
-            >
-              <ConvergenceTrigger
-                controller={controller}
-                visible={triggerVisible}
-                disabled={triggerDisabled}
-              />
-            </div>
-          ) : null}
         </div>
+        {showEnterControl ? (
+          <div className="chamber-enter-wrap">
+            <button
+              type="button"
+              className="chamber-enter-btn"
+              onClick={onEnter}
+            >
+              Enter
+            </button>
+          </div>
+        ) : null}
       </div>
     </section>
   );
 }
 
-function getFrontRailAnchorGeometry(metrics: FlowEngineFrontRailMetrics) {
-  const railWidth = Math.max(metrics.width, 1);
-  const railHeight = Math.max(metrics.height, 1);
-  const unclampedHeight = railHeight * TRIGGER_HEIGHT_RATIO;
-  const moduleHeight = clampNumber(
-    unclampedHeight,
-    18,
-    46,
-  );
-  const moduleWidth = clampNumber(
-    railWidth * TRIGGER_WIDTH_RATIO,
-    moduleHeight * 2.35,
-    railWidth * 0.16,
-  );
-  const centerY = metrics.centerY + railHeight * TRIGGER_VERTICAL_BIAS_RATIO;
-  const fontSize = clampNumber(moduleWidth * 0.095, 7.5, 12.5);
-  const letterSpacing = clampNumber(moduleWidth * 0.028, 1.5, 3.2);
-
-  return {
-    left: `${metrics.centerX}px`,
-    top: `${centerY}px`,
-    moduleWidth: `${moduleWidth}px`,
-    moduleHeight: `${moduleHeight}px`,
-    fontSize: `${fontSize}px`,
-    letterSpacing: `${letterSpacing}px`,
-  };
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function writeFrontRailAnchorStyle(
-  node: HTMLDivElement | null,
-  metrics: FlowEngineFrontRailMetrics | null,
-) {
-  if (!node || !metrics) {
-    return;
-  }
-
-  const geometry = getFrontRailAnchorGeometry(metrics);
-
-  node.style.left = geometry.left;
-  node.style.top = geometry.top;
-  node.style.width = "0px";
-  node.style.height = "0px";
-  node.style.setProperty("--trigger-module-width", geometry.moduleWidth);
-  node.style.setProperty("--trigger-module-height", geometry.moduleHeight);
-  node.style.setProperty("--trigger-label-size", geometry.fontSize);
-  node.style.setProperty("--trigger-label-spacing", geometry.letterSpacing);
-}
-
-function BackFace({
-  scrollRef,
-}: {
-  scrollRef: RefObject<HTMLDivElement | null>;
-}) {
+function BackFace() {
   return (
     <section
       className="cube-face cube-face-back"
@@ -386,7 +226,7 @@ function BackFace({
           </a>
         </header>
 
-        <div className="back-scroll" ref={scrollRef}>
+        <div className="back-scroll">
           <section className="back-hero">
             <h2>Built under pressure.</h2>
           </section>

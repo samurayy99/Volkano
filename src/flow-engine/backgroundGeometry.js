@@ -98,6 +98,7 @@ class BackgroundGeometry {
   frameMaterial = null;
   linerMaterial = null;
   backWallMaterial = null;
+  backWall = null;
   backPlateMaterial = null;
   backPlate = null;
   interiorWallMaterials = [];
@@ -183,8 +184,7 @@ class BackgroundGeometry {
       this.backWallMaterial.emissiveIntensity = backWallBase + response * 0.006;
     }
     if (this.backPlateMaterial) {
-      // The back plate becomes the later hero/UI surface; do not fade it out
-      // during post-enter just because particles are clearing away.
+      // Back plate stays a stable hero read; opacity is fixed (not driven by sim state).
       this.backPlateMaterial.opacity = BACK_PLATE_SOURCE_OPACITY;
     }
   }
@@ -478,6 +478,7 @@ class BackgroundGeometry {
       ),
     );
     backWall.position.set(0, 0, backWallZ);
+    this.backWall = backWall;
 
     const backPlate = new THREE.Mesh(
       new THREE.PlaneGeometry(apertureWidth, apertureHeight),
@@ -530,6 +531,7 @@ class BackgroundGeometry {
     this.frameMaterial = null;
     this.linerMaterial = null;
     this.backWallMaterial = null;
+    this.backWall = null;
     this.backPlateMaterial = null;
     this.backPlate = null;
     this.interiorWallMaterials = [];

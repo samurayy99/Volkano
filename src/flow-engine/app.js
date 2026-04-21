@@ -5,31 +5,37 @@ import { Lights } from "./lights";
 import { float, Fn, mrt, output, pass, vec4 } from "three/tsl";
 import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
-import { IDLE_POST_ENTER_DERIVED } from "./post-enter/PostEnterDirector";
-import {
-  buildPostEnterPlacementBasis,
-  POST_ENTER_FREEZE_SPACE_FRAC,
-} from "./post-enter/postEnterChamberBasis";
-import {
-  buildPostEnterImageTargetField,
-  POST_ENTER_APPARITION_IMAGE_URL,
-} from "./post-enter/postEnterImageTargetField.js";
-import { PostEnterApparitionLayer } from "./post-enter/PostEnterApparitionLayer.js";
 import BackgroundGeometry from "./backgroundGeometry";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { PREENTER_VESSEL } from "./vesselDescriptors";
+import {
+  ARREST_BLOOM_SPIKE,
+  ARREST_EXPOSURE_DIP,
+  ARREST_EXPOSURE_PEAK,
+  ARREST_FLASH_DURATION,
+  ARREST_RIFT_BOOST,
+  AUTHORITY_EXPOSURE_LIFT,
+  buildPostEnterFreezeSpaceContext,
+  POST_ENTER_COOLED_LOOK,
+  PUSH_IN_DISTANCE,
+  runPostEnterDrive,
+} from "./post-enter/postEnterDrive.js";
+import { createHeroVVisualShell } from "./post-enter/heroVVisualShell.js";
 
 const HDRI_URL = "/flow-assets/autumn_field_puresky_1k.hdr";
 const MOBILE_BREAKPOINT = 768;
+
 const SOURCE_RADIUS_SCALE = Object.freeze({
   primary: 0.82,
   secondary: 0.88,
 });
+
+/** Single source for baseline scene look (tone + bloom + HDRI). Authority post-enter lerps exposure/bloom from here. */
 const DEFAULT_LOOK = Object.freeze({
   environmentIntensity: 0.22,
-  exposure: 0.58,
+  exposure: 0.56,
   bloomThreshold: 0.12,
-  bloomStrength: 0.2,
+  bloomStrength: 0.16,
   bloomRadius: 0.46,
 });
 
@@ -61,6 +67,7 @@ const INITIAL_SOURCE_RUNTIME = Object.freeze({
 
 const deriveParticleMetrics = ({ particles, size, density }) => {
   const level = Math.max(particles / 8192, 1);
+
   return {
     actualSize: (1.6 / Math.pow(level, 1 / 3)) * size,
     restDensity: 0.25 * level * density,
@@ -72,6 +79,7 @@ const createRuntimeState = (width = window.innerWidth) => {
     width < MOBILE_BREAKPOINT
       ? BASE_RUNTIME_DEFAULTS.particlesMobile
       : BASE_RUNTIME_DEFAULTS.particlesDesktop;
+
   const derived = deriveParticleMetrics({
     particles,
     size: BASE_RUNTIME_DEFAULTS.size,
@@ -93,10 +101,6 @@ const createRuntimeState = (width = window.innerWidth) => {
     actualSize: derived.actualSize,
     restDensity: derived.restDensity,
     sourceRadiusScale: SOURCE_RADIUS_SCALE,
-    convergenceSlowdown: 0,
-    convergenceFreeze: 0,
-    convergenceHeatRetention: 0,
-    convergenceThermalExtinction: 0,
     ventCenter: new THREE.Vector3(...INITIAL_SOURCE_RUNTIME.ventCenter),
     ventRadii: new THREE.Vector3(...INITIAL_SOURCE_RUNTIME.ventRadii),
     ventAxis: new THREE.Vector3(...INITIAL_SOURCE_RUNTIME.ventAxis).normalize(),
@@ -117,8 +121,52 @@ const createRuntimeState = (width = window.innerWidth) => {
     ),
     maxParticles: width < MOBILE_BREAKPOINT ? 8192 * 8 : 8192 * 16,
     simSubsteps: 1,
+
+    // Arrest runtime
+    solverLocked: false,
+    bodyScaleMul: 1,
+    authoredDirectionWeight: 0,
+    heroBodyWeight: 0,
+    compressT: 0,
+    coolT: 0,
+    /** Effective MLS source radii multiplier (Field Dominance surrender tapers feed). */
+    postEnterSourceRadiusMul: 1,
+    convergenceSlowdown: 0,
+    convergenceFreeze: 0,
+    convergenceHeatRetention: 0,
+    convergenceThermalExtinction: 0,
+    freezeCenter: null,
+    freezeBoundsMin: null,
+    freezeBoundsMax: null,
+    chamberBoundsMin: null,
+    chamberBoundsMax: null,
+
+    // Future claim runtime
+    extractionT: 0,
+    massDimT: 0,
+    thinT: 0,
+    withdrawT: 0,
+    opacityT: 0,
+    backBiasT: 0,
+    returnBodyWeight: 0,
+    recallLateralWeight: 0,
+    recallVerticalWeight: 0,
+    settleWeight: 0,
+    settleDissolveUnlocked: 1,
+
+    // Future handoff runtime
+    authorityLightT: 0,
+    pushInT: 0,
+    pageLockT: 0,
+    heroT: 0,
+
+    /** Late-branch visual handoff (M1): shell opacity ramp; surrender inactive until M2. */
+    shellClaimT: 0,
+    particleSurrenderT: 0,
   };
 };
+
+/** Post-enter sequencing and freeze-space math live in `./post-enter/postEnterDrive.js`. */
 
 const loadHdrTexture = async (file) => {
   const texture = await new Promise((resolve) => {
@@ -127,6 +175,7 @@ const loadHdrTexture = async (file) => {
       resolve(result);
     });
   });
+
   return texture;
 };
 
@@ -134,25 +183,30 @@ class App {
   renderer = null;
 
   camera = null;
-
-  /** @type {number} */
-  _viewportWidth = 0;
-  /** @type {number} */
-  _viewportHeight = 0;
-
   scene = null;
   environmentTexture = null;
 
   lights = null;
   backgroundGeometry = null;
+  mlsMpmSim = null;
+  particleRenderer = null;
+  postProcessing = null;
+  bloomPass = null;
+
+  raycaster = null;
+  plane = null;
+
   pointerNdc = new THREE.Vector2();
   pointerIntersect = new THREE.Vector3();
+
   sourceFieldAnchorOffsets = null;
   startupSourceFieldAnchorOffsets = null;
+
   sourceAnchorScales = {
     idlePrimary: new THREE.Vector3(0.78, 0.82, 0.7),
     idleSecondary: new THREE.Vector3(0.38, 0.62, 0.4),
   };
+
   sourceAnchorScratch = {
     ventCenter: new THREE.Vector3(),
     ventAxis: new THREE.Vector3(),
@@ -160,31 +214,319 @@ class App {
     upPoint: new THREE.Vector3(),
     axisPoint: new THREE.Vector3(),
     worldOffsetPoint: new THREE.Vector3(),
-    worldProjectPoint: new THREE.Vector3(),
   };
+
   runtime = null;
 
-  /** @type {Awaited<ReturnType<typeof buildPostEnterImageTargetField>> | null} */
-  postEnterImageTargetField = null;
+  postEnterDriveActive = false;
 
-  /** When true, lazy M1 build failed; do not spin every frame. */
-  _postEnterImageTargetFieldBuildFailed = false;
+  postEnterFlags = {
+    solverLocked: false,
+    freezeSnapshotReady: false,
+    withdrawalDone: false,
+    quietLocked: false,
+    cameraArrived: false,
+    pageLocked: false,
+    heroAllowed: false,
+  };
 
-  /** Dedupes concurrent target-field builds; avoids stacking awaits in `update`. */
-  _postEnterTargetFieldBuildPromise = null;
+  quietElapsed = 0;
+  lastPostEnterElapsed = 0;
+  cameraBaselineZ = null;
 
-  /** Bumped on `resetPostEnterState` so late async builds do not repopulate after reset. */
-  _postEnterTargetFieldGeneration = 0;
+  pushInStartTime = null;
+  pageLockStartTime = null;
+  heroStartTime = null;
+  postEnterSolverLockTime = null;
 
-  /** @type {import("./post-enter/PostEnterApparitionLayer.js").PostEnterApparitionLayer | null} */
-  postEnterApparitionLayer = null;
+  /** @type {null | ReturnType<typeof createHeroVVisualShell>} */
+  heroVVisualShell = null;
+
+  /** @type {THREE.Object3D | null} */
+  heroVShellAnchorRoot = null;
+
+  _lastPostEnterStageReturned = "none";
+  _lastDrivePostEnterElapsed = 0;
+  _arrestFlashApplied = false;
+
+  postEnterFreezeSnapshot = null;
 
   constructor(renderer) {
     this.renderer = renderer;
   }
 
+  resetPostEnterRuntimeChannels() {
+    if (!this.runtime) return;
+
+    // Arrest runtime
+    this.runtime.solverLocked = false;
+    this.runtime.bodyScaleMul = 1;
+    this.runtime.authoredDirectionWeight = 0;
+    this.runtime.heroBodyWeight = 0;
+    this.runtime.compressT = 0;
+    this.runtime.coolT = 0;
+    this.runtime.postEnterSourceRadiusMul = 1;
+    this.runtime.convergenceFreeze = 0;
+    this.runtime.convergenceSlowdown = 0;
+    this.runtime.convergenceHeatRetention = 0;
+    this.runtime.convergenceThermalExtinction = 0;
+    this.runtime.freezeCenter = null;
+    this.runtime.freezeBoundsMin = null;
+    this.runtime.freezeBoundsMax = null;
+    this.runtime.chamberBoundsMin = null;
+    this.runtime.chamberBoundsMax = null;
+
+    // Future claim runtime
+    this.runtime.extractionT = 0;
+    this.runtime.massDimT = 0;
+    this.runtime.thinT = 0;
+    this.runtime.withdrawT = 0;
+    this.runtime.opacityT = 0;
+    this.runtime.backBiasT = 0;
+    this.runtime.returnBodyWeight = 0;
+    this.runtime.recallLateralWeight = 0;
+    this.runtime.recallVerticalWeight = 0;
+    this.runtime.settleWeight = 0;
+    this.runtime.settleDissolveUnlocked = 0;
+
+    // Future handoff runtime
+    this.runtime.authorityLightT = 0;
+    this.runtime.pushInT = 0;
+    this.runtime.pageLockT = 0;
+    this.runtime.heroT = 0;
+    this.runtime.shellClaimT = 0;
+    this.runtime.particleSurrenderT = 0;
+  }
+
+  clearPostEnterFreezeSnapshot() {
+    this.postEnterFreezeSnapshot = null;
+    this.particleRenderer?.clearFreezeSnapshot?.();
+
+    if (!this.runtime) return;
+    this.runtime.freezeCenter = null;
+    this.runtime.freezeBoundsMin = null;
+    this.runtime.freezeBoundsMax = null;
+    this.runtime.chamberBoundsMin = null;
+    this.runtime.chamberBoundsMax = null;
+  }
+
+  applyPostEnterFreezeSnapshot(snapshot) {
+    if (!snapshot || !this.runtime) return;
+
+    this.postEnterFreezeSnapshot = {
+      center: snapshot.center.clone(),
+      boundsMin: snapshot.boundsMin.clone(),
+      boundsMax: snapshot.boundsMax.clone(),
+    };
+
+    this.runtime.freezeCenter = this.postEnterFreezeSnapshot.center.clone();
+    this.runtime.freezeBoundsMin =
+      this.postEnterFreezeSnapshot.boundsMin.clone();
+    this.runtime.freezeBoundsMax =
+      this.postEnterFreezeSnapshot.boundsMax.clone();
+
+    this.particleRenderer?.setFreezeSnapshot?.(this.postEnterFreezeSnapshot);
+    this.postEnterFlags.freezeSnapshotReady = true;
+  }
+
+  buildPostEnterContext() {
+    return buildPostEnterFreezeSpaceContext(this.particleRenderer);
+  }
+
+  ensurePostEnterFreezeSnapshot() {
+    if (this.postEnterFreezeSnapshot) {
+      return this.postEnterFreezeSnapshot;
+    }
+
+    const context = this.buildPostEnterContext();
+    if (!context?.freezeSpaceSim) {
+      return null;
+    }
+
+    if (this.runtime && context.chamberBoundsSim) {
+      this.runtime.chamberBoundsMin = context.chamberBoundsSim.min.clone();
+      this.runtime.chamberBoundsMax = context.chamberBoundsSim.max.clone();
+    }
+    this.applyPostEnterFreezeSnapshot(context.freezeSpaceSim);
+    return this.postEnterFreezeSnapshot;
+  }
+
+  beginPostEnterDrive() {
+    this.postEnterDriveActive = true;
+
+    this.quietElapsed = 0;
+    this.lastPostEnterElapsed = 0;
+    this.cameraBaselineZ = null;
+
+    this.pushInStartTime = null;
+    this.pageLockStartTime = null;
+    this.heroStartTime = null;
+    this.postEnterSolverLockTime = null;
+
+    this.postEnterFlags.solverLocked = false;
+    this.postEnterFlags.freezeSnapshotReady = false;
+    this.postEnterFlags.withdrawalDone = false;
+    this.postEnterFlags.quietLocked = false;
+    this.postEnterFlags.cameraArrived = false;
+    this.postEnterFlags.pageLocked = false;
+    this.postEnterFlags.heroAllowed = false;
+
+    this._lastPostEnterStageReturned = "none";
+    this._lastDrivePostEnterElapsed = 0;
+    this._forensicPostEnterLogBucket = undefined;
+
+    this.clearPostEnterFreezeSnapshot();
+    this.resetPostEnterRuntimeChannels();
+
+    // Start the isolated arrest proof path; late claim and handoff channels stay reset.
+    this.mlsMpmSim?.scheduleVelocityZero?.();
+    this.mlsMpmSim?.buildHeroBodyTargets?.();
+
+    this.backgroundGeometry?.backPlateMaterial?.color?.setRGB?.(1, 1, 1);
+    this._arrestFlashApplied = false;
+  }
+
+  /**
+   * @param {number} elapsedSec
+   * @returns {"none"|"impact"|"compress"|"hold"|"withdraw"|"quiet"|"push_in"|"page_lock"|"hero"}
+   */
+  drivePostEnter(elapsedSec) {
+    return runPostEnterDrive(this, elapsedSec, {
+      noise: BASE_RUNTIME_DEFAULTS.noise,
+      speed: BASE_RUNTIME_DEFAULTS.speed,
+      gravity: BASE_RUNTIME_DEFAULTS.gravity,
+      stiffness: BASE_RUNTIME_DEFAULTS.stiffness,
+      dynamicViscosity: BASE_RUNTIME_DEFAULTS.dynamicViscosity,
+      apicBlend: BASE_RUNTIME_DEFAULTS.apicBlend,
+      maxVelocity: BASE_RUNTIME_DEFAULTS.maxVelocity,
+    });
+  }
+
+  getPostEnterDebugSnapshot() {
+    if (!this.postEnterDriveActive || !this.runtime) {
+      return null;
+    }
+
+    const rt = this.runtime;
+    const f = this.postEnterFlags;
+
+    return {
+      stage: this._lastPostEnterStageReturned,
+      elapsedSec: this._lastDrivePostEnterElapsed,
+
+      convergenceFreeze: rt.convergenceFreeze ?? 0,
+      heroBodyWeight: rt.heroBodyWeight ?? 0,
+      returnBodyWeight: rt.returnBodyWeight ?? 0,
+      recallLateralWeight: rt.recallLateralWeight ?? 0,
+      recallVerticalWeight: rt.recallVerticalWeight ?? 0,
+      settleWeight: rt.settleWeight ?? 0,
+      settleDissolveUnlocked: rt.settleDissolveUnlocked ?? 0,
+      compressT: rt.compressT ?? 0,
+      shellClaimT: rt.shellClaimT ?? 0,
+      particleSurrenderT: rt.particleSurrenderT ?? 0,
+      coolT: rt.coolT ?? 0,
+      thinT: rt.thinT ?? 0,
+      withdrawT: rt.withdrawT ?? 0,
+      opacityT: rt.opacityT ?? 0,
+      extractionT: rt.extractionT ?? 0,
+      massDimT: rt.massDimT ?? 0,
+      backBiasT: rt.backBiasT ?? 0,
+
+      authorityLightT: rt.authorityLightT ?? 0,
+      pushInT: rt.pushInT ?? 0,
+      pageLockT: rt.pageLockT ?? 0,
+      heroT: rt.heroT ?? 0,
+
+      solverLocked: !!rt.solverLocked,
+      freezeSnapshotReady: !!f.freezeSnapshotReady,
+      withdrawalDone: !!f.withdrawalDone,
+      quietLocked: !!f.quietLocked,
+      cameraArrived: !!f.cameraArrived,
+      pageLocked: !!f.pageLocked,
+      heroAllowed: !!f.heroAllowed,
+    };
+  }
+
+  updateCamera(pushInT) {
+    if (!this.camera) return;
+
+    if (this.cameraBaselineZ === null) {
+      this.cameraBaselineZ = this.camera.position.z;
+    }
+
+    if (pushInT <= 0) return;
+
+    const baselineAbs = Math.abs(this.cameraBaselineZ);
+    const direction = Math.sign(-this.cameraBaselineZ) || 1;
+    const dz = pushInT * PUSH_IN_DISTANCE * baselineAbs * direction;
+
+    this.camera.position.z = this.cameraBaselineZ + dz;
+    this.camera.updateProjectionMatrix();
+  }
+
+  updateAuthorityLight(authorityLightT, heroT) {
+    const exposure =
+      THREE.MathUtils.lerp(
+        DEFAULT_LOOK.exposure,
+        POST_ENTER_COOLED_LOOK.exposure,
+        authorityLightT,
+      ) +
+      AUTHORITY_EXPOSURE_LIFT * heroT;
+
+    const bloomStrength = THREE.MathUtils.lerp(
+      DEFAULT_LOOK.bloomStrength,
+      POST_ENTER_COOLED_LOOK.bloomStrength,
+      authorityLightT,
+    );
+
+    this.setLook({ exposure, bloomStrength });
+  }
+
+  /**
+   * Impact-window exposure/bloom/plate bump (first ~200ms wall-clock after Enter).
+   * Layered on top of setLook(); authority light remains the steady owner afterward.
+   */
+  updateArrestFlash(elapsedSec) {
+    if (elapsedSec >= ARREST_FLASH_DURATION) {
+      if (this._arrestFlashApplied) {
+        this.backgroundGeometry?.backPlateMaterial?.color?.setRGB?.(1, 1, 1);
+        this._arrestFlashApplied = false;
+      }
+      return;
+    }
+
+    this._arrestFlashApplied = true;
+    const t = elapsedSec / ARREST_FLASH_DURATION;
+
+    const gauss = (center, width) =>
+      Math.exp(-Math.pow((t - center) / width, 2));
+
+    const exposurePulse =
+      ARREST_EXPOSURE_PEAK * gauss(0.2, 0.12) +
+      ARREST_EXPOSURE_DIP * gauss(0.6, 0.18);
+    const bloomMult = 1 + ARREST_BLOOM_SPIKE * gauss(0.2, 0.25);
+    const riftBoost = ARREST_RIFT_BOOST * gauss(0.3, 0.1);
+
+    if (this.renderer && Number.isFinite(this.renderer.toneMappingExposure)) {
+      this.renderer.toneMappingExposure += exposurePulse;
+    }
+    if (this.bloomPass?.strength) {
+      this.bloomPass.strength.value *= bloomMult;
+    }
+
+    const plate = this.backgroundGeometry?.backPlateMaterial;
+    if (plate?.color) {
+      plate.color.setRGB(
+        1 + riftBoost,
+        1 + riftBoost * 0.85,
+        1 + riftBoost * 0.55,
+      );
+    }
+  }
+
   createPostProcessingPipeline() {
     const scenePass = pass(this.scene, this.camera);
+
     scenePass.setMRT(
       mrt({
         output,
@@ -195,6 +537,7 @@ class App {
     const outputPass = scenePass.getTextureNode();
     const bloomIntensityPass = scenePass.getTextureNode("bloomIntensity");
     const bloomPass = bloom(bloomIntensityPass);
+
     const postProcessing = new THREE.PostProcessing(this.renderer);
     postProcessing.outputColorTransform = false;
     postProcessing.outputNode = Fn(() => {
@@ -213,36 +556,30 @@ class App {
     this.setLook(DEFAULT_LOOK);
   }
 
-  async init(
-    progressCallback,
-    width = window.innerWidth,
-    height = window.innerHeight,
-  ) {
+  async init(width = window.innerWidth, height = window.innerHeight) {
     this.runtime = createRuntimeState(width);
+
     this.camera = new THREE.PerspectiveCamera(47, width / height, 0.01, 7.5);
     this.applyCameraFraming(width, height);
 
     this.scene = new THREE.Scene();
     this.scene.add(this.camera);
 
-    await progressCallback(0.1);
-
     const hdriTexture = await loadHdrTexture(HDRI_URL);
     this.environmentTexture = hdriTexture;
 
-    // No scene background — canvas is transparent, CSS room shows through
     this.scene.background = null;
     this.scene.environment = hdriTexture;
     this.scene.environmentRotation = new THREE.Euler(0, -2.15, 0);
-    // Exposure + env intensity: single owner is createPostProcessingPipeline → setLook(DEFAULT_LOOK)
-
-    await progressCallback(0.5);
 
     this.mlsMpmSim = new MlsMpmSimulator(this.renderer);
     await this.mlsMpmSim.init(this.runtime.maxParticles);
+
     this.particleRenderer = new ParticleRenderer(this.mlsMpmSim);
-    this.mlsMpmSim.applyRuntime?.(this.runtime);
-    this.particleRenderer.applyRuntime?.(this.runtime);
+
+    this.mlsMpmSim.applyRuntime(this.runtime);
+    this.particleRenderer.applyRuntime(this.runtime);
+
     this.backgroundGeometry = new BackgroundGeometry();
     await this.backgroundGeometry.init();
     this.scene.add(this.backgroundGeometry.object);
@@ -251,108 +588,63 @@ class App {
     this.scene.add(this.lights.object);
     this.scene.add(this.particleRenderer.object);
 
+    this.heroVVisualShell = createHeroVVisualShell();
+    this.heroVShellAnchorRoot = this.scene;
+
+    if (this.heroVVisualShell?.group) {
+      this.scene.add(this.heroVVisualShell.group);
+    }
+
     this.createPostProcessingPipeline();
 
     this.raycaster = new THREE.Raycaster();
     this.plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0.2);
-
-    this._viewportWidth = width;
-    this._viewportHeight = height;
-
-    await progressCallback(1.0, 100);
-
-    queueMicrotask(() => {
-      void this._ensurePostEnterImageTargetFieldAsync();
-    });
-  }
-
-  /**
-   * Prefetch / build image targets off the first interaction frame (avoids giant `getDelta` after a long `await`).
-   * Safe to call from `update` and from init microtask.
-   */
-  async _ensurePostEnterImageTargetFieldAsync() {
-    if (this.postEnterImageTargetField != null) return;
-    if (this._postEnterImageTargetFieldBuildFailed) return;
-    if (!this.particleRenderer?.object) return;
-    if (this._postEnterTargetFieldBuildPromise) {
-      await this._postEnterTargetFieldBuildPromise;
-      return;
-    }
-
-    const gen = this._postEnterTargetFieldGeneration;
-    this._postEnterTargetFieldBuildPromise = (async () => {
-      try {
-        this.syncSourceAnchors?.();
-        const placementBasis = buildPostEnterPlacementBasis(
-          this.particleRenderer.object,
-          PREENTER_VESSEL,
-        );
-        if (!placementBasis) return;
-        const built = await buildPostEnterImageTargetField({
-          chamberBoundsSim: placementBasis.chamberBoundsSim,
-          apparitionPlacementSim: placementBasis.apparitionPlacementSim,
-          imageUrl: POST_ENTER_APPARITION_IMAGE_URL,
-          keepBrightStrokes: true,
-          luminanceThreshold: 0.34,
-        });
-        if (gen !== this._postEnterTargetFieldGeneration) return;
-        this.postEnterImageTargetField = built;
-      } catch (err) {
-        if (gen === this._postEnterTargetFieldGeneration) {
-          console.warn("[post-enter] image target field build failed", err);
-          this._postEnterImageTargetFieldBuildFailed = true;
-        }
-      } finally {
-        this._postEnterTargetFieldBuildPromise = null;
-      }
-    })();
-
-    await this._postEnterTargetFieldBuildPromise;
   }
 
   resize(width, height) {
-    this._viewportWidth = width;
-    this._viewportHeight = height;
+    if (!this.camera) return;
+
     this.camera.aspect = width / height;
     this.applyCameraFraming(width, height);
+
+    if (this.postEnterDriveActive) {
+      this.cameraBaselineZ = this.camera.position.z;
+    }
   }
 
   setPointer(clientX, clientY, isDown = false) {
     if (!this.raycaster || !this.camera || !this.plane || !this.mlsMpmSim) {
       return;
     }
+
     this.pointerNdc.x = clientX * 2 - 1;
     this.pointerNdc.y = -(clientY * 2) + 1;
+
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+
     const intersect = this.raycaster.ray.intersectPlane(
       this.plane,
       this.pointerIntersect,
     );
-    if (intersect) {
-      this.mlsMpmSim.setMouseRay(
-        this.raycaster.ray.origin,
-        this.raycaster.ray.direction,
-        intersect,
-      );
-      this.mlsMpmSim.setMouseActive(true);
-      if (isDown) {
-        this.backgroundGeometry?.addImpulse?.(0.12);
-      }
-    }
-  }
 
-  primeStartupSource() {
-    if (this.startupSourceFieldAnchorOffsets) {
-      this.sourceFieldAnchorOffsets = {
-        primary: this.startupSourceFieldAnchorOffsets.primary.clone(),
-        secondary: this.startupSourceFieldAnchorOffsets.secondary.clone(),
-      };
+    if (!intersect) return;
+
+    this.mlsMpmSim.setMouseRay(
+      this.raycaster.ray.origin,
+      this.raycaster.ray.direction,
+      intersect,
+    );
+    this.mlsMpmSim.setMouseActive(true);
+
+    if (isDown) {
+      this.backgroundGeometry.addImpulse(0.12);
     }
-    this.backgroundGeometry?.update?.(0);
-    this.syncSourceAnchors();
   }
 
   promoteIdlePopulation() {
+    this.backgroundGeometry.update(0);
+    this.syncSourceAnchors();
+
     if (this.startupSourceFieldAnchorOffsets) {
       this.sourceFieldAnchorOffsets = {
         primary: this.startupSourceFieldAnchorOffsets.primary
@@ -363,25 +655,26 @@ class App {
           .multiply(this.sourceAnchorScales.idleSecondary),
       };
     }
-    this.backgroundGeometry?.update?.(0);
+
     this.syncSourceAnchors();
-    this.mlsMpmSim?.seedMatureIdlePopulation?.();
+    this.mlsMpmSim.seedMatureIdlePopulation();
   }
 
   ensureSourceAnchorOffsets() {
     const runtime = this.runtime;
-    if (!runtime) {
-      return;
-    }
+    if (!runtime) return;
+
     if (!this.sourceFieldAnchorOffsets) {
       const primary = runtime.sourceFieldCenter.clone().sub(runtime.ventCenter);
       const secondary = runtime.sourceFieldSecondaryCenter
         .clone()
         .sub(runtime.ventCenter);
+
       this.startupSourceFieldAnchorOffsets = {
         primary: primary.clone(),
         secondary: secondary.clone(),
       };
+
       this.sourceFieldAnchorOffsets = {
         primary,
         secondary,
@@ -417,22 +710,26 @@ class App {
       source.originWorld,
       ventCenter,
     );
+
     const ventAxisSim = this.particleRenderer.worldDirectionToSimulation(
       source.axisWorld,
       ventAxis,
     );
+
     const simRightPoint = this.particleRenderer.worldPointToSimulation(
       worldOffsetPoint
         .copy(source.originWorld)
         .addScaledVector(source.rightWorld, source.radiiLocal.x),
       rightPoint,
     );
+
     const simUpPoint = this.particleRenderer.worldPointToSimulation(
       worldOffsetPoint
         .copy(source.originWorld)
         .addScaledVector(source.upWorld, source.radiiLocal.z),
       upPoint,
     );
+
     const simAxisPoint = this.particleRenderer.worldPointToSimulation(
       worldOffsetPoint
         .copy(source.originWorld)
@@ -456,30 +753,28 @@ class App {
     simUpPoint,
     simAxisPoint,
   }) {
+    const runtime = this.runtime;
+    if (!runtime) return;
+
     const primaryOffset = this.sourceFieldAnchorOffsets.primary;
     const secondaryOffset = this.sourceFieldAnchorOffsets.secondary;
-    const runtime = this.runtime;
-    if (!runtime) {
-      return;
-    }
 
     runtime.ventCenter.copy(ventCenterSim);
     runtime.ventAxis.copy(ventAxisSim);
+
     runtime.ventRadii.set(
       Math.max(1.25, simRightPoint.distanceTo(ventCenterSim)),
       Math.max(1.4, simAxisPoint.distanceTo(ventCenterSim)),
       Math.max(1.0, simUpPoint.distanceTo(ventCenterSim)),
     );
+
     runtime.sourceFieldCenter.copy(ventCenterSim).add(primaryOffset);
     runtime.sourceFieldSecondaryCenter.copy(ventCenterSim).add(secondaryOffset);
   }
 
   syncSourceAnchors() {
     const sourceDescriptor = this.getSourceDescriptor();
-    if (!sourceDescriptor) {
-      return;
-    }
-
+    if (!sourceDescriptor) return;
     this.applySourceAnchorDescriptor(sourceDescriptor);
   }
 
@@ -495,10 +790,13 @@ class App {
     if (this.scene && Number.isFinite(environmentIntensity)) {
       this.scene.environmentIntensity = environmentIntensity;
     }
+
     if (this.renderer && Number.isFinite(exposure)) {
       this.renderer.toneMappingExposure = exposure;
     }
+
     if (!this.bloomPass) return;
+
     if (Number.isFinite(bloomThreshold)) {
       this.bloomPass.threshold.value = bloomThreshold;
     }
@@ -511,7 +809,7 @@ class App {
   }
 
   setPointerInfluence(value = 1) {
-    this.mlsMpmSim?.setMouseInfluence?.(value);
+    this.mlsMpmSim.setMouseInfluence(value);
   }
 
   applyEngineRuntime(patch = {}) {
@@ -526,214 +824,96 @@ class App {
       size: this.runtime.size,
       density: this.runtime.density,
     });
+
     this.runtime.actualSize = derived.actualSize;
     this.runtime.restDensity = derived.restDensity;
   }
 
   clearPointer() {
-    this.mlsMpmSim?.setMouseActive?.(false);
+    this.mlsMpmSim.setMouseActive(false);
   }
 
-  buildPostEnterContext() {
-    if (!this.mlsMpmSim || !this.particleRenderer) {
-      return null;
-    }
+  async update(delta) {
+    if (!this.runtime) return;
+    this._lastDt = delta;
 
+    this.backgroundGeometry.update(delta);
     this.syncSourceAnchors();
 
-    const rendererBasis = buildPostEnterPlacementBasis(
-      this.particleRenderer.object,
-      PREENTER_VESSEL,
-    );
-    if (!rendererBasis) {
-      return null;
-    }
+    if (this.lights?.keyLight) {
+      const lateShadowClear = !!this.runtime.solverLocked;
+      const nextCastShadow = !lateShadowClear;
 
-    const cmin = rendererBasis.chamberBoundsSim.min;
-    const cmax = rendererBasis.chamberBoundsSim.max;
-    const freezeCenter = new THREE.Vector3()
-      .addVectors(cmin, cmax)
-      .multiplyScalar(0.5);
-    const freezeHalf = new THREE.Vector3()
-      .subVectors(cmax, cmin)
-      .multiplyScalar(0.5 * POST_ENTER_FREEZE_SPACE_FRAC);
-    const freezeBoundsMin = new THREE.Vector3()
-      .copy(freezeCenter)
-      .sub(freezeHalf);
-    const freezeBoundsMax = new THREE.Vector3()
-      .copy(freezeCenter)
-      .add(freezeHalf);
-
-    return {
-      freezeSpaceSim: {
-        center: freezeCenter,
-        boundsMin: freezeBoundsMin,
-        boundsMax: freezeBoundsMax,
-      },
-      chamberBoundsSim: rendererBasis.chamberBoundsSim,
-      apparitionPlacementSim: rendererBasis.apparitionPlacementSim,
-    };
-  }
-
-  /**
-   * Body alpha: `clearMix` (ash) until a separate hero pass owns the read.
-   * @param {import("./post-enter/PostEnterDirector").PostEnterDerived | null | undefined} derived
-   */
-  particleBodyOpacityMulFromDerived(derived) {
-    if (!derived || derived.postEnterPhase === "idle") {
-      return 1;
-    }
-    const clr = derived.clearMix ?? 0;
-    return Math.max(0.02, 1 - clr * 0.98);
-  }
-
-  /**
-   * Stateless post-enter broadcast: runs before the sim/render pass in `update`.
-   * @param {import("./post-enter/PostEnterDirector").PostEnterDerived | null | undefined} derived
-   */
-  broadcastPostEnterFrame(derived) {
-    const bodyOpacityMul = this.particleBodyOpacityMulFromDerived(derived);
-    this.mlsMpmSim?.applyPostEnterFrame?.(derived);
-    this.particleRenderer?.applyPostEnterFrame?.(bodyOpacityMul, derived);
-  }
-
-  resetPostEnterState() {
-    this._postEnterTargetFieldGeneration += 1;
-    this.postEnterApparitionLayer?.dispose();
-    this.postEnterApparitionLayer = null;
-    this.postEnterImageTargetField = null;
-    this._postEnterImageTargetFieldBuildFailed = false;
-    this._postEnterTargetFieldBuildPromise = null;
-    this.broadcastPostEnterFrame(IDLE_POST_ENTER_DERIVED);
-  }
-
-  getFrontRailMetrics() {
-    if (!this.camera || !this.backgroundGeometry?.object) return null;
-
-    const { apertureWidth, apertureHeight, frameSide, frameTop, frameDepth } =
-      PREENTER_VESSEL;
-
-    const outerWidth = apertureWidth + frameSide * 2;
-    const outerHeight = apertureHeight + frameTop * 2;
-    const frameFrontZ = frameDepth * 0.5;
-    const bandCenterY = -outerHeight * 0.5 + frameTop * 0.5;
-    const railObject = this.backgroundGeometry.object;
-    const projectScratch = this.sourceAnchorScratch.worldProjectPoint;
-
-    railObject.updateWorldMatrix(true, false);
-    this.camera.updateMatrixWorld();
-
-    const projectPoint = (x, y, z) => {
-      const projectedPoint = railObject
-        .localToWorld(projectScratch.set(x, y, z))
-        .project(this.camera);
-
-      return {
-        x: (projectedPoint.x + 1) * 0.5,
-        y: (1 - projectedPoint.y) * 0.5,
-      };
-    };
-
-    const corners = [
-      projectPoint(
-        -outerWidth * 0.5,
-        bandCenterY - frameTop * 0.5,
-        frameFrontZ,
-      ),
-      projectPoint(
-        -outerWidth * 0.5,
-        bandCenterY + frameTop * 0.5,
-        frameFrontZ,
-      ),
-      projectPoint(outerWidth * 0.5, bandCenterY - frameTop * 0.5, frameFrontZ),
-      projectPoint(outerWidth * 0.5, bandCenterY + frameTop * 0.5, frameFrontZ),
-    ];
-    const center = projectPoint(0, bandCenterY, frameFrontZ);
-    const xs = corners.map((point) => point.x);
-    const ys = corners.map((point) => point.y);
-    const left = Math.min(...xs);
-    const right = Math.max(...xs);
-    const top = Math.min(...ys);
-    const bottom = Math.max(...ys);
-
-    return {
-      left,
-      top,
-      width: right - left,
-      height: bottom - top,
-      centerX: center.x,
-      centerY: center.y,
-    };
-  }
-
-  /**
-   * @param {number} delta
-   * @param {import("./post-enter/PostEnterDirector").PostEnterFrame} [postEnterFrame]
-   */
-  async update(delta, postEnterFrame) {
-    const derived = postEnterFrame?.derived ?? IDLE_POST_ENTER_DERIVED;
-    this.broadcastPostEnterFrame(derived);
-
-    this.backgroundGeometry?.update?.(delta);
-
-    this.syncSourceAnchors();
-
-    await this._ensurePostEnterImageTargetFieldAsync();
-
-    const postEnterCtx = postEnterFrame?.context ?? null;
-
-    if (
-      this.postEnterImageTargetField &&
-      !this.postEnterApparitionLayer &&
-      postEnterCtx &&
-      derived.postEnterPhase !== "idle"
-    ) {
-      const layer = new PostEnterApparitionLayer();
-      if (layer.initFromTargetField(this.postEnterImageTargetField, postEnterCtx)) {
-        layer.attachTo(this.particleRenderer.object);
-        this.postEnterApparitionLayer = layer;
+      if (this.lights.keyLight.castShadow !== nextCastShadow) {
+        this.lights.keyLight.castShadow = nextCastShadow;
+        if (this.lights.keyLight.shadow) {
+          this.lights.keyLight.shadow.needsUpdate = true;
+        }
       }
     }
 
-    this.postEnterApparitionLayer?.update(
-      delta,
-      derived,
-      postEnterCtx,
-      this.postEnterImageTargetField,
-    );
+    this.mlsMpmSim.applyRuntime(this.runtime);
+    this.particleRenderer.applyRuntime(this.runtime);
 
-    this.mlsMpmSim?.applyRuntime?.(this.runtime);
-    this.particleRenderer?.applyRuntime?.(this.runtime);
     await this.mlsMpmSim.update(delta);
-    this.particleRenderer?.update();
+    this.particleRenderer.update();
+    this.heroVVisualShell?.update?.(this);
     await this.postProcessing.renderAsync();
   }
 
   dispose() {
+    this.clearPostEnterFreezeSnapshot();
+
+    if (this.heroVVisualShell?.group?.parent) {
+      this.heroVVisualShell.group.parent.remove(this.heroVVisualShell.group);
+    }
+
+    this.heroVVisualShell?.dispose?.();
+    this.heroVVisualShell = null;
+    this.heroVShellAnchorRoot = null;
+
     this.particleRenderer?.dispose?.();
     this.backgroundGeometry?.dispose?.();
     this.lights?.dispose?.();
     this.mlsMpmSim?.dispose?.();
     this.postProcessing?.dispose?.();
     this.environmentTexture?.dispose?.();
+
     this.scene = null;
     this.camera = null;
     this.environmentTexture = null;
+
     this.particleRenderer = null;
     this.backgroundGeometry = null;
     this.lights = null;
     this.mlsMpmSim = null;
     this.postProcessing = null;
     this.bloomPass = null;
+
     this.sourceFieldAnchorOffsets = null;
     this.startupSourceFieldAnchorOffsets = null;
     this.runtime = null;
-    this.postEnterApparitionLayer?.dispose();
-    this.postEnterApparitionLayer = null;
-    this.postEnterImageTargetField = null;
-    this._postEnterImageTargetFieldBuildFailed = false;
-    this._postEnterTargetFieldBuildPromise = null;
-    this._postEnterTargetFieldGeneration += 1;
+
+    this.postEnterDriveActive = false;
+    this.postEnterFlags.solverLocked = false;
+    this.postEnterFlags.freezeSnapshotReady = false;
+    this.postEnterFlags.withdrawalDone = false;
+    this.postEnterFlags.quietLocked = false;
+    this.postEnterFlags.cameraArrived = false;
+    this.postEnterFlags.pageLocked = false;
+    this.postEnterFlags.heroAllowed = false;
+
+    this.quietElapsed = 0;
+    this.lastPostEnterElapsed = 0;
+    this.cameraBaselineZ = null;
+    this.postEnterSolverLockTime = null;
+
+    this.pushInStartTime = null;
+    this.pageLockStartTime = null;
+    this.heroStartTime = null;
+
+    this._lastPostEnterStageReturned = "none";
+    this._lastDrivePostEnterElapsed = 0;
   }
 
   applyCameraFraming(width = window.innerWidth, height = window.innerHeight) {
@@ -743,6 +923,7 @@ class App {
     const tallBlend = THREE.MathUtils.smoothstep(aspect, 0.8, 0.96);
     const midBlend = THREE.MathUtils.smoothstep(aspect, 1.08, 1.28);
     const wideBlend = THREE.MathUtils.smoothstep(aspect, 1.42, 1.62);
+
     const {
       apertureWidth,
       apertureHeight,
@@ -755,26 +936,33 @@ class App {
 
     const outerWidth = apertureWidth + frameSide * 2;
     const outerHeight = apertureHeight + frameTop * 2;
+
     const fov = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(51, 48, tallBlend),
       46,
       midBlend,
     );
+
     const fillHeight = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(0.72, 0.76, midBlend),
       0.8,
       wideBlend,
     );
+
     const fillWidth = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(0.9, 0.88, midBlend),
       0.86,
       wideBlend,
     );
+
     const fovRadians = THREE.MathUtils.degToRad(fov);
+
     const distanceForHeight =
       outerHeight / (2 * Math.tan(fovRadians * 0.5) * fillHeight);
+
     const distanceForWidth =
       outerWidth / (2 * Math.tan(fovRadians * 0.5) * aspect * fillWidth);
+
     const distance = Math.max(distanceForHeight, distanceForWidth);
     const cameraY = lookAtY + THREE.MathUtils.lerp(0.074, 0.04, tallBlend);
 
@@ -784,4 +972,5 @@ class App {
     this.camera.updateProjectionMatrix();
   }
 }
+
 export default App;

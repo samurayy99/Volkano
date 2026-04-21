@@ -8,9 +8,6 @@ export class Lights {
   object = null;
   /** @type {THREE.Object3D | null} */
   _keyTarget = null;
-  _baseKeyIntensity = 1.85;
-  _baseHemiIntensity = 0.42;
-  _baseRimIntensity = 0.14;
   _baseKeyTarget = new THREE.Vector3(0.24, 0.46, 0.58);
 
   constructor() {

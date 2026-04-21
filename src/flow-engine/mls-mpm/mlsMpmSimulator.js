@@ -10,6 +10,7 @@ import {
   int,
   float,
   Loop,
+  vec2,
   vec3,
   vec4,
   atomicAdd,
@@ -18,6 +19,8 @@ import {
   pow,
   mat3,
   clamp,
+  fract,
+  sin,
   time,
   cross,
   mix,
@@ -26,6 +29,7 @@ import {
 } from "three/tsl";
 import { triNoise3Dvec } from "../common/noise";
 import { StructuredArray } from "./structuredArray.js";
+import { forensicEnabled } from "../post-enter/forensicPostEnter.js";
 
 /** Upper bound for particle buffer allocation (must match App runtime.maxParticles policy). */
 const DEFAULT_MAX_PARTICLE_CAPACITY = 8192 * 16;
@@ -34,6 +38,7 @@ const GRID_POINTER_OFFSET = new THREE.Vector3();
 const ZERO_VECTOR = new THREE.Vector3(0, 0, 0);
 const GRID_CLAMP_MARGIN = 2;
 const GRID_WALL_MARGIN = 3;
+const TAU = Math.PI * 2;
 
 const PARTICLE_FORCE_TUNING = Object.freeze({
   noise: {
@@ -49,6 +54,165 @@ const PARTICLE_FORCE_TUNING = Object.freeze({
   },
 });
 
+/** Same parameters as `seedMatureIdlePopulation` / `carvePopulationSlit` (canonical bilobal around rift). */
+export const IDLE_SLIT_PARAMS = Object.freeze({
+  splitPush: 0.8,
+  gapWidth: 2.45,
+});
+
+/**
+ * Z compression toward `chamberFlowCenter.z` for recall targets.
+ * 0.4 keeps the bilobal in the front half of the vessel (world Z ≈ 0.20–0.61)
+ * so it doesn't bleed into the deep chamber and appear back-wall-plastered.
+ * Settle applies a further 0.64 factor on top (effective ≈ 0.26 from sphere).
+ */
+const RECALL_Z_COMPRESS = 0.4;
+
+/**
+ * Y compression toward `chamberFlowCenter.y` for recall targets.
+ * Sphere seeds span Y ≈ 1.6–62.4 sim (world Y 0.01–0.85); without compression the
+ * bilobal extends floor-to-ceiling with thin density at the extremes → flat-disc read.
+ * 0.5 concentrates the bilobal into sim Y ≈ 16.7–47.1 (world Y ≈ 0.22–0.64):
+ * elevated, compact, not touching the floor, visually rounded rather than pancake.
+ */
+const RECALL_Y_COMPRESS = 0.5;
+
+/**
+ * Max X displacement from `chamberFlowCenter.x` for recall targets (grid units).
+ * Prevents extreme sphere-edge particles (carve X ≈ 62) from being spring-pinned
+ * against the grid wall (soft-wall at 61, clamp at 62). Gives 7-unit clearance
+ * on each side relative to the default 64-wide grid.
+ */
+const RECALL_X_HALF_MAX = 22;
+
+/**
+ * Explicit arrest volume for the A2 proof path.
+ * This generator authors the committed `V` hold only: curved arms, open slit,
+ * forward belly, and a deterministic silhouette from any idle start.
+ */
+export const HERO_POINT_CLOUD = Object.freeze({
+  safetyMargin: 6,
+
+  // Geometric center offset from chamberFlowCenter
+  // Pulled down slightly to absorb the massive upward scale, and pushed significantly FORWARD into the chamber
+  centerX: 0,
+  centerY: -1.0,
+  centerZ: 3.35,
+
+  /** Uniform XY scale of the six Bézier control points around `innerFoot` (tip); keeps apex fixed. */
+  contourScale: 1.28,
+
+  // Outer contour (Uniformly scaled 1.4x from vertex Y=-8.5)
+  outerShoulder: [8.68, 17.12],
+  outerMid: [4.9, 4.1],
+  outerFoot: [0.14, -8.5],
+
+  // Inner contour (Uniformly scaled 1.4x from vertex Y=-8.5)
+  innerShoulder: [4.76, 16.28],
+  innerMid: [2.52, 3.4],
+  innerFoot: [0.0, -8.5],
+
+  // 2.5D Layering Configuration
+  frontalPercentage: 0.68,
+  frontalApexPercentage: 0.9,
+  frontalBulge: 1.05,            // Legacy field; front Z uses depth rails + taper (not sin-bulge).
+  frontalThickness: 0.16,       // Micro jitter on front Z (scaled by taper)
+  frontDepthTaperPower: 1.55,
+  rearDepthTaperPower: 2.05,
+
+  rearDepthShoulder: -1.85,     // Support only; magnitude below front outer rail
+  rearDepthFoot: -0.05,
+  rearInset: 0.2,
+
+  // Slit safety
+  minSlitHalf: 0.4,
+
+  // Direction
+
+  directionForwardBias: 0.1,
+  directionRearBias: 0.05,
+
+  // Cohort (renderer still uses these)
+  roleHeroMin: 0.85,
+  roleSupportMin: 0.62,
+
+  /** Dissolve anchor radii (sim units); `_syncDissolveAnchors` / rift jitter. */
+  radiusX: 12,
+  radiusY: 14,
+  radiusZ: 5,
+
+  seeds: Object.freeze({
+    u0: 12.9898,
+    u1: 78.233,
+    u2: 43.7143,
+    role: 91.4271,
+  }),
+});
+
+/**
+ * Authored settle banks (second shape, not recall): lateral pull to left/right attractors,
+ * slit stay-out, heavy floor y, z squeeze.
+ */
+const SETTLE_VOLUME = Object.freeze({
+  /** Stronger depth gather than prior 0.86. */
+  zCompress: 0.64,
+  /** Distance from chamber midline (mx) to each bank centroid in sim X. */
+  bankPeakX: 6.05,
+  /** How strongly X moves from recall positions toward `bankPeakX` on each side (0–1). */
+  xBankPull: 0.9,
+  /** Same role as old slit edge parking when |rx−mx| < gap. */
+  slitEdgeScale: 1.02,
+  /** Small heap lift away from the rift (uses final x). */
+  outerBankLift: 0.95,
+  bankHeapSigma: 4.2,
+  /** Slight extra drop in the rift read (Gaussian in |x−mx|). */
+  riftYDrop: 0.42,
+  riftYSigma: 2.1,
+  /** Off — would blend back to recall height and soften the heavy-bank read. */
+  recallYBlend: 0,
+});
+
+/**
+ * Spring gain toward `recallTarget` (× lateral/vertical weights × `dt` in g2p).
+ */
+const RECALL_STIFFNESS = 18;
+const SETTLE_STIFFNESS = 5.75;
+/**
+ * Apply X-axis slit push used for idle bilobal separation (matches `carvePopulationSlit`).
+ * @param {THREE.Vector3} particlePosition
+ * @param {THREE.Vector3} splitMidpoint
+ * @param {THREE.Vector3} splitAxis normalized
+ */
+function applySlitDisplacement(
+  particlePosition,
+  splitMidpoint,
+  splitAxis,
+  gapWidth,
+  splitPush,
+) {
+  const signedMidDistance = particlePosition
+    .clone()
+    .sub(splitMidpoint)
+    .dot(splitAxis);
+  const signedSide = signedMidDistance < 0 ? -1 : 1;
+  if (Math.abs(signedMidDistance) < gapWidth) {
+    particlePosition.addScaledVector(
+      splitAxis,
+      signedSide * (gapWidth - Math.abs(signedMidDistance) + splitPush),
+    );
+  }
+}
+
+function hash01(index, seed) {
+  const x = Math.sin((index + 1) * seed) * 43758.5453123;
+  return x - Math.floor(x);
+}
+
+/**
+ * `convergenceSlowdown` / `convergenceFreeze` / `convergenceHeatRetention` /
+ * `convergenceThermalExtinction`: default source play keeps these near 0; the bridge (or a
+ * future director) can raise them for a directed beat without re-plumbing the grid.
+ */
 const CONVERGENCE_TUNING = Object.freeze({
   xsph: {
     slowdownBand: [0.36, 0.9],
@@ -119,9 +283,6 @@ const forEachNeighbor3x3x3 = (
     },
   );
 };
-
-const shouldSkipParticleMotion = (uniforms) =>
-  uniforms.solverLocked.greaterThan(float(0.5));
 
 const applyGridEdgeClamp = (axisVelocity, axisIndex, axisLimit) => {
   const clampMargin = int(GRID_CLAMP_MARGIN);
@@ -315,7 +476,7 @@ const buildThermalState = ({
     float(0.42),
     uniforms.convergenceFreeze,
   )
-    .mul(0.985)
+    .mul(0.35)
     .toConst("freezeColorMemoryT");
   const freezeRetainedColor = mix(
     cooledColor,
@@ -362,6 +523,7 @@ class mlsMpmSimulator {
       direction: { type: "vec3" },
       color: { type: "vec3" },
       heat: { type: "float" },
+      dissolveState: { type: "vec2" },
     };
     this.particleBuffer = new StructuredArray(
       particleStruct,
@@ -390,6 +552,33 @@ class mlsMpmSimulator {
       this.particleBuffer.set(i, "heat", 0);
     }
     this.captureInitialParticlePositions();
+
+    this.recallTargetBuffer = new StructuredArray(
+      { recallTarget: { type: "vec4" } },
+      maxParticles,
+      "recallTargetData",
+    );
+    // Authored arrest owners: target positions and rod directions for the committed hold.
+    this.heroBodyTargetBuffer = new StructuredArray(
+      { heroBodyTarget: { type: "vec4" } },
+      maxParticles,
+      "heroBodyTargetData",
+    );
+    this.heroBodyDirectionBuffer = new StructuredArray(
+      { heroBodyDirection: { type: "vec4" } },
+      maxParticles,
+      "heroBodyDirectionData",
+    );
+    this.returnBodyTargetBuffer = new StructuredArray(
+      { returnBodyTarget: { type: "vec4" } },
+      maxParticles,
+      "returnBodyTargetData",
+    );
+    this.settleTargetBuffer = new StructuredArray(
+      { settleTarget: { type: "vec4" } },
+      maxParticles,
+      "settleTargetData",
+    );
 
     const cellCount = this.gridSize.x * this.gridSize.y * this.gridSize.z;
     const cellStruct = {
@@ -424,9 +613,30 @@ class mlsMpmSimulator {
     this.uniforms.convergenceFreeze = uniform(0);
     this.uniforms.convergenceHeatRetention = uniform(0);
     this.uniforms.convergenceThermalExtinction = uniform(0);
-    this.uniforms.solverLocked = uniform(0);
     this.uniforms.mouseInfluence = uniform(1);
     this.uniforms.mouseActive = uniform(0);
+    this.uniforms.heroBodyWeight = uniform(0);
+    this.uniforms.authoredDirectionWeight = uniform(0);
+    this.uniforms.returnBodyWeight = uniform(0);
+    this.uniforms.recallLateralWeight = uniform(0);
+    this.uniforms.recallVerticalWeight = uniform(0);
+    this.uniforms.settleWeight = uniform(0);
+
+    this.uniforms.heroCenter = uniform(new THREE.Vector3());
+    this.uniforms.heroRadiusMax = uniform(1);
+    this.uniforms.riftAnchorX = uniform(0);
+    this.uniforms.riftAnchorZ = uniform(0);
+    this.uniforms.riftAnchorXJitter = uniform(
+      HERO_POINT_CLOUD.radiusX * 0.08,
+    );
+    this.uniforms.dissolveAccel = uniform(26.0);
+    this.uniforms.dissolveCaptureRadius = uniform(1.5);
+    this.uniforms.dissolveFadeZoneRadius = uniform(5.5);
+    this.uniforms.dissolveDecayDuration = uniform(0.22);
+    this.uniforms.dissolveVelocityDamping = uniform(0.7);
+    this.uniforms.dissolveStaggerSpread = uniform(0.4);
+    this.uniforms.dissolveDt = uniform(1 / 60);
+    this.uniforms.dissolveExtractionT = uniform(0);
 
     this.kernels.clearGrid = Fn(() => {
       this.cellBuffer.setAtomic("x", false);
@@ -478,9 +688,6 @@ class mlsMpmSimulator {
           Return();
         },
       );
-      If(this.uniforms.solverLocked.greaterThan(float(0.5)), () => {
-        Return();
-      });
       const particlePosition = this.particleBuffer
         .element(instanceIndex)
         .get("position")
@@ -529,9 +736,6 @@ class mlsMpmSimulator {
           Return();
         },
       );
-      If(this.uniforms.solverLocked.greaterThan(float(0.5)), () => {
-        Return();
-      });
       const particlePosition = this.particleBuffer
         .element(instanceIndex)
         .get("position")
@@ -647,15 +851,6 @@ class mlsMpmSimulator {
         .get("position")
         .xyz.toVar("particlePosition");
       const particleVelocity = vec3(0).toVar();
-      If(shouldSkipParticleMotion(this.uniforms), () => {
-        // Post-enter lock: solver stops integrating particle motion.
-        this.particleBuffer.element(instanceIndex).get("C").assign(mat3(0));
-        this.particleBuffer
-          .element(instanceIndex)
-          .get("velocity")
-          .assign(vec3(0));
-        Return();
-      });
       particleVelocity.addAssign(this.uniforms.gravity.mul(this.uniforms.dt));
 
       const noise = triNoise3Dvec(
@@ -761,6 +956,64 @@ class mlsMpmSimulator {
           .mul(force),
       );
 
+      const returnBodyTargetPos = this.returnBodyTargetBuffer
+        .element(instanceIndex)
+        .get("returnBodyTarget")
+        .xyz.toConst("returnBodyTargetPos");
+      const returnBodyK = float(RECALL_STIFFNESS)
+        .mul(this.uniforms.dt)
+        .toConst("returnBodyK");
+      If(this.uniforms.returnBodyWeight.greaterThan(float(0.0005)), () => {
+        particleVelocity.addAssign(
+          returnBodyTargetPos
+            .sub(particlePosition)
+            .mul(returnBodyK)
+            .mul(this.uniforms.returnBodyWeight),
+        );
+      });
+
+      // Bilobal recall: xz holds lobes; y can release first so mass sinks before lateral dissolves.
+      const recallTargetPos = this.recallTargetBuffer
+        .element(instanceIndex)
+        .get("recallTarget")
+        .xyz.toConst("recallTargetPos");
+      const toTarget = recallTargetPos
+        .sub(particlePosition)
+        .toConst("recallToTarget");
+      const toLat = vec3(toTarget.x, float(0), toTarget.z).toConst(
+        "recallToLat",
+      );
+      const toVert = vec3(float(0), toTarget.y, float(0)).toConst(
+        "recallToVert",
+      );
+      const k = float(RECALL_STIFFNESS).mul(this.uniforms.dt);
+      If(this.uniforms.recallLateralWeight.greaterThan(float(0.0005)), () => {
+        particleVelocity.addAssign(
+          toLat.mul(k).mul(this.uniforms.recallLateralWeight),
+        );
+      });
+      If(this.uniforms.recallVerticalWeight.greaterThan(float(0.0005)), () => {
+        particleVelocity.addAssign(
+          toVert.mul(k).mul(this.uniforms.recallVerticalWeight),
+        );
+      });
+
+      If(this.uniforms.settleWeight.greaterThan(float(0.0005)), () => {
+        const settleTargetPos = this.settleTargetBuffer
+          .element(instanceIndex)
+          .get("settleTarget")
+          .xyz.toConst("settleTargetPos");
+        const toSettle = settleTargetPos
+          .sub(particlePosition)
+          .toConst("settleToTarget");
+        particleVelocity.addAssign(
+          toSettle
+            .mul(float(SETTLE_STIFFNESS))
+            .mul(this.uniforms.settleWeight)
+            .mul(this.uniforms.dt),
+        );
+      });
+
       const slowdownDamping = float(1)
         .sub(
           this.uniforms.convergenceSlowdown.mul(
@@ -814,8 +1067,20 @@ class mlsMpmSimulator {
 
       const direction = this.particleBuffer
         .element(instanceIndex)
-        .get("direction");
-      direction.assign(mix(direction, particleVelocity, 0.1));
+        .get("direction")
+        .xyz.toVar("particleDirection");
+      // Before post-enter, rod orientation can trail velocity. During the arrest
+      // proof, authored direction takes ownership and g2p stops rewriting it.
+      If(
+        this.uniforms.authoredDirectionWeight.greaterThan(float(0.0005)),
+        () => {},
+      ).Else(() => {
+        direction.assign(mix(direction, particleVelocity, 0.1));
+      });
+      this.particleBuffer
+        .element(instanceIndex)
+        .get("direction")
+        .assign(direction);
       const particleDensity = this.particleBuffer
         .element(instanceIndex)
         .get("density")
@@ -828,10 +1093,6 @@ class mlsMpmSimulator {
         .element(instanceIndex)
         .get("color")
         .toConst("previousColor");
-      const thermalUpdateT = float(1)
-        .sub(this.uniforms.solverLocked)
-        .clamp(0, 1)
-        .toConst("thermalUpdateT");
 
       const thermalState = buildThermalState({
         uniforms: this.uniforms,
@@ -845,12 +1106,254 @@ class mlsMpmSimulator {
       this.particleBuffer
         .element(instanceIndex)
         .get("color")
-        .assign(mix(previousColor, thermalState.color, thermalUpdateT));
+        .assign(thermalState.color);
       this.particleBuffer
         .element(instanceIndex)
         .get("heat")
-        .assign(mix(previousHeat, thermalState.heat, thermalUpdateT));
+        .assign(thermalState.heat);
     })().compute(1);
+
+    // FORENSIC: one-shot kernel to zero velocity + C on all particles at Enter.
+    // Dispatched before the main kernel sequence when _zeroVelocitiesNextFrame is set.
+    this.kernels.zeroVelocities = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+      this.particleBuffer.element(instanceIndex).get("velocity").assign(vec3(0));
+      this.particleBuffer.element(instanceIndex).get("C").assign(mat3(0));
+    })().compute(1);
+
+    // Soft acquire into the authored arrest pose.
+    this.kernels.acquireHeroBody = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+      If(
+        this.uniforms.heroBodyWeight
+          .lessThanEqual(float(0.0005)),
+        () => {
+          Return();
+        },
+      );
+
+      const heroTarget = this.heroBodyTargetBuffer
+        .element(instanceIndex)
+        .get("heroBodyTarget")
+        .xyz.toConst("heroBodyTargetPos");
+      const armTVal = this.heroBodyTargetBuffer
+        .element(instanceIndex)
+        .get("heroBodyTarget")
+        .w.toConst("armTVal");
+      const heroDirection = this.heroBodyDirectionBuffer
+        .element(instanceIndex)
+        .get("heroBodyDirection")
+        .xyz.toConst("heroBodyDirectionPos");
+      const baseAlpha = mix(
+        float(0.014),
+        float(0.045),
+        this.uniforms.heroBodyWeight,
+      );
+      const staggerMul = mix(float(0.45), float(1.35), armTVal);
+      const heroAcquireAlpha = baseAlpha
+        .mul(staggerMul)
+        .clamp(0.005, 0.12)
+        .toConst("heroAcquireAlpha");
+      const heroDirectionAlpha = mix(
+        float(0.08),
+        float(0.34),
+        this.uniforms.authoredDirectionWeight,
+      ).toConst("heroDirectionAlpha");
+      const particle = this.particleBuffer.element(instanceIndex);
+      const position = particle.get("position").xyz.toVar("heroAcquirePosition");
+      const direction = particle
+        .get("direction")
+        .xyz.toVar("heroAcquireDirection");
+
+      position.assign(mix(position, heroTarget, heroAcquireAlpha));
+      direction.assign(
+        mix(direction, heroDirection, heroDirectionAlpha).normalize(),
+      );
+      particle.get("position").assign(position);
+      particle.get("direction").assign(direction);
+      particle.get("velocity").assign(vec3(0));
+      particle.get("C").assign(mat3(0));
+    })().compute(1);
+
+    // Hard snap into the authored arrest pose.
+    this.kernels.commitHeroBody = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+
+      const heroTarget = this.heroBodyTargetBuffer
+        .element(instanceIndex)
+        .get("heroBodyTarget")
+        .xyz.toConst("heroCommitTarget");
+      const heroDirection = this.heroBodyDirectionBuffer
+        .element(instanceIndex)
+        .get("heroBodyDirection")
+        .xyz.toConst("heroCommitDirection");
+      const particle = this.particleBuffer.element(instanceIndex);
+      particle.get("position").assign(heroTarget);
+      particle.get("velocity").assign(vec3(0));
+      particle.get("C").assign(mat3(0));
+      particle.get("direction").assign(heroDirection);
+      particle.get("density").assign(this.uniforms.restDensity);
+      particle.get("dissolveState").assign(vec2(0, 0));
+    })().compute(1);
+
+    this.kernels.dissolveToRift = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+      If(this.uniforms.dissolveExtractionT.lessThanEqual(float(0.0001)), () => {
+        Return();
+      });
+
+      const heroTarget = this.heroBodyTargetBuffer
+        .element(instanceIndex)
+        .get("heroBodyTarget")
+        .xyz.toConst("heroDissolveTarget");
+      const particle = this.particleBuffer.element(instanceIndex);
+      const position = particle.get("position").xyz.toVar("dissolvePosition");
+      const velocity = particle.get("velocity").xyz.toVar("dissolveVelocity");
+      const dissolveState = particle.get("dissolveState").toVar("dissolveState");
+
+      const radial = heroTarget
+        .sub(this.uniforms.heroCenter)
+        .length()
+        .div(this.uniforms.heroRadiusMax.max(float(0.0001)))
+        .clamp(0, 1)
+        .toConst("dissolveRadial");
+      const launchTime = float(1)
+        .sub(smoothstep(float(0), float(1), radial))
+        .mul(this.uniforms.dissolveStaggerSpread)
+        .toConst("dissolveLaunchTime");
+
+      If(this.uniforms.dissolveExtractionT.greaterThan(launchTime), () => {
+        const extractionLocal = this.uniforms.dissolveExtractionT
+          .sub(launchTime)
+          .div(float(1).sub(launchTime).max(float(0.0001)))
+          .clamp(0, 1)
+          .toConst("dissolveExtractionLocal");
+        const seamCollapseT = smoothstep(
+          float(0.02),
+          float(0.68),
+          extractionLocal,
+        ).toConst("dissolveSeamCollapseT");
+        const fadeLeadT = smoothstep(
+          float(0.08),
+          float(0.8),
+          extractionLocal,
+        ).toConst("dissolveFadeLeadT");
+        const hash = fract(
+          sin(instanceIndex.toFloat().mul(12.9898).add(78.233)).mul(43758.5453),
+        ).toConst("dissolveHash");
+        const anchor = vec3(
+          this.uniforms.riftAnchorX.add(
+            hash
+              .sub(0.5)
+              .mul(2)
+              .mul(this.uniforms.riftAnchorXJitter)
+              .mul(float(1).sub(seamCollapseT.mul(0.72))),
+          ),
+          this.uniforms.heroCenter.y.add(
+            heroTarget.y
+              .sub(this.uniforms.heroCenter.y)
+              .mul(mix(float(0.34), float(0.12), seamCollapseT)),
+          ),
+          mix(this.uniforms.heroCenter.z, this.uniforms.riftAnchorZ, float(0.74)),
+        ).toConst("dissolveAnchor");
+
+        const toAnchor = anchor.sub(position).toVar("toDissolveAnchor");
+        const distance = toAnchor.length().max(float(0.0001)).toConst("dissolveDistance");
+        const directionToAnchor = toAnchor
+          .div(distance)
+          .toConst("dissolveDirectionToAnchor");
+        const fadeZoneSpan = this.uniforms.dissolveFadeZoneRadius
+          .sub(this.uniforms.dissolveCaptureRadius)
+          .max(float(0.0001))
+          .toConst("dissolveFadeZoneSpan");
+        const fadeZoneT = float(1)
+          .sub(
+            distance
+              .sub(this.uniforms.dissolveCaptureRadius)
+              .div(fadeZoneSpan)
+              .clamp(0, 1),
+          )
+          .toConst("dissolveFadeZoneT");
+
+        If(dissolveState.x.lessThan(float(0.5)), () => {
+          velocity.addAssign(
+            vec3(
+              anchor.x.sub(position.x).mul(3.6),
+              anchor.y.sub(position.y).mul(1.45),
+              anchor.z.sub(position.z).mul(1.2),
+            ).mul(this.uniforms.dissolveDt),
+          );
+          velocity.addAssign(
+            directionToAnchor
+              .mul(this.uniforms.dissolveAccel)
+              .mul(this.uniforms.dissolveDt),
+          );
+          position.addAssign(velocity.mul(this.uniforms.dissolveDt));
+
+          dissolveState.y.assign(
+            dissolveState.y.add(
+              this.uniforms.dissolveDt
+                .div(this.uniforms.dissolveDecayDuration.max(float(0.0001)))
+                .mul(
+                  fadeZoneT.mul(0.72).add(fadeLeadT.mul(0.48)),
+                ),
+            ).clamp(0, 1),
+          );
+
+          If(distance.lessThan(this.uniforms.dissolveCaptureRadius), () => {
+            dissolveState.x.assign(float(1));
+          });
+        }).Else(() => {
+          velocity.addAssign(
+            anchor.sub(position).mul(0.18).mul(this.uniforms.dissolveDt),
+          );
+          velocity.mulAssign(this.uniforms.dissolveVelocityDamping);
+          position.addAssign(velocity.mul(this.uniforms.dissolveDt));
+          dissolveState.y.assign(
+            dissolveState.y.add(
+              this.uniforms.dissolveDt.div(
+                this.uniforms.dissolveDecayDuration.max(float(0.0001)),
+              ).mul(1.45),
+            ).clamp(0, 1),
+          );
+        });
+      });
+
+      particle.get("position").assign(position);
+      particle.get("velocity").assign(velocity);
+      particle.get("dissolveState").assign(dissolveState);
+    })().compute(1);
+    this._zeroVelocitiesNextFrame = false;
+    this._commitHeroBodyNextFrame = false;
+  }
+
+  /** FORENSIC: schedule a one-shot velocity + C zero on the next update() call. */
+  scheduleVelocityZero() {
+    this._zeroVelocitiesNextFrame = true;
+  }
+
+  scheduleHeroBodyCommit() {
+    this._commitHeroBodyNextFrame = true;
   }
 
   setMouseRay(origin, direction, pos) {
@@ -881,6 +1384,35 @@ class mlsMpmSimulator {
       this.kernels.p2g2.updateDispatchCount();
       this.kernels.g2p.count = particles;
       this.kernels.g2p.updateDispatchCount();
+      this.kernels.acquireHeroBody.count = particles;
+      this.kernels.acquireHeroBody.updateDispatchCount();
+      this.kernels.commitHeroBody.count = particles;
+      this.kernels.commitHeroBody.updateDispatchCount();
+      this.kernels.dissolveToRift.count = particles;
+      this.kernels.dissolveToRift.updateDispatchCount();
+    }
+
+    // FORENSIC: dispatch one-shot velocity + C zero before main kernels.
+    if (this._zeroVelocitiesNextFrame) {
+      this._zeroVelocitiesNextFrame = false;
+      this.kernels.zeroVelocities.count = this.numParticles;
+      this.kernels.zeroVelocities.updateDispatchCount();
+      await this.renderer.computeAsync(this.kernels.zeroVelocities);
+    }
+
+    if (this._commitHeroBodyNextFrame) {
+      this._commitHeroBodyNextFrame = false;
+      await this.renderer.computeAsync(this.kernels.commitHeroBody);
+    }
+
+    if (this.runtime.solverLocked) {
+      if ((this.runtime.extractionT ?? 0) > 0.0001) {
+        this.kernels.dissolveToRift.count = this.numParticles;
+        this.kernels.dissolveToRift.updateDispatchCount();
+        await this.renderer.computeAsync(this.kernels.dissolveToRift);
+        this.markParticleBufferDirty();
+      }
+      return;
     }
 
     interval = Math.min(interval, 1 / 60);
@@ -908,6 +1440,7 @@ class mlsMpmSimulator {
         this.kernels.p2g2,
         this.kernels.updateGrid,
         this.kernels.g2p,
+        this.kernels.acquireHeroBody,
       ];
       for (let i = 0; i < substeps; i++) {
         this.uniforms.dt.value = subDt;
@@ -930,31 +1463,31 @@ class mlsMpmSimulator {
     this.runtime = runtime;
   }
 
-  applyPostEnterFrame(derived) {
-    this.uniforms.solverLocked.value = derived?.solverLocked ? 1 : 0;
-  }
-
   syncRuntimeUniforms() {
     const runtime = this.runtime;
     if (!runtime) {
       return;
     }
+    const srcMul = runtime.postEnterSourceRadiusMul ?? 1;
     const primarySourceRadius =
       ((runtime.sourceFieldRadii.x +
         runtime.sourceFieldRadii.y +
         runtime.sourceFieldRadii.z) /
         3) *
-      runtime.sourceRadiusScale.primary;
+      runtime.sourceRadiusScale.primary *
+      srcMul;
     const secondarySourceRadius =
       ((runtime.sourceFieldSecondaryRadii.x +
         runtime.sourceFieldSecondaryRadii.y +
         runtime.sourceFieldSecondaryRadii.z) /
         3) *
-      runtime.sourceRadiusScale.secondary;
+      runtime.sourceRadiusScale.secondary *
+      srcMul;
 
     this.uniforms.noise.value = runtime.noise;
     this.uniforms.stiffness.value = runtime.stiffness;
-    this.uniforms.gravity.value.set(0, runtime.gravity > 0.5 ? -0.2 : 0, 0);
+    const gNorm = Math.max(0, Math.min(runtime.gravity ?? 0, 1));
+    this.uniforms.gravity.value.set(0, -0.2 * gNorm, 0);
     this.uniforms.dynamicViscosity.value = runtime.dynamicViscosity;
     this.uniforms.apicBlend.value = runtime.apicBlend;
     this.uniforms.maxVelocity.value = runtime.maxVelocity;
@@ -969,15 +1502,26 @@ class mlsMpmSimulator {
     this.uniforms.convergenceFreeze.value = runtime.convergenceFreeze;
     this.uniforms.convergenceHeatRetention.value =
       runtime.convergenceHeatRetention;
-    this.uniforms.convergenceThermalExtinction.value =
-      runtime.convergenceThermalExtinction;
+    const ext = runtime.convergenceThermalExtinction ?? 0;
+    const dissolveUnlock = runtime.settleDissolveUnlocked === 0 ? 0 : 1;
+    this.uniforms.convergenceThermalExtinction.value = ext * dissolveUnlock;
+    this.uniforms.heroBodyWeight.value = runtime.heroBodyWeight ?? 0;
+    this.uniforms.authoredDirectionWeight.value =
+      runtime.authoredDirectionWeight ?? 0;
+    this.uniforms.returnBodyWeight.value = runtime.returnBodyWeight ?? 0;
+    this.uniforms.recallLateralWeight.value = runtime.recallLateralWeight ?? 0;
+    this.uniforms.recallVerticalWeight.value =
+      runtime.recallVerticalWeight ?? 0;
+    this.uniforms.settleWeight.value = runtime.settleWeight ?? 0;
+    this.uniforms.dissolveExtractionT.value = runtime.extractionT ?? 0;
+    this._syncDissolveAnchors();
   }
 
   markParticleBufferDirty() {
-    const particleAttribute = this.particleBuffer?.buffer?.value;
-    if (particleAttribute) {
-      particleAttribute.needsUpdate = true;
-    }
+    const b = this.particleBuffer?.buffer;
+    if (!b) return;
+    b.needsUpdate = true;
+    if (b.value) b.value.needsUpdate = true;
   }
 
   captureInitialParticlePositions() {
@@ -1041,6 +1585,7 @@ class mlsMpmSimulator {
       this.particleBuffer.set(index, "direction", flowDirection);
       this.particleBuffer.set(index, "color", zeroColor);
       this.particleBuffer.set(index, "heat", 0);
+      this.particleBuffer.set(index, "dissolveState", [0, 0]);
     };
 
     for (let i = 0; i < particleCount; i++) {
@@ -1051,17 +1596,13 @@ class mlsMpmSimulator {
         this.initialParticlePositions[baseIndex + 2],
       );
 
-      const signedMidDistance = particlePosition
-        .clone()
-        .sub(splitMidpoint)
-        .dot(splitAxis);
-      const signedSide = signedMidDistance < 0 ? -1 : 1;
-      if (Math.abs(signedMidDistance) < gapWidth) {
-        particlePosition.addScaledVector(
-          splitAxis,
-          signedSide * (gapWidth - Math.abs(signedMidDistance) + splitPush),
-        );
-      }
+      applySlitDisplacement(
+        particlePosition,
+        splitMidpoint,
+        splitAxis,
+        gapWidth,
+        splitPush,
+      );
 
       particlePosition.clamp(
         new THREE.Vector3(
@@ -1079,17 +1620,563 @@ class mlsMpmSimulator {
     this.markParticleBufferDirty();
   }
 
+  /**
+   * Copies the canonical slit-carved CPU body directly into `returnBodyTargetBuffer`.
+   *
+   * Called only after `carvePopulationSlit()` while `particleBuffer.floatArray` still reflects
+   * the freshly authored CPU body we want to restore during post-enter compress/hold.
+   */
+  buildCanonicalReturnBodyTargets() {
+    if (
+      !this.particleBuffer?.floatArray ||
+      !this.returnBodyTargetBuffer ||
+      !this.particleBuffer.layout?.position
+    ) {
+      return;
+    }
+
+    const positionOffset = this.particleBuffer.layout.position.offset;
+    const structSize = this.particleBuffer.structSize;
+    const fa = this.particleBuffer.floatArray;
+    const cap = this.particleBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) {
+      return;
+    }
+
+    for (let i = 0; i < particleCount; i++) {
+      const pi = i * structSize + positionOffset;
+      this.returnBodyTargetBuffer.set(i, "returnBodyTarget", [
+        fa[pi + 0],
+        fa[pi + 1],
+        fa[pi + 2],
+        0,
+      ]);
+    }
+
+    const b = this.returnBodyTargetBuffer.buffer;
+    if (b) { b.needsUpdate = true; if (b.value) b.value.needsUpdate = true; }
+  }
+
+  /**
+   * Copies **CPU** `particleBuffer` positions into `recallTargetBuffer`.
+   *
+   * **Safe call sites only:** right after **CPU-side** writes (e.g. end of `carvePopulationSlit`),
+   * where `particleBuffer.floatArray` matches what will be uploaded. Do **not** call every frame
+   * after `computeAsync` — WebGPU updates particle state on the GPU; reading `floatArray` then
+   * yields stale/mismatched targets vs the simulated state, which explodes recall forces.
+   */
+  captureRecallTargetsFromLiveParticles() {
+    if (
+      !this.particleBuffer?.floatArray ||
+      !this.recallTargetBuffer ||
+      !this.particleBuffer.layout?.position
+    ) {
+      return;
+    }
+
+    const positionOffset = this.particleBuffer.layout.position.offset;
+    const structSize = this.particleBuffer.structSize;
+    const fa = this.particleBuffer.floatArray;
+    const cap = this.particleBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) {
+      return;
+    }
+
+    for (let i = 0; i < particleCount; i++) {
+      const pi = i * structSize + positionOffset;
+      this.recallTargetBuffer.set(i, "recallTarget", [
+        fa[pi + 0],
+        fa[pi + 1],
+        fa[pi + 2],
+        0,
+      ]);
+    }
+
+    const b = this.recallTargetBuffer.buffer;
+    if (b) { b.needsUpdate = true; if (b.value) b.value.needsUpdate = true; }
+
+    this.deriveSettleTargetsFromRecall();
+  }
+
+  /**
+   * Builds recall targets for the bilobal recall spring from the slit-carved CPU positions.
+   *
+   * Called once right after `carvePopulationSlit()` in `seedMatureIdlePopulation()`, before
+   * any GPU compute steps, so `particleBuffer.floatArray` holds fresh CPU-written positions.
+   *
+   * Targets:
+   *   X  — clamped to ±`RECALL_X_HALF_MAX` from center (keeps targets off grid walls)
+   *   Y  — compressed around `chamberFlowCenter.y` by `RECALL_Y_COMPRESS`, then clamped
+   *        to the safe sim range so the volumetric bilobal stays compact without entering
+   *        the hard wall zone
+   *   Z  — lightly compressed toward `chamberFlowCenter.z` (lighter than settle)
+   *
+   * `deriveSettleTargetsFromRecall` is called afterward so settle targets always
+   * derive from a coherent recall basis.
+   */
+  buildAnalyticalRecallTargets() {
+    if (
+      !this.particleBuffer?.floatArray ||
+      !this.recallTargetBuffer ||
+      !this.runtime?.chamberFlowCenter ||
+      !this.particleBuffer.layout?.position ||
+      !this.gridSize
+    ) {
+      return;
+    }
+
+    const posOff = this.particleBuffer.layout.position.offset;
+    const structSize = this.particleBuffer.structSize;
+    const fa = this.particleBuffer.floatArray;
+    const cap = this.particleBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) return;
+
+    const mx = this.runtime.chamberFlowCenter.x;
+    const my = this.runtime.chamberFlowCenter.y;
+    const mz = this.runtime.chamberFlowCenter.z;
+    const ymin = GRID_CLAMP_MARGIN;
+    const ymax = this.gridSize.y - GRID_CLAMP_MARGIN;
+
+    let minRecallX = Infinity;
+    let maxRecallX = -Infinity;
+    let minRecallY = Infinity;
+    let maxRecallY = -Infinity;
+
+    for (let i = 0; i < particleCount; i++) {
+      const pi = i * structSize + posOff;
+      const rx = fa[pi + 0]; // carve X — lobe-side already correct from slit
+      const ry = fa[pi + 1]; // sphere Y — vertically compressed for a tighter bilobal volume
+      const rz = fa[pi + 2]; // carve Z — compress lightly toward chamber center
+
+      // Cap X displacement so no recall target falls into the grid wall zone.
+      const sxRaw = rx - mx;
+      const recallX =
+        mx + Math.sign(sxRaw) * Math.min(Math.abs(sxRaw), RECALL_X_HALF_MAX);
+      const recallY = THREE.MathUtils.clamp(
+        my + (ry - my) * RECALL_Y_COMPRESS,
+        ymin,
+        ymax,
+      );
+
+      this.recallTargetBuffer.set(i, "recallTarget", [
+        recallX,
+        recallY,
+        mz + (rz - mz) * RECALL_Z_COMPRESS,
+        0,
+      ]);
+
+      if (recallX < minRecallX) minRecallX = recallX;
+      if (recallX > maxRecallX) maxRecallX = recallX;
+      if (recallY < minRecallY) minRecallY = recallY;
+      if (recallY > maxRecallY) maxRecallY = recallY;
+    }
+
+    if (forensicEnabled()) {
+      console.log("[forensic] recallTarget bounds (sim)", {
+        minX: minRecallX,
+        maxX: maxRecallX,
+        minY: minRecallY,
+        maxY: maxRecallY,
+        particleCount,
+      });
+    }
+
+    const b2 = this.recallTargetBuffer.buffer;
+    if (b2) { b2.needsUpdate = true; if (b2.value) b2.value.needsUpdate = true; }
+
+    this.deriveSettleTargetsFromRecall();
+  }
+
+  /**
+   * Builds deterministic arrest targets as two curved `V` arms plus authored
+   * rod directions for the isolated committed hold.
+   */
+  buildHeroBodyTargets() {
+    if (
+      !this.particleBuffer?.floatArray ||
+      !this.heroBodyTargetBuffer ||
+      !this.heroBodyDirectionBuffer ||
+      !this.particleBuffer.layout?.position ||
+      !this.heroBodyTargetBuffer.layout?.heroBodyTarget ||
+      !this.heroBodyDirectionBuffer.layout?.heroBodyDirection ||
+      !this.runtime?.chamberFlowCenter ||
+      !this.gridSize
+    ) {
+      return;
+    }
+
+    const posOff = this.particleBuffer.layout.position.offset;
+    const structSize = this.particleBuffer.structSize;
+    const fa = this.particleBuffer.floatArray;
+    const cap = this.particleBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) {
+      return;
+    }
+
+    const mx = this.runtime.chamberFlowCenter.x;
+    const my = this.runtime.chamberFlowCenter.y;
+    const mz = this.runtime.chamberFlowCenter.z;
+    const H = HERO_POINT_CLOUD;
+    const minBound = GRID_CLAMP_MARGIN + H.safetyMargin;
+    const maxX = this.gridSize.x - GRID_CLAMP_MARGIN - H.safetyMargin;
+    const maxY = this.gridSize.y - GRID_CLAMP_MARGIN - H.safetyMargin;
+    const maxZ = this.gridSize.z - GRID_CLAMP_MARGIN - H.safetyMargin;
+    // Contour control points (center-relative, 2D frontal plane); scale around tip anchor innerFoot
+    const ax = H.innerFoot[0];
+    const ay = H.innerFoot[1];
+    const cs = H.contourScale;
+    const sc = (p) => [ax + (p[0] - ax) * cs, ay + (p[1] - ay) * cs];
+    const oS = sc(H.outerShoulder);
+    const oM = sc(H.outerMid);
+    const oF = sc(H.outerFoot);
+    const iS = sc(H.innerShoulder);
+    const iM = sc(H.innerMid);
+    const iF = sc(H.innerFoot);
+    const authoredDirection = new THREE.Vector3();
+    let cohortCountHero = 0;
+    let cohortCountSupport = 0;
+    let cohortCountBulk = 0;
+
+    for (let i = 0; i < particleCount; i++) {
+      const pi = i * structSize + posOff;
+      const rx = fa[pi + 0];
+      const side = rx - mx >= 0 ? 1 : -1;
+
+      const u0 = hash01(i, H.seeds.u0);
+      const u1 = hash01(i, H.seeds.u1);
+      const u2 = hash01(i, H.seeds.u2);
+      const roleU = hash01(i, H.seeds.role);
+      let cohortRole;
+      if (roleU > H.roleHeroMin) {
+        cohortRole = 1;
+        cohortCountHero++;
+      } else if (roleU > H.roleSupportMin) {
+        cohortRole = 0.5;
+        cohortCountSupport++;
+      } else {
+        cohortRole = 0;
+        cohortCountBulk++;
+      }
+
+      // ── armT: position along arm (0 = shoulder, 1 = foot) ──
+      const armT = Math.pow(u1, 0.86);
+      const t = armT;
+      const omt = 1 - t;
+      const omt2 = omt * omt;
+      const t2 = t * t;
+      const apexThinT = THREE.MathUtils.smoothstep(armT, 0.58, 1.0);
+      const frontalChance = THREE.MathUtils.lerp(
+        H.frontalPercentage,
+        H.frontalApexPercentage,
+        apexThinT,
+      );
+
+      // ── Evaluate contours at armT (quadratic Bezier, 2D frontal plane) ──
+      const innerX = omt2 * iS[0] + 2 * omt * t * iM[0] + t2 * iF[0];
+      const innerY = omt2 * iS[1] + 2 * omt * t * iM[1] + t2 * iF[1];
+      const outerX = omt2 * oS[0] + 2 * omt * t * oM[0] + t2 * oF[0];
+      const outerY = omt2 * oS[1] + 2 * omt * t * oM[1] + t2 * oF[1];
+
+      // ── 2.5D Layer Allocation ──
+      const isFrontal = u2 < frontalChance;
+
+      let crossT;
+      let pz = 0;
+      let isRear = false;
+
+      if (isFrontal) {
+        const roleCrossStart =
+          cohortRole >= 1 ? 0.58 : cohortRole >= 0.5 ? 0.28 : 0.08;
+
+        const roleCrossEnd =
+          cohortRole >= 1 ? 1.0 : cohortRole >= 0.5 ? 0.78 : 0.44;
+
+        crossT = THREE.MathUtils.lerp(roleCrossStart, roleCrossEnd, u0);
+
+        const innerFrontDepth = THREE.MathUtils.lerp(0.1, -0.08, armT);
+        const outerFrontDepth = THREE.MathUtils.lerp(1.92, 0.1, armT);
+
+        const frontBaseDepth = THREE.MathUtils.lerp(
+          innerFrontDepth,
+          outerFrontDepth,
+          crossT,
+        );
+
+        const depthTaper = Math.pow(1 - armT, 1.28);
+        const pseudoHashZ = (u0 * 37.1 + u1 * 19.3) % 1.0;
+
+        const roleFrontLift =
+          cohortRole >= 1
+            ? 0.18 * (1 - armT)
+            : cohortRole >= 0.5
+              ? 0.05 * (1 - armT)
+              : -0.03;
+
+        pz =
+          frontBaseDepth * depthTaper +
+          roleFrontLift +
+          (pseudoHashZ - 0.5) *
+            H.frontalThickness *
+            Math.pow(1 - armT, 1.35);
+      } else {
+        isRear = true;
+        crossT = THREE.MathUtils.lerp(0.18, 0.58, u0);
+
+        const innerRearDepth = THREE.MathUtils.lerp(-0.62, -0.03, armT);
+        const outerRearDepth = THREE.MathUtils.lerp(-1.45, -0.05, armT);
+
+        const rearBaseDepth = THREE.MathUtils.lerp(
+          innerRearDepth,
+          outerRearDepth,
+          crossT,
+        );
+
+        const rearRoleMul =
+          cohortRole >= 1 ? 0.25 : cohortRole >= 0.5 ? 0.55 : 0.82;
+
+        pz = rearBaseDepth * Math.pow(1 - armT, 1.95) * rearRoleMul;
+      }
+
+      // ── Cross-arm interpolation (frontal plane) ──
+      const px = THREE.MathUtils.lerp(innerX, outerX, crossT);
+      const py = THREE.MathUtils.lerp(innerY, outerY, crossT);
+
+      // ── Slit clamp: taper the slit allowance to 0 near the foot so the V can merge ──
+      // Smoothstep ensures the top half preserves the full `minSlitHalf` gap, but the bottom closes.
+      const slitProtection = H.minSlitHalf * (1 - THREE.MathUtils.smoothstep(armT, 0.5, 1.0));
+      
+      const rawX = side * px;
+      const clampedX =
+        side > 0
+          ? Math.max(rawX, slitProtection)
+          : Math.min(rawX, -slitProtection);
+
+      // ── Direction: arm tangent + subordinate rear direction ──
+      const armTanX = 2 * omt * (oM[0] - oS[0]) + 2 * t * (oF[0] - oM[0]);
+      const armTanY = 2 * omt * (oM[1] - oS[1]) + 2 * t * (oF[1] - oM[1]);
+      const tLen = Math.sqrt(armTanX * armTanX + armTanY * armTanY) || 1;
+      
+      if (isRear) {
+        // Rear particles have subordinate, simpler direction. Mostly tangent, pushed slightly backward.
+        authoredDirection
+          .set(side * armTanX / tLen, armTanY / tLen, -H.directionRearBias)
+          .normalize();
+      } else {
+        // Frontal particles respect the cross-contour edges
+        const crossDirX = outerX - innerX;
+        const crossDirY = outerY - innerY;
+        const cLen = Math.sqrt(crossDirX * crossDirX + crossDirY * crossDirY) || 1;
+        const crossMix = crossT < 0.3 || crossT > 0.7 ? 0.3 : 0.1;
+        authoredDirection
+          .set(
+            side * (armTanX / tLen + crossMix * (crossDirX / cLen)),
+            armTanY / tLen + crossMix * (crossDirY / cLen),
+            H.directionForwardBias,
+          )
+          .normalize();
+      }
+
+      // ── Final position: center-relative → sim-space (one translation) ──
+      const hx = THREE.MathUtils.clamp(
+        mx + H.centerX + clampedX,
+        minBound,
+        maxX,
+      );
+      const hy = THREE.MathUtils.clamp(
+        my + H.centerY + py,
+        minBound,
+        maxY,
+      );
+      const hz = THREE.MathUtils.clamp(
+        mz + H.centerZ + pz,
+        minBound,
+        maxZ,
+      );
+
+      this.heroBodyTargetBuffer.set(i, "heroBodyTarget", [hx, hy, hz, armT]);
+      this.heroBodyDirectionBuffer.set(i, "heroBodyDirection", [
+        authoredDirection.x,
+        authoredDirection.y,
+        authoredDirection.z,
+        0,
+      ]);
+    }
+
+    if (particleCount > 0) {
+      const pctHero = ((cohortCountHero / particleCount) * 100).toFixed(1);
+      const pctSupport = ((cohortCountSupport / particleCount) * 100).toFixed(1);
+      const pctBulk = ((cohortCountBulk / particleCount) * 100).toFixed(1);
+      console.log(
+        `[hero cohort] hero ${pctHero}% / support ${pctSupport}% / bulk ${pctBulk}% (n=${particleCount})`,
+      );
+    }
+
+    const hb = this.heroBodyTargetBuffer.buffer;
+    if (hb) {
+      hb.needsUpdate = true;
+      if (hb.value) hb.value.needsUpdate = true;
+    }
+    const hd = this.heroBodyDirectionBuffer.buffer;
+    if (hd) {
+      hd.needsUpdate = true;
+      if (hd.value) hd.value.needsUpdate = true;
+    }
+
+    // Parked for Pass B: late claim anchors still derive from the arrest volume.
+    this._syncDissolveAnchors();
+  }
+
+  _syncDissolveAnchors() {
+    if (!this.runtime?.chamberFlowCenter || !this.uniforms?.heroCenter) {
+      return;
+    }
+    const H = HERO_POINT_CLOUD;
+    const mx = this.runtime.chamberFlowCenter.x;
+    const my = this.runtime.chamberFlowCenter.y;
+    const mz = this.runtime.chamberFlowCenter.z;
+    this.uniforms.heroCenter.value.set(mx, my + H.centerY, mz + H.centerZ);
+    this.uniforms.heroRadiusMax.value = Math.max(
+      H.radiusX,
+      H.radiusY,
+      H.radiusZ,
+    );
+    this.uniforms.riftAnchorX.value = mx;
+    this.uniforms.riftAnchorZ.value = mz;
+    this.uniforms.riftAnchorXJitter.value = H.radiusX * 0.08;
+  }
+
+  /**
+   * Authored settle targets from idle `recallTarget`: fixed-sign banks, slit, heavy floor.
+   */
+  deriveSettleTargetsFromRecall() {
+    if (
+      !this.recallTargetBuffer?.floatArray ||
+      !this.settleTargetBuffer ||
+      !this.runtime?.chamberFlowCenter ||
+      !this.gridSize
+    ) {
+      return;
+    }
+
+    const recallOff = this.recallTargetBuffer.layout?.recallTarget?.offset;
+    if (recallOff === undefined) {
+      return;
+    }
+
+    const cap = this.recallTargetBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) {
+      return;
+    }
+
+    const rs = this.recallTargetBuffer.structSize;
+    const rfa = this.recallTargetBuffer.floatArray;
+
+    const gap = IDLE_SLIT_PARAMS.gapWidth;
+    const mx = this.runtime.chamberFlowCenter.x;
+    const mz = this.runtime.chamberFlowCenter.z;
+    const ymin = GRID_CLAMP_MARGIN + 1.15;
+    const ymax = this.gridSize.y - GRID_CLAMP_MARGIN - 1.1;
+    const V = SETTLE_VOLUME;
+
+    for (let i = 0; i < particleCount; i++) {
+      const ri = i * rs + recallOff;
+      const rx = rfa[ri + 0];
+      const rz = rfa[ri + 2];
+
+      const sxRaw = rx - mx;
+      const sign = sxRaw >= 0 ? 1 : -1;
+      const bankCx = mx + sign * V.bankPeakX;
+
+      let baseX;
+      if (Math.abs(sxRaw) < gap) {
+        baseX = mx + sign * gap * V.slitEdgeScale;
+      } else {
+        baseX = rx;
+      }
+
+      const x = baseX + (bankCx - baseX) * V.xBankPull;
+
+      const z = mz + (rz - mz) * V.zCompress;
+
+      const ax = Math.abs(x - mx);
+      const distRift = Math.max(0, ax - gap);
+      const heapBell = Math.exp(
+        -(distRift * distRift) / (2 * V.bankHeapSigma * V.bankHeapSigma),
+      );
+      const riftBell = Math.exp(-(ax * ax) / (2 * V.riftYSigma * V.riftYSigma));
+
+      let y = ymin + V.outerBankLift * heapBell - V.riftYDrop * riftBell;
+
+      if (V.recallYBlend > 0) {
+        const ry = rfa[ri + 1];
+        y +=
+          (ry - y) *
+          V.recallYBlend *
+          Math.min(1, Math.max(0, (ry - ymin) / 14));
+      }
+
+      if (y < ymin) {
+        y = ymin;
+      } else if (y > ymax) {
+        y = ymax;
+      }
+
+      this.settleTargetBuffer.set(i, "settleTarget", [x, y, z, 0]);
+    }
+
+    const sb = this.settleTargetBuffer.buffer;
+    if (sb) { sb.needsUpdate = true; if (sb.value) sb.value.needsUpdate = true; }
+  }
+
   seedMatureIdlePopulation() {
     this.carvePopulationSlit({
-      splitPush: 0.8,
-      gapWidth: 2.45,
+      splitPush: IDLE_SLIT_PARAMS.splitPush,
+      gapWidth: IDLE_SLIT_PARAMS.gapWidth,
     });
+    this.buildCanonicalReturnBodyTargets();
+    this.buildAnalyticalRecallTargets();
+    this.buildHeroBodyTargets();
   }
 
   dispose() {
     this.mousePosArray = [];
     this.mousePos = null;
     this.initialParticlePositions = null;
+    this.recallTargetBuffer = null;
+    this.heroBodyTargetBuffer = null;
+    this.heroBodyDirectionBuffer = null;
+    this.returnBodyTargetBuffer = null;
+    this.settleTargetBuffer = null;
     this.kernels = {};
     this.uniforms = {};
     this.particleBuffer = null;

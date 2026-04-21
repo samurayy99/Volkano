@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './legacy-room-choreography.css';
-import '../convergence/ui/convergence-trigger.css';
-
 export const metadata: Metadata = {
   title: 'VOLKANO',
   description: 'Spatial websites, real-time systems, and AI integration.',
