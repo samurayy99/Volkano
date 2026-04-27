@@ -1,49 +1,22 @@
 export type PostEnterStage =
   | "none"
   | "impact"
-  | "compress"
-  | "hold"
-  | "withdraw"
-  | "quiet"
-  | "push_in"
-  | "page_lock"
-  | "hero";
+  | "riftFlight"
+  | "riftComplete";
 
 /** Dev / tooling: full post-enter channel + truth snapshot (throttled in bridge). */
 export type PostEnterDebugSnapshot = {
   stage: PostEnterStage;
   elapsedSec: number;
-  /** MLS thermal/freeze channel (solver). */
-  convergenceFreeze: number;
-  heroBodyWeight: number;
-  /** Canonical slit-carved return-body spring for early compress/hold. */
-  returnBodyWeight: number;
-  /** MLS recall spring weights (solver): xz vs y for sink-before-dissolve read. */
-  recallLateralWeight: number;
-  recallVerticalWeight: number;
-  settleWeight: number;
-  settleDissolveUnlocked: number;
-  compressT: number;
-  coolT: number;
-  thinT: number;
-  /**
-   * App-only smoothed withdraw phase in [0, 1] (not passed to the particle shader as a uniform).
-   * Used for timeline truth / completion gating; renderer-side dissolve still keys off `opacityT`.
-   */
-  withdrawT: number;
-  opacityT: number;
-  backBiasT: number;
-  authorityLightT: number;
-  pushInT: number;
-  pageLockT: number;
-  heroT: number;
+  run: boolean;
+  gravity: number;
   solverLocked: boolean;
-  freezeSnapshotReady: boolean;
-  withdrawalDone: boolean;
-  quietLocked: boolean;
-  cameraArrived: boolean;
-  pageLocked: boolean;
-  heroAllowed: boolean;
+  postEnterArrestActive: boolean;
+  postEnterArrestT: number;
+  postEnterHoldT: number;
+  postEnterFlightSec: number;
+  postEnterFlightT: number;
+  postEnterRiftFlightActive: boolean;
 };
 
 export interface FlowEngineApi {

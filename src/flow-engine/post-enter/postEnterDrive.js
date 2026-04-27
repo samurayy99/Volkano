@@ -1,100 +1,20 @@
 import * as THREE from "three/webgpu";
-import { PREENTER_VESSEL } from "../vesselDescriptors.js";
 import { maybeLogForensicPostEnter } from "./forensicPostEnter.js";
 
+export const POST_ENTER_IMPACT = 0.08;
+
 /**
- * Post-enter drive for the current A2 arrest proof.
- *
- * Active runtime truth:
- * - This module owns only `impact -> compress -> hold`.
- * - Late claim / cleanup / handoff progression is intentionally inactive here.
- * - The simulator owns the authored `V` acquire + commit.
- *
- * `runtime.speed` still scales MLS integration timestep (`dt ∝ speed`) and must
- * not ramp to 0 during post-enter. `POST_ENTER_SLOWDOWN` remains a solver-side
- * damping window only.
+ * First beat: let the existing MLS state lose energy under controlled runtime
+ * instead of switching to a fake post-enter arrest kernel.
  */
-
-export const POST_ENTER_IMPACT = 0.16;
-/** Cinematic slow gather into the authored hero body — visible "pulling together". */
-export const POST_ENTER_HERO_ACQUIRE = 1.6;
-/** Public `compress` stage spans the short hero acquire beat. */
-export const POST_ENTER_COMPRESS = POST_ENTER_HERO_ACQUIRE;
-export const POST_ENTER_COOL = 0.58;
-/** Surrender field window (after hold); must exceed `SETTLE_WEIGHT_RAMP_SEC + SETTLE_HOLD_SEC`. */
-export const POST_ENTER_IMPACT_FREEZE = 0.62;
-export const POST_ENTER_FREEZE_SPACE_FRAC = 0.26;
-export const POST_ENTER_SLOWDOWN = 0.95;
-/** Hold after acquire, before renderer-owned withdraw/clear. */
-export const POST_ENTER_HOLD = 0.45;
-/** Freeze ramp after solver lock. */
-export const POST_ENTER_FREEZE_RAMP = 0.52;
-/** Brief hold before the freeze ramp starts. */
-export const POST_ENTER_FREEZE_HOLD_DELAY = 0.18;
-
-/** Shell claim ramp starts this far through the freeze ramp (after solver lock). */
-export const SHELL_CLAIM_RAMP_START_FRAC = 0.35;
-/** Wall-clock duration for `shellClaimT` 0→1 once ramp starts. */
-export const SHELL_CLAIM_RAMP_SEC = 0.72;
+export const POST_ENTER_SETTLE_END = 2.2;
+export const POST_ENTER_RIFT_FLIGHT_START = 2.5;
+export const POST_ENTER_RIFT_FLIGHT_DURATION = 6.0;
 
 /** Cut MLS source radii to 0 quickly at post-enter start (existing particles only). */
 export const SOURCE_RADIUS_CUT_SEC = 0.22;
-
-export const BODY_SCALE_COMPRESSED = 0.92;
-
-// Parked for Pass B: late claim / cleanup / handoff constants are intentionally
-// not part of the active A2 arrest-proof path.
-export const POST_ENTER_WITHDRAW = 4.0;
-export const POST_ENTER_QUIET = 0.72;
-export const POST_ENTER_PUSH_IN = 1.1;
-export const POST_ENTER_PAGE_LOCK = 0.3;
-export const POST_ENTER_HERO = 0.55;
-export const POST_ENTER_EXTRACT = 2.0;
-export const POST_ENTER_EXTRACT_HOLD = 0.25;
-export const SETTLE_WEIGHT_RAMP_SEC = 1.15;
-export const SETTLE_HOLD_SEC = 0.12;
-export const HOLD_FIELD_SETTLE_SEC = 0.16;
-export const WITHDRAW_CHANNEL_WINDOWS = Object.freeze({
-  opacity: { start: 0.18, span: 0.46 },
-  thin: { start: 0.44, span: 0.3 },
-  scale: { start: 0.52, span: 0.26 },
-});
-export const AUTHORITY_MIX_WEIGHTS = Object.freeze({
-  cool: 0.22,
-  opacity: 0.08,
-  hold: 0.14,
-});
-export const POST_ENTER_HOLD_PUSH_FRAC = 0.32;
-export const WITHDRAWAL_DONE_COMPRESS_MIN = 0.96;
-export const WITHDRAWAL_DONE_COOL_MIN = 0.92;
-export const WITHDRAWAL_DONE_BODY_MIN = 0.97;
 export const PUSH_IN_DISTANCE = 0.12;
 export const AUTHORITY_EXPOSURE_LIFT = 0.05;
-
-/** Locked hero hold: heavy, quiet bilobal read (no feed; early gather, then lock). */
-const FIELD_HOLD_MUL = Object.freeze({
-  noise: 0,
-  maxVelocity: 0.2,
-  apicBlend: 0.18,
-  dynamicViscosity: 15,
-  /** Slow-mo gather — particles visibly drift into the central mass. */
-  speed: 0.12,
-  stiffness: 1.36,
-  gravity: 0,
-});
-
-const FIELD_KEYS = /** @type {const} */ ([
-  "noise",
-  "maxVelocity",
-  "apicBlend",
-  "dynamicViscosity",
-  "speed",
-  "stiffness",
-  // gravity handled separately — its ramp must be ~10× faster than compressDur
-]);
-
-export const POST_ENTER_PUSH_IN_COMPLETE_T = 0.9;
-export const POST_ENTER_PAGE_LOCK_COMPLETE_T = 1.0;
 
 /** Authority lerp targets (exposure / bloom only). */
 export const POST_ENTER_COOLED_LOOK = Object.freeze({
@@ -111,287 +31,31 @@ export const ARREST_BLOOM_SPIKE = 0.32;
 export const ARREST_RIFT_BOOST = 0.18;
 
 /**
- * Chamber axis-aligned bounds in MLS simulation space.
- *
- * @param {THREE.Object3D | null | undefined} _particleGroup reserved for world-frame alignment
- * @param {typeof PREENTER_VESSEL} vessel
- * @param {{ worldPointToSimulation: (w: THREE.Vector3, t?: THREE.Vector3) => THREE.Vector3 }} particleRenderer
+ * First-beat MLS slowdown profile.
+ * These are multipliers against the source-play baseline, not absolute values.
+ * Keep speed non-zero: speed scales solver dt, so near-zero speed reads as a freeze.
  */
-export function buildPostEnterSpatialBasis(
-  _particleGroup,
-  vessel,
-  particleRenderer,
-) {
-  if (!particleRenderer?.worldPointToSimulation) {
-    return null;
-  }
-
-  const {
-    apertureWidth,
-    apertureHeight,
-    frameSide,
-    frameTop,
-    depth,
-    centerX,
-    centerY,
-    centerZ,
-  } = vessel;
-
-  const halfW = (apertureWidth + frameSide * 2) * 0.5;
-  const halfH = (apertureHeight + frameTop * 2) * 0.5;
-  const halfD = depth * 0.5;
-
-  const signs = [-1, 1];
-  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
-  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-  const world = new THREE.Vector3();
-  const sim = new THREE.Vector3();
-
-  for (const sx of signs) {
-    for (const sy of signs) {
-      for (const sz of signs) {
-        world.set(
-          centerX + sx * halfW,
-          centerY + sy * halfH,
-          centerZ + sz * halfD,
-        );
-        particleRenderer.worldPointToSimulation(world, sim);
-        min.min(sim);
-        max.max(sim);
-      }
-    }
-  }
-
-  if (
-    !Number.isFinite(min.x) ||
-    !Number.isFinite(max.x) ||
-    min.x >= max.x ||
-    min.y >= max.y ||
-    min.z >= max.z
-  ) {
-    return null;
-  }
-
-  return {
-    chamberBoundsSim: {
-      min: min.clone(),
-      max: max.clone(),
-    },
-  };
-}
-
-/**
- * @param {import("../mls-mpm/particleRenderer.js").default | null | undefined} particleRenderer
- * @returns {null | { chamberBoundsSim: { min: THREE.Vector3; max: THREE.Vector3 }; freezeSpaceSim: { center: THREE.Vector3; boundsMin: THREE.Vector3; boundsMax: THREE.Vector3 } }}
- */
-export function buildPostEnterFreezeSpaceContext(particleRenderer) {
-  if (!particleRenderer?.object) {
-    return null;
-  }
-
-  const basis = buildPostEnterSpatialBasis(
-    particleRenderer.object,
-    PREENTER_VESSEL,
-    particleRenderer,
-  );
-
-  if (!basis?.chamberBoundsSim?.min || !basis?.chamberBoundsSim?.max) {
-    return null;
-  }
-
-  const cmin = basis.chamberBoundsSim.min;
-  const cmax = basis.chamberBoundsSim.max;
-
-  const freezeCenter = new THREE.Vector3()
-    .addVectors(cmin, cmax)
-    .multiplyScalar(0.5);
-
-  const freezeHalf = new THREE.Vector3()
-    .subVectors(cmax, cmin)
-    .multiplyScalar(0.5 * POST_ENTER_FREEZE_SPACE_FRAC);
-
-  const freezeBoundsMin = new THREE.Vector3()
-    .copy(freezeCenter)
-    .sub(freezeHalf);
-
-  const freezeBoundsMax = new THREE.Vector3()
-    .copy(freezeCenter)
-    .add(freezeHalf);
-
-  return {
-    chamberBoundsSim: {
-      min: cmin.clone(),
-      max: cmax.clone(),
-    },
-    freezeSpaceSim: {
-      center: freezeCenter,
-      boundsMin: freezeBoundsMin,
-      boundsMax: freezeBoundsMax,
-    },
-  };
-}
+const FIELD_HOLD_MUL = Object.freeze({
+  noise: 0,
+  maxVelocity: 0.2,
+  apicBlend: 0.18,
+  dynamicViscosity: 15,
+  speed: 0.12,
+  stiffness: 1.36,
+  gravity: 0,
+});
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const smooth01 = (x) => THREE.MathUtils.smootherstep(clamp01(x), 0, 1);
 
-function calculatePhaseState(app, elapsedSec) {
-  const dt = Math.max(0, elapsedSec - app.lastPostEnterElapsed);
-  app.lastPostEnterElapsed = elapsedSec;
-
-  const impactEnd = POST_ENTER_IMPACT;
-  const heroAcquireStart = impactEnd;
-  const heroAcquireEnd = heroAcquireStart + POST_ENTER_HERO_ACQUIRE;
-  const compressEnd = heroAcquireEnd;
-  const withdrawStart = compressEnd + POST_ENTER_HOLD;
-
-  const compressLocal = clamp01(
-    (elapsedSec - impactEnd) / POST_ENTER_COMPRESS,
-  );
-  const holdLocal = clamp01((elapsedSec - compressEnd) / POST_ENTER_HOLD);
-
-  const heroAcquireT = smooth01(Math.pow(compressLocal, 1.45));
-  const holdT = smooth01(holdLocal);
-
-  return {
-    dt,
-    impactEnd,
-    compressEnd,
-    heroAcquireStart,
-    heroAcquireEnd,
-    withdrawStart,
-    heroAcquireT,
-    holdT,
-  };
-}
-
-function applySolverChannels(app, rt, f, elapsedSec, fieldBaseline, phase) {
-  rt.convergenceSlowdown = 0;
-
-  // Impact is brief and mostly visual; from hero acquire onward the solver moves directly
-  // into the heavy hold regime so the explicit hero-body spring owns the visible shape.
-  for (const k of FIELD_KEYS) {
-    if (elapsedSec < phase.impactEnd) {
-      rt[k] = fieldBaseline[k];
-    } else {
-      rt[k] = fieldBaseline[k] * FIELD_HOLD_MUL[k];
-    }
-  }
-
-  // Gravity: fast-kill in the impact window (POST_ENTER_IMPACT = 0.16s), then held at 0
-  // for the rest of post-enter. Clearing is renderer-owned (opacityT), not physics-owned —
-  // gravity must not re-activate during withdraw or the held body collapses to the floor.
-  if (elapsedSec < POST_ENTER_IMPACT) {
-    rt.gravity =
-      fieldBaseline.gravity *
-      (1.0 - smooth01(clamp01(elapsedSec / POST_ENTER_IMPACT)));
-  } else {
-    rt.gravity = 0;
-  }
-
-  const srcCutT = smooth01(clamp01(elapsedSec / SOURCE_RADIUS_CUT_SEC));
-  rt.postEnterSourceRadiusMul = THREE.MathUtils.lerp(1, 0, srcCutT);
-
-  rt.settleWeight = 0;
-  rt.heroBodyWeight = 0;
-  rt.authoredDirectionWeight = 0;
-  rt.returnBodyWeight = 0;
-  rt.recallLateralWeight = 0;
-  rt.recallVerticalWeight = 0;
-  rt.settleDissolveUnlocked = 0;
-
-  rt.heroBodyWeight =
-    elapsedSec < phase.withdrawStart
-      ? THREE.MathUtils.lerp(0, 0.9, phase.heroAcquireT)
-      : 0;
-  rt.authoredDirectionWeight = phase.heroAcquireT;
-
-  const shouldAttemptFreezeCapture = elapsedSec >= phase.heroAcquireEnd;
-
-  if (shouldAttemptFreezeCapture && !f.freezeSnapshotReady) {
-    app.ensurePostEnterFreezeSnapshot();
-  }
-
-  const shouldLock =
-    shouldAttemptFreezeCapture &&
-    f.freezeSnapshotReady &&
-    elapsedSec >= phase.withdrawStart;
-  if (shouldLock && app.postEnterSolverLockTime === null) {
-    app.mlsMpmSim?.scheduleHeroBodyCommit?.();
-    app.postEnterSolverLockTime = elapsedSec;
-  }
-  f.solverLocked = shouldLock;
-  rt.solverLocked = shouldLock;
-
-  // Freeze starts only after solver lock is active and briefly held.
-  if (shouldLock) {
-    const freezeLockStart = app.postEnterSolverLockTime ?? elapsedSec;
-    const freezeRampStart = freezeLockStart + POST_ENTER_FREEZE_HOLD_DELAY;
-    const freezeRampSpan = Math.max(0.0001, POST_ENTER_FREEZE_RAMP);
-    rt.convergenceFreeze =
-      elapsedSec < freezeRampStart
-        ? 0
-        : smooth01(clamp01((elapsedSec - freezeRampStart) / freezeRampSpan));
-  } else {
-    rt.convergenceFreeze = 0;
-  }
-
-  rt.particleSurrenderT = 0;
-
-  let shellClaimT = 0;
-  if (shouldLock) {
-    const freezeLockStart = app.postEnterSolverLockTime ?? elapsedSec;
-    const freezeRampStart = freezeLockStart + POST_ENTER_FREEZE_HOLD_DELAY;
-    const shellRampStart =
-      freezeRampStart + POST_ENTER_FREEZE_RAMP * SHELL_CLAIM_RAMP_START_FRAC;
-    if (elapsedSec >= shellRampStart) {
-      shellClaimT = smooth01(
-        clamp01((elapsedSec - shellRampStart) / SHELL_CLAIM_RAMP_SEC),
-      );
-    }
-  }
-  rt.shellClaimT = shellClaimT;
-}
-
-function applyArrestProofRenderAndFlowChannels(app, elapsedSec, rt, f, phase) {
-  const coolNext = rt.solverLocked ? rt.convergenceFreeze : 0;
-  rt.compressT = Math.max(rt.compressT, phase.heroAcquireT);
-  rt.bodyScaleMul = 1;
-  rt.coolT = Math.max(rt.coolT, coolNext);
-  rt.withdrawT = 0;
-  rt.thinT = 0;
-  rt.opacityT = 0;
-  rt.extractionT = 0;
-  rt.massDimT = 0;
-  rt.backBiasT = 0;
-  rt.authorityLightT = 0;
-  rt.pushInT = 0;
-  rt.pageLockT = 0;
-  rt.heroT = 0;
-
-  f.withdrawalDone = false;
-  app.quietElapsed = 0;
-  f.quietLocked = false;
-  f.cameraArrived = false;
-  f.pageLocked = false;
-  f.heroAllowed = false;
-  app.pushInStartTime = null;
-  app.pageLockStartTime = null;
-  app.heroStartTime = null;
-
-  app.updateCamera(0);
-  app.updateAuthorityLight(0, 0);
-  app.updateArrestFlash(elapsedSec);
-}
-
-function resolveArrestProofStage(elapsedSec, phase) {
-  if (elapsedSec < phase.impactEnd) {
-    return "impact";
-  }
-  if (elapsedSec < phase.compressEnd) {
-    return "compress";
-  }
-  return "hold";
-}
+/**
+ * Material claim: staged materialClaimT so renderer eases in without
+ * snapping the whole rod carpet. thermalExtinction still leads compute cooling.
+ */
+const EXTINCTION_FAST_SEC = 0.3;
+const EXTINCTION_FAST_TARGET = 0.0;
+const EXTINCTION_HOLD_TARGET = 0.0;
+const MATERIAL_CLAIM_DELAY_SEC = 0.08;
 
 /**
  * @param {object} app
@@ -405,34 +69,222 @@ function resolveArrestProofStage(elapsedSec, phase) {
  *   apicBlend: number;
  *   maxVelocity: number;
  * }} fieldBaseline idle MLS scalars (same source as `BASE_RUNTIME_DEFAULTS`) for Field Dominance.
- * @returns {"none"|"impact"|"compress"|"hold"|"withdraw"|"quiet"|"push_in"|"page_lock"|"hero"}
+ * @returns {"none"|"impact"|"riftFlight"|"riftComplete"}
  */
 export function runPostEnterDrive(app, elapsedSec, fieldBaseline) {
-  if (!app.runtime) {
-    app._lastPostEnterStageReturned = "none";
-    return "none";
-  }
-
-  if (!app.postEnterDriveActive) {
-    app.runtime.shellClaimT = 0;
-    app.runtime.particleSurrenderT = 0;
+  if (!app.runtime || !app.postEnterDriveActive) {
     app._lastPostEnterStageReturned = "none";
     return "none";
   }
 
   const rt = app.runtime;
-  const f = app.postEnterFlags;
 
-  const phase = calculatePhaseState(app, elapsedSec);
+  rt.run = false;
+  rt.solverLocked = false;
+  rt.bodyScaleMul = 1;
+  rt.postEnterArrestActive = false;
+  rt.postEnterArrestT = 0;
+  rt.postEnterHoldT = 0;
+  rt.postEnterRiftFlightActive = false;
+  rt.postEnterFlightSec = 0;
+  rt.postEnterFlightT = 0;
+  rt.authorityLightT = 0;
+  rt.pushInT = 0;
+  rt.pageLockT = 0;
+  rt.heroT = 0;
 
-  applySolverChannels(app, rt, f, elapsedSec, fieldBaseline, phase);
-  applyArrestProofRenderAndFlowChannels(app, elapsedSec, rt, f, phase);
+  rt.noise = fieldBaseline.noise;
+  rt.maxVelocity = fieldBaseline.maxVelocity;
+  rt.apicBlend = fieldBaseline.apicBlend;
+  rt.dynamicViscosity = fieldBaseline.dynamicViscosity;
+  rt.speed = fieldBaseline.speed;
+  rt.stiffness = fieldBaseline.stiffness;
+
+  if (elapsedSec < POST_ENTER_IMPACT) {
+    rt.gravity =
+      fieldBaseline.gravity *
+      (1.0 - smooth01(clamp01(elapsedSec / POST_ENTER_IMPACT)));
+  } else {
+    rt.gravity = 0;
+  }
+
+  const srcCutT = smooth01(clamp01(elapsedSec / SOURCE_RADIUS_CUT_SEC));
+  rt.postEnterSourceRadiusMul = THREE.MathUtils.lerp(1, 0, srcCutT);
+
+  if (elapsedSec < POST_ENTER_RIFT_FLIGHT_START) {
+    const settleT = smooth01(elapsedSec / POST_ENTER_SETTLE_END);
+    const holdT =
+      elapsedSec < POST_ENTER_SETTLE_END
+        ? 0
+        : smooth01(
+            (elapsedSec - POST_ENTER_SETTLE_END) /
+              (POST_ENTER_RIFT_FLIGHT_START - POST_ENTER_SETTLE_END),
+          );
+
+    /**
+     * Keep real MLS alive for the first beat.
+     * Do not use the fake arrest kernel for cinematic slowdown.
+     */
+    rt.run = true;
+    rt.solverLocked = false;
+    rt.postEnterArrestActive = false;
+    rt.postEnterArrestT = settleT;
+    rt.postEnterHoldT = holdT;
+    rt.postEnterRiftFlightActive = false;
+    rt.postEnterFlightSec = 0;
+    rt.postEnterFlightT = 0;
+
+    const profileT = Math.max(settleT, holdT);
+
+    rt.gravity = THREE.MathUtils.lerp(
+      fieldBaseline.gravity,
+      fieldBaseline.gravity * FIELD_HOLD_MUL.gravity,
+      profileT,
+    );
+
+    rt.noise = THREE.MathUtils.lerp(
+      fieldBaseline.noise,
+      fieldBaseline.noise * FIELD_HOLD_MUL.noise,
+      profileT,
+    );
+
+    rt.speed = THREE.MathUtils.lerp(
+      fieldBaseline.speed,
+      fieldBaseline.speed * FIELD_HOLD_MUL.speed,
+      profileT,
+    );
+
+    rt.maxVelocity = THREE.MathUtils.lerp(
+      fieldBaseline.maxVelocity,
+      fieldBaseline.maxVelocity * FIELD_HOLD_MUL.maxVelocity,
+      profileT,
+    );
+
+    rt.dynamicViscosity = THREE.MathUtils.lerp(
+      fieldBaseline.dynamicViscosity,
+      fieldBaseline.dynamicViscosity * FIELD_HOLD_MUL.dynamicViscosity,
+      profileT,
+    );
+
+    rt.apicBlend = THREE.MathUtils.lerp(
+      fieldBaseline.apicBlend,
+      fieldBaseline.apicBlend * FIELD_HOLD_MUL.apicBlend,
+      profileT,
+    );
+
+    rt.stiffness = THREE.MathUtils.lerp(
+      fieldBaseline.stiffness,
+      fieldBaseline.stiffness * FIELD_HOLD_MUL.stiffness,
+      profileT,
+    );
+
+    /**
+     * Do not overuse convergenceSlowdown here.
+     * The old better read came from live MLS + viscosity/speed profile, not XSPH freeze.
+     */
+    rt.convergenceSlowdown = 0;
+    rt.convergenceFreeze = 0;
+    rt.convergenceHeatRetention = 0;
+
+    /**
+     * Material Claim: front-loaded thermal extinction cools compute colors
+     * before the renderer mineral read dominates.
+     *
+     * thermalExtinction: 0 → EXTINCTION_FAST_TARGET over EXTINCTION_FAST_SEC,
+     *   then lerp to EXTINCTION_HOLD_TARGET through first-beat end.
+     * materialClaimT: 0 through settle+hold (renderer stays on MLS rod read), then flight 0 → 1.
+     * postEnterHoverClamp: 0 immediately — kill hover color at source.
+     */
+
+    const extinctionFastT = smooth01(clamp01(elapsedSec / EXTINCTION_FAST_SEC));
+    if (elapsedSec < EXTINCTION_FAST_SEC) {
+      rt.convergenceThermalExtinction = THREE.MathUtils.lerp(
+        0,
+        EXTINCTION_FAST_TARGET,
+        extinctionFastT,
+      );
+    } else {
+      const slowT = smooth01(
+        clamp01(
+          (elapsedSec - EXTINCTION_FAST_SEC) /
+            (POST_ENTER_RIFT_FLIGHT_START - EXTINCTION_FAST_SEC),
+        ),
+      );
+      rt.convergenceThermalExtinction = THREE.MathUtils.lerp(
+        EXTINCTION_FAST_TARGET,
+        EXTINCTION_HOLD_TARGET,
+        slowT,
+      );
+    }
+
+    // Keep claim at 0 for full settle+hold so rod colors stay stable (thermal lock + no post-enter mix).
+    // Flight ramps 0 → 1 instead of jumping to 0.82 so postEnterMaterialT eases in without a one-frame cliff.
+    rt.materialClaimT = 0;
+
+    // Freeze sim-authored color/heat during settle+hold; rift flight kernel owns writes once suction starts.
+    rt.postEnterThermalColorLock = 1;
+
+    rt.postEnterHoverClamp = 0;
+
+    /**
+     * Keep the existing source-radius cut computed above.
+     * Do not force postEnterSourceRadiusMul = 0 here.
+     */
+
+    app.updateCamera(0);
+    app.updateAuthorityLight(0, 0);
+    app.updateArrestFlash(elapsedSec);
+
+    maybeLogForensicPostEnter(app, elapsedSec, rt);
+
+    app._lastPostEnterStageReturned = "impact";
+    app._lastDrivePostEnterElapsed = elapsedSec;
+
+    return "impact";
+  }
+
+  if (elapsedSec >= POST_ENTER_RIFT_FLIGHT_START) {
+    if (!app._postEnterRiftFlightInitScheduled) {
+      app.mlsMpmSim?.schedulePostEnterRiftFlightInit?.();
+      app._postEnterRiftFlightInitScheduled = true;
+    }
+    const flightSec = Math.max(0, elapsedSec - POST_ENTER_RIFT_FLIGHT_START);
+    const flightT = clamp01(flightSec / POST_ENTER_RIFT_FLIGHT_DURATION);
+    rt.run = false;
+    rt.gravity = 0;
+    rt.postEnterSourceRadiusMul = 0;
+    rt.postEnterFlightSec = flightSec;
+    rt.postEnterFlightT = flightT;
+    rt.postEnterRiftFlightActive = flightT < 1;
+    rt.solverLocked = flightT >= 1;
+
+    rt.postEnterThermalColorLock = 0;
+
+    rt.convergenceThermalExtinction = EXTINCTION_HOLD_TARGET;
+    rt.materialClaimT = THREE.MathUtils.lerp(0, 1.0, flightT);
+    rt.postEnterHoverClamp = 0;
+
+    app.updateCamera(0);
+    app.updateAuthorityLight(0, 0);
+    app.updateArrestFlash(elapsedSec);
+
+    maybeLogForensicPostEnter(app, elapsedSec, rt);
+
+    app._lastPostEnterStageReturned =
+      flightT >= 1 ? "riftComplete" : "riftFlight";
+    app._lastDrivePostEnterElapsed = elapsedSec;
+
+    return app._lastPostEnterStageReturned;
+  }
+
+  app.updateCamera(0);
+  app.updateAuthorityLight(0, 0);
+  app.updateArrestFlash(elapsedSec);
 
   maybeLogForensicPostEnter(app, elapsedSec, rt);
-  const stage = resolveArrestProofStage(elapsedSec, phase);
 
-  app._lastPostEnterStageReturned = stage;
+  app._lastPostEnterStageReturned = "impact";
   app._lastDrivePostEnterElapsed = elapsedSec;
 
-  return stage;
+  return "impact";
 }

@@ -36,8 +36,6 @@ export class FlowEngineBridge implements FlowEngineApi {
   private postEnterElapsed = 0;
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
-  /** After final `hero` snapshot, stop dev telemetry (otherwise logs forever). */
-  private postEnterDebugMuted = false;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
 
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
@@ -133,7 +131,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     if (this.disposed || !this.app || this.postEnterActive) return;
     this.postEnterActive = true;
     this.postEnterElapsed = 0;
-    this.postEnterDebugMuted = false;
     this.app.beginPostEnterDrive();
     this.app.clearPointer();
     this.app.setPointerInfluence(0);
@@ -146,9 +143,6 @@ export class FlowEngineBridge implements FlowEngineApi {
       | undefined;
     if (snap0 && this.options.onPostEnterDebugSnapshot) {
       this.options.onPostEnterDebugSnapshot(snap0);
-      if (snap0.stage === "hero") {
-        this.postEnterDebugMuted = true;
-      }
     }
   }
 
@@ -179,7 +173,6 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.postEnterElapsed = 0;
     this.lastPostEnterStage = "none";
     this.postEnterDebugAccum = 0;
-    this.postEnterDebugMuted = false;
   }
 
   private emitPostEnterStageIfChanged(stage: PostEnterStage): void {
@@ -228,7 +221,7 @@ export class FlowEngineBridge implements FlowEngineApi {
         this.emitPostEnterStageIfChanged(stage);
 
         const onDbg = this.options.onPostEnterDebugSnapshot;
-        if (onDbg && !this.postEnterDebugMuted) {
+        if (onDbg) {
           this.postEnterDebugAccum += delta;
           if (
             this.postEnterDebugAccum >=
@@ -241,9 +234,6 @@ export class FlowEngineBridge implements FlowEngineApi {
               | undefined;
             if (snap) {
               onDbg(snap);
-              if (snap.stage === "hero") {
-                this.postEnterDebugMuted = true;
-              }
             }
           }
         }

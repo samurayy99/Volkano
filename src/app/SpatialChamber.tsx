@@ -45,11 +45,7 @@ export function SpatialChamber() {
         }
       : undefined;
 
-  const backwallAuthority =
-    postEnterStage === "quiet" ||
-    postEnterStage === "push_in" ||
-    postEnterStage === "page_lock" ||
-    postEnterStage === "hero";
+  const backwallAuthority = false;
 
   const setPostEnterStageTracked = useCallback((stage: PostEnterStage) => {
     postEnterStageRef.current = stage;
@@ -86,11 +82,7 @@ export function SpatialChamber() {
       data-post-enter-stage={
         postEnterStage === "none" ? undefined : postEnterStage
       }
-      data-back-interface-ready={
-        postEnterStage === "page_lock" || postEnterStage === "hero"
-          ? "true"
-          : undefined
-      }
+      data-back-interface-ready={undefined}
       data-backwall-authority={backwallAuthority ? "true" : undefined}
       data-engine-ready={engineReady ? "true" : undefined}
       data-source-shell-visible={sourceShellVisible ? "true" : undefined}

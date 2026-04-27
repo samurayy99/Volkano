@@ -19,10 +19,9 @@ import {
   fract,
   sin,
   step,
-  max,
 } from "three/tsl";
 
-import { forensicSuppressCompressVisual } from "../post-enter/forensicPostEnter.js";
+import { forensicHoldReadIsolation } from "../post-enter/forensicPostEnter.js";
 
 const COMPRESS_EASE_EDGE0 = 0.03;
 const COMPRESS_EASE_EDGE1 = 0.94;
@@ -30,22 +29,22 @@ const COMPRESS_EASE_EDGE1 = 0.94;
 const PARTICLE_PROFILE_READ = Object.freeze({
   speedBandStart: 1.2,
   speedBandEnd: 3.5,
-  stretchGain: 1.2,
-  stretchBias: 1.0,
+  stretchGain: 0.55,
+  stretchBias: 0.82,
   thinningPower: -0.4,
   freezeBandStart: 0.18,
   freezeBandEnd: 0.82,
   frozenWidth: 1.0,
   frozenHeight: 1.45,
-  frozenLength: 0.34,
+  frozenLength: 0.28,
   compressedWidth: 0.88,
   compressedHeight: 0.78,
-  compressedLength: 0.64,
+  compressedLength: 0.46,
   densityLift: 0.28,
   densityBias: 0.72,
   frozenDensity: 0.975,
   compressedDensity: 1.12,
-  instanceScale: 1.04,
+  instanceScale: 1.08,
   facingThicknessSpeedMin: 0.16,
   facingThicknessSpeedMax: 1.32,
   facingThicknessGain: 0.72,
@@ -75,80 +74,7 @@ const calcLookAtMatrix = /*#__PURE__*/ Fn(([target_immutable]) => {
 });
 
 const buildCompressTVisualRead = (uniforms) =>
-  mix(
-    uniforms.compressT.clamp(0, 1),
-    float(0),
-    uniforms.forensicSuppressCompressVisual,
-  ).toConst("compressTVisualRead");
-
-/**
- * Spatial relief for held/compressed read: slit vs outer shoulder vs mid vs apex
- * (sim space vs mirrored hero center). Gated by compressEase * freezeShapeT.
- */
-const buildHeroReliefModulation = ({ simPos, uniforms, compressT }) => {
-  const freezeShapeT = smoothstep(
-    float(PARTICLE_PROFILE_READ.freezeBandStart),
-    float(PARTICLE_PROFILE_READ.freezeBandEnd),
-    uniforms.convergenceFreeze,
-  ).toConst("reliefFreezeShapeT");
-
-  const compressLocal = compressT.clamp(0, 1).toConst("reliefCompressLocal");
-  const compressEase = smoothstep(
-    float(COMPRESS_EASE_EDGE0),
-    float(COMPRESS_EASE_EDGE1),
-    compressLocal,
-  ).toConst("reliefCompressEase");
-
-  const reliefT = compressEase.mul(freezeShapeT).toConst("heroReliefT");
-
-  const hx = uniforms.heroSimCenter.x;
-  const hy = uniforms.heroSimCenter.y;
-  const dx = simPos.x.sub(hx).abs().toConst("heroReliefDx");
-  const creaseCore = smoothstep(float(2.2), float(9.0), dx)
-    .oneMinus()
-    .toConst("heroCreaseCore");
-  const outerCore = smoothstep(float(3.5), float(13.0), dx).toConst(
-    "heroOuterCore",
-  );
-  const apexCore = smoothstep(
-    float(-3.0),
-    float(-11.0),
-    simPos.y.sub(hy),
-  ).toConst("heroApexCore");
-
-  const creaseT = reliefT.mul(creaseCore).toConst("heroCreaseT");
-  const outerT = reliefT.mul(outerCore).toConst("heroOuterT");
-  const midT = reliefT
-    .mul(float(1).sub(max(creaseCore, outerCore)).clamp(0, 1))
-    .toConst("heroMidT");
-  const apexT = reliefT.mul(apexCore).toConst("heroApexT");
-
-  const widthMul = mix(float(1), float(0.88), creaseT)
-    .mul(mix(float(1), float(1.1), outerT))
-    .mul(mix(float(1), float(0.78), apexT))
-    .mul(mix(float(1), float(0.94), midT))
-    .toConst("heroReliefWidthMul");
-
-  const lengthMul = mix(float(1), float(1.08), creaseT)
-    .mul(mix(float(1), float(1.04), outerT))
-    .mul(mix(float(1), float(0.82), apexT))
-    .toConst("heroReliefLengthMul");
-
-  const heightMul = mix(float(1), float(0.94), creaseT)
-    .mul(mix(float(1), float(1.05), outerT))
-    .mul(mix(float(1), float(0.88), apexT))
-    .mul(mix(float(1), float(0.96), midT))
-    .toConst("heroReliefHeightMul");
-
-  const opacityMul = mix(float(1), float(0.72), creaseT)
-    .mul(mix(float(1), float(0.65), apexT))
-    .mul(mix(float(1), float(1.06), outerT))
-    .mul(mix(float(1), float(0.92), midT))
-    .clamp(float(0.5), float(1.12))
-    .toConst("heroReliefOpacityMul");
-
-  return { widthMul, heightMul, lengthMul, opacityMul };
-};
+  uniforms.compressT.clamp(0, 1).toConst("compressTVisualRead");
 
 const buildLateReleaseState = ({ uniforms }) => {
   const structuralReleaseT = smoothstep(
@@ -162,60 +88,40 @@ const buildLateReleaseState = ({ uniforms }) => {
     .clamp(0, 1)
     .toConst("structuralSurvival");
 
-  // Cohort classification is a pure function of instanceIndex — reproduced
-  // here with the same hash + seed + thresholds as HERO_POINT_CLOUD in the
-  // simulator generator. No buffer/struct field is hijacked.
-  const roleU = fract(
-    sin(instanceIndex.toFloat().add(float(1)).mul(float(91.4271))).mul(
-      float(43758.5453),
-    ),
-  ).toConst("cohortRoleU");
-  const cohortGate = smoothstep(
-    float(0.28),
-    float(0.9),
-    uniforms.heroCohortT.clamp(0, 1),
-  ).toConst("cohortGate");
-  const heroMask = step(float(0.85), roleU).toConst("cohortHeroMask");
-  const supportMask = step(float(0.62), roleU)
-    .mul(float(1).sub(heroMask))
-    .toConst("cohortSupportMask");
-  const bulkMask = float(1)
-    .sub(step(float(0.62), roleU))
-    .toConst("cohortBulkMask");
-
-  const cohortSizeTarget = heroMask
-    .mul(float(1.0))
-    .add(supportMask.mul(float(0.82)))
-    .add(bulkMask.mul(float(0.55)));
-  const cohortOpacityTarget = heroMask
-    .mul(float(1.0))
-    .add(supportMask.mul(float(0.72)))
-    .add(bulkMask.mul(float(0.36)));
-  const cohortEmissiveTarget = heroMask
-    .mul(float(1.0))
-    .add(supportMask.mul(float(0.30)))
-    .add(bulkMask.mul(float(0.08)));
-
-  const cohortSizeMul = mix(float(1), cohortSizeTarget, cohortGate).toConst(
-    "cohortSizeMul",
-  );
-  const cohortOpacityMul = mix(
-    float(1),
-    cohortOpacityTarget,
-    cohortGate,
-  ).toConst("cohortOpacityMul");
-  const cohortEmissiveMul = mix(
-    float(1),
-    cohortEmissiveTarget,
-    cohortGate,
-  ).toConst("cohortEmissiveMul");
-
   return {
     structuralReleaseT,
     structuralSurvival,
-    cohortSizeMul,
-    cohortOpacityMul,
-    cohortEmissiveMul,
+  };
+};
+
+const buildMaterialSubordinationState = ({ uniforms }) => {
+  const materialSubordinationT = smoothstep(
+    float(0.16),
+    float(0.82),
+    uniforms.convergenceFreeze.clamp(0, 1).mul(uniforms.solverLockedFloat),
+  ).toConst("materialSubordinationT");
+
+  // Cleanup state: post-lock particles are material memory/feedstock only.
+  // Role families may still affect texture/decay elsewhere, but they no longer
+  // author competing V silhouettes through distinct macro-carrier lanes.
+  const sizeTarget = float(0.84).toConst("materialSubordinationSizeTarget");
+  const opacityTarget = float(0.9).toConst(
+    "materialSubordinationOpacityTarget",
+  );
+  const emissiveTarget = float(0.96).toConst(
+    "materialSubordinationEmissiveTarget",
+  );
+
+  return {
+    sizeMul: mix(float(1), sizeTarget, materialSubordinationT).toConst(
+      "materialSubordinationSizeMul",
+    ),
+    opacityMul: mix(float(1), opacityTarget, materialSubordinationT).toConst(
+      "materialSubordinationOpacityMul",
+    ),
+    emissiveMul: mix(float(1), emissiveTarget, materialSubordinationT).toConst(
+      "materialSubordinationEmissiveMul",
+    ),
   };
 };
 
@@ -225,8 +131,6 @@ const buildParticleProfileState = ({
   convergenceFreeze,
   compressT,
   thinT,
-  simPos,
-  uniforms,
 }) => {
   const stretch = smoothstep(
     float(PARTICLE_PROFILE_READ.speedBandStart),
@@ -236,6 +140,10 @@ const buildParticleProfileState = ({
     .mul(PARTICLE_PROFILE_READ.stretchGain)
     .add(PARTICLE_PROFILE_READ.stretchBias)
     .toConst("stretch");
+
+  const stretchLengthCapped = stretch
+    .clamp(float(0.75), float(1.1))
+    .toConst("stretchLengthCapped");
 
   const thinning = pow(
     stretch,
@@ -268,7 +176,7 @@ const buildParticleProfileState = ({
   ).toConst("rodHeightFreeze");
 
   const rodLengthFreeze = mix(
-    stretch,
+    stretchLengthCapped,
     float(PARTICLE_PROFILE_READ.frozenLength),
     freezeShapeT,
   ).toConst("rodLengthFreeze");
@@ -293,22 +201,17 @@ const buildParticleProfileState = ({
 
   const thinLocal = thinT.clamp(0, 1).toConst("thinLocal");
 
-  const relief = buildHeroReliefModulation({ simPos, uniforms, compressT });
-
-  const rodWidth = rodWidthCompressed
+  const rodWidthBase = rodWidthCompressed
     .mul(float(1).sub(thinLocal.mul(float(WITHDRAW_READ.thinWidthReduction))))
-    .mul(relief.widthMul)
-    .toConst("rodWidth");
+    .toConst("rodWidthBase");
 
-  const rodHeight = rodHeightCompressed
+  const rodHeightBase = rodHeightCompressed
     .mul(float(1).sub(thinLocal.mul(float(WITHDRAW_READ.thinHeightReduction))))
-    .mul(relief.heightMul)
-    .toConst("rodHeight");
+    .toConst("rodHeightBase");
 
-  const rodLength = rodLengthCompressed
+  const rodLengthBase = rodLengthCompressed
     .mul(float(1).sub(thinLocal.mul(float(WITHDRAW_READ.thinLengthReduction))))
-    .mul(relief.lengthMul)
-    .toConst("rodLength");
+    .toConst("rodLengthBase");
 
   const frozenDensity = mix(
     particleDensity
@@ -319,7 +222,7 @@ const buildParticleProfileState = ({
     freezeShapeT,
   ).toConst("frozenDensity");
 
-  const densityScale = mix(
+  const densityScaleBase = mix(
     mix(
       frozenDensity,
       float(PARTICLE_PROFILE_READ.compressedDensity),
@@ -327,7 +230,12 @@ const buildParticleProfileState = ({
     ).clamp(0, 1.08),
     float(0.08),
     thinLocal,
-  ).toConst("densityScale");
+  ).toConst("densityScaleBase");
+
+  const rodWidth = rodWidthBase.toConst("rodWidth");
+  const rodHeight = rodHeightBase.toConst("rodHeight");
+  const rodLength = rodLengthBase.toConst("rodLength");
+  const densityScale = densityScaleBase.toConst("densityScale");
 
   return { rodWidth, rodHeight, rodLength, densityScale };
 };
@@ -375,90 +283,307 @@ const buildUnifiedParticleSurfaceNodes = ({
 }) => {
   const particleHeat = particle.get("heat");
   const particleColor = particle.get("color").toConst("particleColor");
+  const particleSpeed = particle
+    .get("velocity")
+    .length()
+    .toConst("particleSpeed");
+  const simPos = particle.get("position").xyz.toConst("materialSimPos");
   const lateRelease = buildLateReleaseState({ uniforms });
+  const materialSubordination = buildMaterialSubordinationState({ uniforms });
   const viewNormal = normalize(vNormalView).toConst("viewNormal");
   const viewFacingT = viewNormal.z.abs().clamp(0, 1).toConst("viewFacingT");
 
   const viewThicknessT = vFacingThickness.clamp(0, 1).toConst("viewThicknessT");
 
   const roughNoise = fract(sin(instanceIndex.toFloat().mul(483.1)).mul(19847.3))
-    .mul(0.12)
-    .sub(0.06)
+    .mul(0.05)
+    .sub(0.025)
     .toConst("roughNoise");
 
-  const baseSurfaceRoughness = float(0.92)
+  const defaultSurfaceRoughness = float(0.92)
     .add(roughNoise)
     .clamp(0.86, 0.96)
     .sub(viewThicknessT.mul(0.075))
     .sub(viewFacingT.mul(viewThicknessT).mul(0.02))
     .clamp(0.8, 0.96)
-    .toConst("baseSurfaceRoughness");
+    .toConst("defaultSurfaceRoughness");
 
   const glowFactor = smoothstep(float(0.12), float(0.46), particleHeat).toConst(
     "glowFactor",
   );
+
+  const postEnterMaterialT = smoothstep(
+    float(0.0),
+    float(0.55),
+    uniforms.materialClaimT.clamp(0, 1),
+  ).toConst("postEnterMaterialT");
+
+  const postEnterFlightTGlobal = uniforms.postEnterFlightT
+    .clamp(0, 1)
+    .toConst("postEnterFlightTGlobal");
+
+  const riftProximityT = float(1)
+    .sub(smoothstep(float(4.5), float(18.0), simPos.x.sub(float(32.0)).abs()))
+    .clamp(float(0), float(1))
+    .toConst("riftProximityT");
+
   const massDimT = uniforms.massDimT.clamp(0, 1).toConst("massDimT");
+
   const decayProgress = particle
     .get("dissolveState")
     .y.clamp(0, 1)
     .toConst("decayProgress");
-  const surfaceColor = particleColor
-    .mul(mix(float(1), float(0.0), massDimT))
-    .toConst("surfaceColor");
 
-  const surfaceRoughness = baseSurfaceRoughness
-    .add(massDimT.mul(float(0.02)))
-    .clamp(0.8, 0.98)
+  // dissolveState.x stays sim-owned for absorb/contact; broad material must not follow
+  // per-particle ramps (staggered delays would read as a center-out material wave).
+  // Broad X-band rift shaping: full before flight; fades with global postEnterFlightT.
+  const broadRiftMaterialT = riftProximityT
+    .mul(float(1).sub(postEnterFlightTGlobal))
+    .toConst("broadRiftMaterialT");
+
+  // Post-enter: basalt body with sparse internal ember veins.
+  // No global copper/lava floor. The mass stays dark; heat appears only as
+  // selective accents so the rod field does not become a painted carpet.
+  const thermalRedT = particleColor.r
+    .sub(particleColor.b.mul(float(0.45)))
+    .clamp(float(0), float(1))
+    .toConst("thermalRedT");
+
+  const motionHeatT = smoothstep(float(0.55), float(2.8), particleSpeed)
+    .mul(postEnterMaterialT)
+    .mul(float(1).sub(postEnterFlightTGlobal))
+    .toConst("motionHeatT");
+
+  const heatReadT = glowFactor
+    .mul(float(0.82))
+    .add(thermalRedT.mul(float(0.74)))
+    .add(motionHeatT.mul(float(0.18)))
+    .add(viewThicknessT.mul(float(0.08)))
+    .clamp(float(0), float(1))
+    .toConst("heatReadT");
+
+  // Tame heat to 42% at full material claim — dark identity, not dead grey.
+  const riftHeatGateT = mix(
+    float(1.0),
+    float(0.42),
+    postEnterMaterialT.clamp(0, 1),
+  ).toConst("riftHeatGateT");
+  const riftHeatT = heatReadT
+    .mul(
+      float(0.48)
+        .add(broadRiftMaterialT.mul(float(0.72)))
+        .clamp(float(0), float(1.16)),
+    )
+    .mul(riftHeatGateT)
+    .clamp(float(0), float(1))
+    .toConst("riftHeatT");
+
+  const riftAuthorityT = smoothstep(
+    float(0.22),
+    float(0.92),
+    broadRiftMaterialT.mul(postEnterMaterialT),
+  ).toConst("riftAuthorityT");
+
+  const outerSubordinationT = postEnterMaterialT
+    .mul(float(1).sub(riftProximityT))
+    .clamp(float(0), float(1))
+    .toConst("outerSubordinationT");
+
+  const outerSubordinationScoped = outerSubordinationT
+    .mul(float(1).sub(postEnterFlightTGlobal))
+    .toConst("outerSubordinationScoped");
+
+  const emberHash = fract(
+    sin(instanceIndex.toFloat().mul(137.17)).mul(43758.5453),
+  ).toConst("emberHash");
+
+  const emberVeinT = smoothstep(
+    float(0.58),
+    float(0.9),
+    emberHash
+      .add(heatReadT.mul(float(0.28)))
+      .add(motionHeatT.mul(float(0.04)))
+      .clamp(float(0), float(1.12)),
+  )
+    .mul(riftHeatT)
+    .mul(postEnterMaterialT)
+    .toConst("emberVeinT");
+
+  const lowRedMemoryT = heatReadT
+    .mul(postEnterMaterialT)
+    .mul(
+      float(0.06)
+        .add(riftAuthorityT.mul(float(0.38)))
+        .clamp(float(0), float(0.42)),
+    )
+    .mul(riftHeatGateT)
+    .toConst("lowRedMemoryT");
+
+  // Diffuse dark-red material floor — not emissive, not a cone. Identity of hot basalt.
+  const basaltRedMemoryT = postEnterMaterialT
+    .mul(float(0.22).add(thermalRedT.mul(float(0.34))))
+    .clamp(float(0), float(0.42))
+    .toConst("basaltRedMemoryT");
+
+  const basaltSurface = particleColor
+    .mul(vec3(0.68, 0.22, 0.16))
+    .add(vec3(0.018, 0.006, 0.004).mul(postEnterMaterialT))
+    .add(vec3(0.13, 0.018, 0.005).mul(basaltRedMemoryT))
+    .add(vec3(0.055, 0.004, 0.001).mul(lowRedMemoryT))
+    .toConst("basaltSurface");
+
+  const deepRedDiffuse = vec3(0.9, 0.01, 0.002)
+    .mul(emberVeinT)
+    .mul(float(0.72).add(riftAuthorityT.mul(float(0.38))))
+    .toConst("deepRedDiffuse");
+
+  const hotCoreT = smoothstep(
+    float(0.91),
+    float(0.995),
+    emberHash
+      .add(glowFactor.mul(float(0.34)))
+      .add(thermalRedT.mul(float(0.32)))
+      .add(motionHeatT.mul(float(0.05)))
+      .clamp(float(0), float(1.08)),
+  )
+    .mul(riftHeatT)
+    .mul(postEnterMaterialT)
+    .toConst("hotCoreT");
+
+  const postEnterSurfaceRoughness = float(0.7)
+    .add(roughNoise.mul(0.42))
+    .sub(hotCoreT.mul(float(0.3)))
+    .clamp(float(0.52), float(0.8))
+    .sub(viewThicknessT.mul(0.075))
+    .sub(viewFacingT.mul(viewThicknessT).mul(0.028))
+    .clamp(float(0.48), float(0.84))
+    .toConst("postEnterSurfaceRoughness");
+
+  const hotRedOrangeDiffuse = vec3(1.0, 0.065, 0.008)
+    .mul(hotCoreT)
+    .mul(float(0.26))
+    .toConst("hotRedOrangeDiffuse");
+
+  const postEnterColor = basaltSurface
+    .add(deepRedDiffuse)
+    .add(hotRedOrangeDiffuse)
+    .toConst("postEnterColor");
+
+  const surfaceColorBase = mix(
+    particleColor,
+    postEnterColor,
+    postEnterMaterialT.mul(float(0.72)),
+  )
+    .clamp(vec3(0), vec3(1))
+    .toConst("surfaceColorBase");
+
+  const surfaceRoughness = mix(
+    defaultSurfaceRoughness,
+    postEnterSurfaceRoughness.clamp(0.68, 0.86),
+    postEnterMaterialT,
+  )
+    .clamp(0.52, 0.88)
     .toConst("surfaceRoughness");
 
-  const baseEmissive = vec3(0.36, 0.12, 0.03)
+  const baseThermalEmissive = vec3(0.36, 0.12, 0.03)
     .mul(glowFactor)
-    .mul(float(0.0095))
-    .toConst("baseEmissive");
-  const surfaceEmissive = baseEmissive
-    .mul(mix(float(1), float(0.0), massDimT))
-    .mul(lateRelease.cohortEmissiveMul)
-    .toConst("surfaceEmissive");
+    .mul(float(0.018))
+    .mul(mix(float(1.0), float(1.6), postEnterMaterialT))
+    .toConst("baseThermalEmissive");
 
-  const surfaceAo = mix(float(1.0), float(0.92), viewThicknessT)
-    .add(viewThicknessT.mul(0.02))
+  const lowMemoryEmissive = vec3(0.85, 0.1, 0.018)
+    .mul(lowRedMemoryT)
+    .mul(float(0.022))
+    .toConst("lowMemoryEmissive");
+
+  const deepRedEmissive = vec3(1.0, 0.018, 0.0035)
+    .mul(emberVeinT)
+    .mul(float(0.18))
+    .toConst("deepRedEmissive");
+
+  const hotOrangeEmissive = vec3(1.0, 0.075, 0.01)
+    .mul(hotCoreT)
+    .mul(float(0.14))
+    .toConst("hotOrangeEmissive");
+
+  const yellowPinT = smoothstep(
+    float(0.985),
+    float(1.0),
+    emberHash
+      .add(glowFactor.mul(float(0.38)))
+      .add(thermalRedT.mul(float(0.26)))
+      .clamp(float(0), float(1.02)),
+  )
+    .mul(hotCoreT)
+    .toConst("yellowPinT");
+
+  const yellowPinEmissive = vec3(1.0, 0.34, 0.045)
+    .mul(yellowPinT)
+    .mul(float(0.08))
+    .toConst("yellowPinEmissive");
+
+  const surfaceEmissiveBase = baseThermalEmissive
+    .add(lowMemoryEmissive)
+    .add(deepRedEmissive)
+    .add(hotOrangeEmissive)
+    .add(yellowPinEmissive)
+    .mul(materialSubordination.emissiveMul)
+    .toConst("surfaceEmissiveBase");
+
+  const surfaceAo = mix(float(1.0), float(0.94), viewThicknessT)
+    .add(viewThicknessT.mul(0.016))
     .clamp(0, 1)
     .toConst("surfaceAo");
-
-  const simPosSurface = particle.get("position").xyz;
-  const compressTVisualSurface = buildCompressTVisualRead(uniforms);
-  const reliefSurface = buildHeroReliefModulation({
-    simPos: simPosSurface,
-    uniforms,
-    compressT: compressTVisualSurface,
-  });
 
   const opacityEffective = float(1)
     .sub(uniforms.opacityT.clamp(0, 1))
     .mul(lateRelease.structuralSurvival)
     .mul(float(1).sub(massDimT.mul(float(0.92))))
     .mul(float(1).sub(decayProgress))
-    .mul(lateRelease.cohortOpacityMul)
-    .mul(reliefSurface.opacityMul)
+    .mul(materialSubordination.opacityMul)
+    .mul(
+      float(1)
+        .sub(outerSubordinationScoped.mul(float(0.12)))
+        .add(riftAuthorityT.mul(float(0.03)))
+        .clamp(float(0.78), float(1.0)),
+    )
     .clamp(0, 1)
     .toConst("opacityEffective");
 
+  const surfaceColor = surfaceColorBase.toConst("surfaceColor");
+
+  const surfaceEmissive = surfaceEmissiveBase.toConst("surfaceEmissive");
+
+  const bloomSource = yellowPinEmissive.r
+    .max(hotOrangeEmissive.r.mul(float(0.34)).mul(riftAuthorityT))
+    .max(deepRedEmissive.r.mul(float(0.12)).mul(riftAuthorityT))
+    .toConst("particleBloomSource");
+
   material.colorNode = surfaceColor;
   material.roughnessNode = surfaceRoughness;
-  material.metalnessNode = float(0.015);
+  material.metalnessNode = mix(
+    float(0.02),
+    mix(
+      float(0.06),
+      float(0.15),
+      hotCoreT
+        .mul(float(0.55))
+        .add(emberVeinT.mul(float(0.2)))
+        .clamp(float(0), float(1)),
+    ),
+    postEnterMaterialT,
+  );
   material.emissiveNode = surfaceEmissive;
   material.aoNode = surfaceAo;
   material.opacityNode = opacityEffective;
 
   material.mrtNode = mrt({
-    bloomIntensity: smoothstep(
-      float(0.004),
-      float(0.035),
-      surfaceEmissive.r.max(surfaceEmissive.g).max(surfaceEmissive.b),
-    )
-      .mul(surfaceEmissive.r.max(surfaceEmissive.g).max(surfaceEmissive.b))
+    bloomIntensity: smoothstep(float(0.026), float(0.09), bloomSource)
+      .mul(bloomSource)
+      .mul(float(0.72))
       .mul(opacityEffective)
-      .clamp(0, 1),
+      .mul(postEnterMaterialT)
+      .clamp(float(0), float(1)),
   });
 };
 
@@ -476,6 +601,54 @@ const buildParticlePositionNode = ({
     const localPos = attribute("position").xyz;
     const speed = particle.get("velocity").length();
 
+    const positionPostEnterMaterialT = smoothstep(
+      float(0.0),
+      float(0.22),
+      uniforms.materialClaimT.clamp(0, 1),
+    ).toConst("positionPostEnterMaterialT");
+
+    const positionPostEnterFlightT = uniforms.postEnterFlightT
+      .clamp(0, 1)
+      .toConst("positionPostEnterFlightT");
+
+    const positionRiftProximityT = float(1)
+      .sub(smoothstep(float(4.5), float(18.0), simPos.x.sub(float(32.0)).abs()))
+      .clamp(float(0), float(1))
+      .toConst("positionRiftProximityT");
+
+    const positionBroadRiftT = positionRiftProximityT
+      .mul(float(1).sub(positionPostEnterFlightT))
+      .toConst("positionBroadRiftT");
+
+    const positionRiftAuthorityT = smoothstep(
+      float(0.22),
+      float(0.92),
+      positionBroadRiftT.mul(positionPostEnterMaterialT),
+    ).toConst("positionRiftAuthorityT");
+
+    const positionOuterSubordinationT = positionPostEnterMaterialT
+      .mul(float(1).sub(positionRiftProximityT))
+      .clamp(float(0), float(1))
+      .toConst("positionOuterSubordinationT");
+
+    const positionOuterSubordinationScoped = positionOuterSubordinationT
+      .mul(float(1).sub(positionPostEnterFlightT))
+      .toConst("positionOuterSubordinationScoped");
+
+    // Outer subordination: keep rift hierarchy but avoid post-enter “fine dust”
+    // read (was −30% / −44% silhouette + length with hard floors 0.66 / 0.48).
+    const outerSilhouetteScale = float(1)
+      .sub(positionOuterSubordinationScoped.mul(float(0.14)))
+      .add(positionRiftAuthorityT.mul(float(0.01)))
+      .clamp(float(0.84), float(1.0))
+      .toConst("outerSilhouetteScale");
+
+    const outerLengthScale = float(1)
+      .sub(positionOuterSubordinationScoped.mul(float(0.2)))
+      .add(positionRiftAuthorityT.mul(float(0.008)))
+      .clamp(float(0.74), float(1.0))
+      .toConst("outerLengthScale");
+
     const compressTVisualRead = buildCompressTVisualRead(uniforms);
 
     const particleProfile = buildParticleProfileState({
@@ -484,20 +657,56 @@ const buildParticlePositionNode = ({
       convergenceFreeze: uniforms.convergenceFreeze,
       compressT: compressTVisualRead,
       thinT: uniforms.thinT,
-      simPos,
-      uniforms,
     });
+
+    const shapeHash = fract(
+      sin(instanceIndex.toFloat().mul(91.71)).mul(43758.5453),
+    ).toConst("shapeHash");
+    const flatHash = fract(
+      sin(instanceIndex.toFloat().mul(171.31)).mul(24634.6345),
+    ).toConst("flatHash");
+    const shardFamilyT = smoothstep(
+      float(0.22),
+      float(0.92),
+      shapeHash,
+    ).toConst("shardFamilyT");
+
+    const widthJitter = mix(float(0.78), float(1.22), shapeHash).toConst(
+      "widthJitter",
+    );
+    const heightJitter = mix(float(0.72), float(1.12), flatHash).toConst(
+      "heightJitter",
+    );
+    const lengthJitter = mix(float(0.72), float(1.28), shardFamilyT).toConst(
+      "lengthJitter",
+    );
+
+    const needleT = smoothstep(float(0.88), float(0.98), shapeHash)
+      .mul(smoothstep(float(0.18), float(0.7), speed))
+      .toConst("needleT");
+
+    const finalRodLengthZ = particleProfile.rodLength
+      .mul(lengthJitter)
+      .mul(mix(float(1.0), float(1.85), needleT))
+      .toConst("finalRodLengthZ");
 
     const formedDir = normalize(particleDirection.xyz).toConst("formedDir");
     const shapedPos = vec3(
-      localPos.x.mul(particleProfile.rodWidth),
-      localPos.y.mul(particleProfile.rodHeight),
-      localPos.z.mul(particleProfile.rodLength),
+      localPos.x
+        .mul(particleProfile.rodWidth)
+        .mul(outerSilhouetteScale)
+        .mul(widthJitter),
+      localPos.y
+        .mul(particleProfile.rodHeight)
+        .mul(outerSilhouetteScale)
+        .mul(heightJitter),
+      localPos.z.mul(outerLengthScale).mul(finalRodLengthZ),
     ).toConst("shapedPos");
 
     const lateRelease = buildLateReleaseState({ uniforms });
+    const materialSubordination = buildMaterialSubordinationState({ uniforms });
     const structureScale = lateRelease.structuralSurvival
-      .mul(lateRelease.cohortSizeMul)
+      .mul(materialSubordination.sizeMul)
       .toConst("structureScale");
 
     const viewState = buildParticleViewState({
@@ -508,11 +717,7 @@ const buildParticlePositionNode = ({
     });
 
     return viewState.mat
-      .mul(
-        shapedPos.mul(
-          structureScale,
-        ),
-      )
+      .mul(shapedPos.mul(structureScale))
       .mul(
         sizeUniform
           .mul(PARTICLE_PROFILE_READ.instanceScale)
@@ -621,10 +826,35 @@ const createRoundedBox = (width, height, depth, radius) => {
   return box;
 };
 
+/**
+ * Chunky pre-enter shard: same topology as rounded box, light vertex shear so
+ * instances do not read as one uniform extrusion.
+ */
+const createShardGeometry = () => {
+  const geom = createRoundedBox(0.82, 0.52, 1.18, 0.08);
+  const pos = geom.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const h1 = Math.sin(i * 12.9898 + x * 78.233) * 43758.5453;
+    const f1 = h1 - Math.floor(h1);
+    const h2 = Math.sin(i * 93.989 + y * 12.4) * 23421.123;
+    const f2 = h2 - Math.floor(h2);
+    const h3 = Math.sin(i * 45.1 + z * 33.7) * 91234.56;
+    const f3 = h3 - Math.floor(h3);
+    pos.setX(i, x + (f1 - 0.5) * 0.07);
+    pos.setY(i, y + (f2 - 0.5) * 0.055);
+    pos.setZ(i, z + (f3 - 0.5) * 0.08);
+  }
+  geom.computeVertexNormals();
+  return geom;
+};
+
 let particleGeometryTemplate = null;
 export const getParticleGeometryTemplate = () =>
   particleGeometryTemplate ??
-  (particleGeometryTemplate = createRoundedBox(0.7, 0.7, 3, 0.1));
+  (particleGeometryTemplate = createShardGeometry());
 
 class ParticleRenderer {
   mlsMpmSim = null;
@@ -638,11 +868,8 @@ class ParticleRenderer {
     actualSize: (1.6 / Math.pow(4, 1 / 3)) * 0.68,
     convergenceFreeze: 0,
     bodyScaleMul: 1,
-    massDimT: 0,
-    compressT: 0,
-    thinT: 0,
-    opacityT: 0,
     solverLocked: false,
+    materialClaimT: 0,
   };
 
   constructor(mlsMpmSim) {
@@ -665,12 +892,11 @@ class ParticleRenderer {
     this.uniforms.bodyScaleMul = uniform(1);
     this.uniforms.massDimT = uniform(0);
     this.uniforms.compressT = uniform(0);
-    this.uniforms.forensicSuppressCompressVisual = uniform(0);
     this.uniforms.thinT = uniform(0);
     this.uniforms.opacityT = uniform(0);
-    this.uniforms.heroCohortT = uniform(0);
-    this.uniforms.heroSimCenter = uniform(new THREE.Vector3(32, 31.8, 30.4));
     this.uniforms.solverLockedFloat = uniform(0);
+    this.uniforms.materialClaimT = uniform(0);
+    this.uniforms.postEnterFlightT = uniform(0);
 
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
@@ -746,28 +972,26 @@ class ParticleRenderer {
     this.uniforms.size.value = this.runtime.actualSize;
     this.uniforms.convergenceFreeze.value = this.runtime.convergenceFreeze;
     this.uniforms.bodyScaleMul.value = this.runtime.bodyScaleMul ?? 1;
-    this.uniforms.massDimT.value = this.runtime.massDimT ?? 0;
-    this.uniforms.compressT.value = this.runtime.compressT ?? 0;
-    this.uniforms.forensicSuppressCompressVisual.value =
-      forensicSuppressCompressVisual() ? 1 : 0;
-    this.uniforms.thinT.value = this.runtime.thinT ?? 0;
-    this.uniforms.opacityT.value = this.runtime.opacityT ?? 0;
-    this.uniforms.heroCohortT.value = this.runtime.heroBodyWeight ?? 0;
-    const heroCenter = this.mlsMpmSim?.uniforms?.heroCenter?.value;
-    if (heroCenter) {
-      this.uniforms.heroSimCenter.value.copy(heroCenter);
-    }
+    this.uniforms.massDimT.value = 0;
+    this.uniforms.compressT.value = 0;
+    this.uniforms.thinT.value = 0;
+    this.uniforms.opacityT.value = 0;
     this.uniforms.solverLockedFloat.value = this.runtime.solverLocked ? 1 : 0;
+    this.uniforms.materialClaimT.value = this.runtime.materialClaimT ?? 0;
+    this.uniforms.postEnterFlightT.value = this.runtime.postEnterFlightT ?? 0;
     this.material.envMapIntensity = 0.12;
 
-    const lockedDissolve =
-      !!this.runtime.solverLocked && (this.runtime.opacityT ?? 0) > 0.001;
+    const lockedDissolve = false;
+    const holdIsolationMode = this.runtime.postEnterActive
+      ? forensicHoldReadIsolation()
+      : null;
+    const hideRods = holdIsolationMode === "crackOnly";
     this.material.transparent = true;
     this.material.depthWrite = !lockedDissolve;
 
     if (this._particleBodyMesh) {
-      this._particleBodyMesh.castShadow = !this.runtime.solverLocked;
-      this._particleBodyMesh.visible = true;
+      this._particleBodyMesh.castShadow = !lockedDissolve;
+      this._particleBodyMesh.visible = !hideRods;
     }
   }
 

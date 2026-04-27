@@ -147,6 +147,41 @@ class BackgroundGeometry {
     };
   }
 
+  getRiftFlightDescriptorWorld() {
+    if (!this.object) {
+      return null;
+    }
+
+    this.object.updateWorldMatrix(true, false);
+
+    const { apertureHeight, depth } = PREENTER_VESSEL;
+    const safeHalfHeight = apertureHeight * 0.46;
+    // Active particle absorption must stay in front of the backplate. If the
+    // flight target sits on the image plane, depth sorting reads as re-emission
+    // from the wall instead of intake into the rift.
+    const intakePlaneZ = depth - 0.22;
+
+    return {
+      minWorld: this.object.localToWorld(
+        new THREE.Vector3(0, -safeHalfHeight, intakePlaneZ),
+      ),
+      maxWorld: this.object.localToWorld(
+        new THREE.Vector3(0, safeHalfHeight, intakePlaneZ),
+      ),
+      centerWorld: this.object.localToWorld(
+        new THREE.Vector3(0, 0, intakePlaneZ),
+      ),
+    };
+  }
+
+  setForensicPostEnterIsolation(mode) {
+    if (!this.backPlate) return;
+    this.backPlate.visible =
+      mode !== "feedstockOnly" &&
+      mode !== "particlesOnly" &&
+      mode !== "rodsOnly";
+  }
+
   update(delta) {
     const dt = Math.max(0, Math.min(0.1, delta || 0));
     this.response *= Math.exp(-dt / 0.09);

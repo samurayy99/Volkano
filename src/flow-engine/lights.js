@@ -3,7 +3,8 @@ import * as THREE from "three/webgpu";
 export class Lights {
   hemi = null;
   keyLight = null;
-  rimLight = null;
+  /** Symmetric fill lights (±X); combined intensity matches former single rim. */
+  rimLights = [];
   /** @type {THREE.Object3D | null} */
   object = null;
   /** @type {THREE.Object3D | null} */
@@ -15,17 +16,22 @@ export class Lights {
     const hemi = new THREE.HemisphereLight(0xc3c9cf, 0x080706, 0.42);
     const light = new THREE.SpotLight(0xf2e6d4, 1.85, 18, Math.PI * 0.38, 1, 0.72);
     const lightTarget = new THREE.Object3D();
-    light.position.set(-0.58, 0.98, -1.08);
+    light.position.set(0, 0.98, -1.08);
     lightTarget.position.copy(this._baseKeyTarget);
     light.target = lightTarget;
 
-    const rimLight = new THREE.PointLight(0x8b9daf, 0.14, 5.5, 2);
-    rimLight.position.set(0.96, 0.6, 0.46);
+    const rimHalf = 0.07;
+    const rimL = new THREE.PointLight(0x8b9daf, rimHalf, 5.5, 2);
+    rimL.position.set(-0.96, 0.6, 0.46);
+    const rimR = new THREE.PointLight(0x8b9daf, rimHalf, 5.5, 2);
+    rimR.position.set(0.96, 0.6, 0.46);
+    this.rimLights = [rimL, rimR];
 
     this.object.add(hemi);
     this.object.add(light);
     this.object.add(lightTarget);
-    this.object.add(rimLight);
+    this.object.add(rimL);
+    this.object.add(rimR);
 
     light.castShadow = true;
     light.shadow.mapSize.width = 512 * 2;
@@ -36,14 +42,13 @@ export class Lights {
 
     this.hemi = hemi;
     this.keyLight = light;
-    this.rimLight = rimLight;
     this._keyTarget = lightTarget;
   }
 
   dispose() {
     this.hemi = null;
     this.keyLight = null;
-    this.rimLight = null;
+    this.rimLights = [];
     this._keyTarget = null;
     this.object = null;
   }

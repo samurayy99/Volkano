@@ -1,0 +1,3014 @@
+Material/Color Examples:
+
+1.
+``` 
+/**
+ * Instanced Leaf Material - WebGPU TSL Version
+ *
+ * Uses Three.js TSL (Three Shading Language) for WebGPU compatibility.
+ * Supports instanced rendering with quaternion-based rotation.
+ *
+ * Features:
+ * - Instanced rendering with custom orientation attribute
+ * - Quaternion-based rotation for leaf orientation
+ * - Procedural leaf alpha shapes (elliptic, ovate, maple, oak, palm, needle)
+ * - Per-instance color variation
+ * - Responds to scene lights (ambient, directional) via MeshStandardNodeMaterial
+ * - Subsurface scattering simulation via emissive with sun direction sync
+ */
+
+import * as THREE from "three";
+import { MeshStandardNodeMaterial } from "three/webgpu";
+import type { MeshStandardNodeMaterial as MeshStandardNodeMaterialType } from "three/webgpu";
+import {
+  Fn,
+  uv,
+  positionLocal,
+  instanceIndex,
+  attribute,
+  uniform,
+  float,
+  vec2,
+  vec3,
+  vec4,
+  add,
+  sub,
+  mul,
+  dot,
+  abs,
+  fract,
+  sin,
+  cos,
+  max,
+  min,
+  normalize,
+  cross,
+  smoothstep,
+  mix,
+  select,
+  sign,
+  sqrt,
+  atan,
+  floor,
+  cameraPosition,
+  positionWorld,
+  normalWorld,
+} from "three/tsl";
+
+/** Leaf shape types for procedural generation */
+export type TSLLeafShape =
+  | "elliptic"
+  | "ovate"
+  | "maple"
+  | "oak"
+  | "palm"
+  | "needle";
+
+/** Options for TSL instanced leaf material */
+export type TSLInstancedLeafMaterialOptions = {
+  color?: THREE.Color;
+  colorVariation?: number;
+  alphaTest?: number;
+  opacity?: number;
+  side?: THREE.Side;
+  leafShape?: TSLLeafShape;
+  subsurfaceScatter?: number;
+  windStrength?: number;
+  time?: number;
+};
+
+/** TSL Instanced Leaf Material type with update methods */
+export type TSLInstancedLeafMaterial = MeshStandardNodeMaterialType & {
+  leafUniforms: {
+    color: { value: THREE.Color };
+    colorVariation: { value: number };
+    alphaTest: { value: number };
+    opacity: { value: number };
+    subsurface: { value: number };
+    windStrength: { value: number };
+    time: { value: number };
+    sunDirection: { value: THREE.Vector3 };
+    dayNightMix: { value: number };
+  };
+  /** Update time for wind animation */
+  updateTime: (time: number) => void;
+  /** Update lighting parameters for day/night cycle */
+  updateLighting: (sunDir: THREE.Vector3, dayMix: number) => void;
+};
+
+/**
+ * Create a WebGPU TSL instanced leaf material.
+ * Supports quaternion-based instance rotation and procedural leaf shapes.
+ * Uses MeshStandardNodeMaterial to respond to scene lights (ambient, directional).
+ */
+export function createInstancedLeafMaterialTSL(
+  options: TSLInstancedLeafMaterialOptions = {},
+): TSLInstancedLeafMaterial {
+  const {
+    color = new THREE.Color(0x3d7a3d),
+    colorVariation = 0.15,
+    alphaTest = 0.5,
+    opacity = 1.0,
+    side = THREE.DoubleSide,
+    leafShape = "elliptic",
+    subsurfaceScatter = 0.3,
+    windStrength = 0.0,
+  } = options;
+
+  // Create material - use MeshStandardNodeMaterial to respond to scene lights
+  const material = new MeshStandardNodeMaterial();
+  material.side = side;
+  material.transparent = false; // Use alpha cutout via alphaTestNode, not transparency
+  material.roughness = 0.75; // Matte leaf surface
+  material.metalness = 0.0; // Non-metallic
+  material.envMapIntensity = 0.2; // Reduce environment reflections
+
+  // ========== UNIFORMS ==========
+  const uColor = uniform(color);
+  const uColorVariation = uniform(float(colorVariation));
+  const uAlphaTest = uniform(float(alphaTest));
+  const uOpacity = uniform(float(opacity));
+  const uSubsurface = uniform(float(subsurfaceScatter));
+  const uWindStrength = uniform(float(windStrength));
+  const uTime = uniform(float(0));
+  // Lighting uniforms for day/night sync
+  const uSunDirection = uniform(new THREE.Vector3(0.5, 1.0, 0.3).normalize());
+  const uDayNightMix = uniform(float(1.0)); // 1.0 = full day, 0.0 = night
+
+  // ========== HELPER FUNCTIONS ==========
+
+  // Hash function for randomness
+  const hash = Fn(([n]: [ReturnType<typeof float>]) => {
+    return fract(mul(sin(n), 43758.5453123));
+  });
+
+  // Hash3 for color variation
+  const hash3 = Fn(([n]: [ReturnType<typeof float>]) => {
+    return vec3(hash(n), hash(add(n, 127.1)), hash(add(n, 269.5)));
+  });
+
+  // Quaternion rotation: rotate vector v by quaternion q
+  const rotateByQuat = Fn(
+    ([v, q]: [ReturnType<typeof vec3>, ReturnType<typeof vec4>]) => {
+      const qxyz = vec3(q.x, q.y, q.z);
+      const t = mul(2.0, cross(qxyz, v));
+      return add(v, add(mul(q.w, t), cross(qxyz, t)));
+    },
+  );
+
+  // ========== LEAF SHAPE FUNCTIONS ==========
+
+  // Elliptic leaf shape - improved with proper taper and serration
+  const leafShapeElliptic = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    const px = sub(uvCoord.x, 0.5);
+    const py = sub(uvCoord.y, 0.35);
+
+    // Normalized Y position (0 at stem, 1 at tip)
+    const normalizedY = add(mul(py, 1.4), 0.45);
+
+    // Width profile - widest at ~40%, tapers toward tip
+    const widthProfile = mul(
+      smoothstep(0.0, 0.35, normalizedY),
+      sub(1.0, smoothstep(0.35, 1.0, normalizedY)),
+    );
+    const baseTaper = add(0.25, mul(widthProfile, 0.75));
+
+    // Pointed tip taper
+    const tipTaper = smoothstep(0.6, 0.95, normalizedY);
+    const effectiveWidth = mul(baseTaper, sub(1.0, mul(tipTaper, 0.65)));
+
+    // Subtle serration on edges
+    const serration = mul(
+      sin(mul(normalizedY, 28.0)),
+      mul(0.06, sub(1.0, tipTaper)),
+    );
+
+    // Calculate leaf boundary
+    const maxHalfWidth = add(mul(effectiveWidth, 0.42), serration);
+    const insideWidth = sub(
+      1.0,
+      smoothstep(mul(maxHalfWidth, 0.85), maxHalfWidth, abs(px)),
+    );
+
+    // Length mask
+    const lengthMask = mul(
+      smoothstep(-0.1, 0.08, normalizedY),
+      smoothstep(1.02, 0.88, normalizedY),
+    );
+
+    return mul(insideWidth, lengthMask);
+  });
+
+  // Ovate leaf shape - egg-shaped, wider at base
+  const leafShapeOvate = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    const px = sub(uvCoord.x, 0.5);
+    const py = sub(uvCoord.y, 0.3);
+
+    // Normalized Y (0 at stem, 1 at tip)
+    const normalizedY = add(mul(py, 1.3), 0.4);
+
+    // Ovate profile - wider at bottom third, tapers toward tip
+    const baseWidth = smoothstep(0.0, 0.25, normalizedY);
+    const topTaper = sub(1.0, smoothstep(0.25, 1.0, normalizedY));
+    const widthProfile = mul(baseWidth, add(0.3, mul(topTaper, 0.7)));
+
+    // Strong tip taper for pointed end
+    const tipTaper = smoothstep(0.55, 0.9, normalizedY);
+    const effectiveWidth = mul(widthProfile, sub(1.0, mul(tipTaper, 0.75)));
+
+    // Subtle waviness on edges
+    const waviness = mul(
+      sin(mul(normalizedY, 22.0)),
+      mul(0.05, effectiveWidth),
+    );
+
+    // Calculate leaf boundary
+    const maxHalfWidth = add(mul(effectiveWidth, 0.48), waviness);
+    const insideWidth = sub(
+      1.0,
+      smoothstep(mul(maxHalfWidth, 0.8), maxHalfWidth, abs(px)),
+    );
+
+    // Length mask
+    const lengthMask = mul(
+      smoothstep(-0.12, 0.06, normalizedY),
+      smoothstep(1.0, 0.85, normalizedY),
+    );
+
+    return mul(insideWidth, lengthMask);
+  });
+
+  // Maple leaf shape - 5 pointed lobes with serrated edges
+  const leafShapeMaple = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    const px = sub(uvCoord.x, 0.5);
+    const py = sub(uvCoord.y, 0.45);
+
+    // Convert to polar for lobe calculation
+    const r = sqrt(add(mul(px, px), mul(py, py)));
+    const angle = atan(py, px);
+
+    // 5 pointed lobes - maple has 5 main points
+    const lobeCount = float(5.0);
+    // Offset angle so center lobe points up
+    const lobeAngle = add(angle, mul(3.14159, 0.5));
+    const lobePhase = mul(lobeAngle, lobeCount);
+
+    // Sharp pointed lobes using abs(cos) with power for sharpness
+    const lobeRaw = abs(cos(mul(lobePhase, 0.5)));
+    const lobeShape = mul(lobeRaw, lobeRaw); // Square for sharper points
+
+    // Lobe radius varies - longer at the 5 main points
+    const baseRadius = float(0.25);
+    const lobeExtend = mul(0.25, lobeShape);
+    const targetRadius = add(baseRadius, lobeExtend);
+
+    // Add serrated edges to the lobes
+    const serration = mul(sin(mul(lobeAngle, 25.0)), mul(0.03, lobeShape));
+    const finalRadius = add(targetRadius, serration);
+
+    // Inside/outside test with soft edge
+    const insideLeaf = sub(
+      1.0,
+      smoothstep(mul(finalRadius, 0.85), finalRadius, r),
+    );
+
+    // Stem notch at bottom
+    const stemNotch = mul(
+      smoothstep(0.3, 0.35, uvCoord.y),
+      add(
+        1.0,
+        mul(smoothstep(0.35, 0.25, uvCoord.y), smoothstep(0.04, 0.0, abs(px))),
+      ),
+    );
+
+    // Combine - mask out very bottom
+    const bottomMask = smoothstep(0.08, 0.15, uvCoord.y);
+    return mul(mul(insideLeaf, bottomMask), stemNotch);
+  });
+
+  // Oak leaf shape - with proper rounded lobes
+  const leafShapeOak = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    const px = sub(uvCoord.x, 0.5);
+    const py = sub(uvCoord.y, 0.35);
+
+    // Normalized Y (0 at stem, 1 at tip)
+    const normalizedY = add(mul(py, 1.35), 0.45);
+
+    // Oak base width profile
+    const widthProfile = mul(
+      smoothstep(0.0, 0.2, normalizedY),
+      sub(1.0, smoothstep(0.5, 1.0, normalizedY)),
+    );
+    const baseTaper = add(0.2, mul(widthProfile, 0.8));
+
+    // Rounded lobes - 4 pairs of lobes along the leaf
+    const lobeCount = float(4.0);
+    const lobePhase = mul(normalizedY, mul(lobeCount, 6.28));
+    // Rounded lobe profile (smoothed square wave)
+    const lobeRaw = sin(lobePhase);
+    const lobeSmooth = mul(sign(lobeRaw), smoothstep(0.0, 0.5, abs(lobeRaw)));
+    // Lobes get smaller toward tip
+    const lobeSize = mul(0.18, sub(1.0, smoothstep(0.4, 0.9, normalizedY)));
+    const lobeOffset = mul(lobeSmooth, lobeSize);
+
+    // Tip taper
+    const tipTaper = smoothstep(0.7, 0.95, normalizedY);
+    const effectiveWidth = mul(baseTaper, sub(1.0, mul(tipTaper, 0.6)));
+
+    // Calculate lobed boundary
+    const maxHalfWidth = add(mul(effectiveWidth, 0.38), lobeOffset);
+    const insideWidth = sub(
+      1.0,
+      smoothstep(mul(maxHalfWidth, 0.8), maxHalfWidth, abs(px)),
+    );
+
+    // Length mask with rounded base
+    const lengthMask = mul(
+      smoothstep(-0.15, 0.1, normalizedY),
+      smoothstep(1.0, 0.88, normalizedY),
+    );
+
+    return mul(insideWidth, lengthMask);
+  });
+
+  // Palm/frond leaf shape - long narrow leaf with parallel veins
+  const leafShapePalm = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    const px = sub(uvCoord.x, 0.5);
+    const py = sub(uvCoord.y, 0.5);
+
+    // Palm frond is long and narrow, tapering at both ends
+    const normalizedY = add(mul(py, 2.0), 0.5); // -0.5 to 1.5 range
+
+    // Width tapers at both ends
+    const centerDist = abs(sub(normalizedY, 0.5));
+    const widthTaper = sub(1.0, mul(centerDist, 1.6));
+    const baseWidth = mul(0.12, max(widthTaper, 0.02));
+
+    // Subtle rippled edges (parallel veins create slight bumps)
+    const ripple = mul(sin(mul(normalizedY, 40.0)), mul(0.015, widthTaper));
+    const effectiveWidth = add(baseWidth, ripple);
+
+    // Inside width test
+    const insideWidth = sub(
+      1.0,
+      smoothstep(mul(effectiveWidth, 0.8), effectiveWidth, abs(px)),
+    );
+
+    // Length mask - tapers to points at both ends
+    const lengthMask = mul(
+      smoothstep(-0.02, 0.1, normalizedY),
+      smoothstep(1.02, 0.9, normalizedY),
+    );
+
+    return mul(insideWidth, lengthMask);
+  });
+
+  // Needle leaf shape - very thin, conifer-style
+  const leafShapeNeedle = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    const px = sub(uvCoord.x, 0.5);
+    const py = sub(uvCoord.y, 0.5);
+
+    // Very long and thin
+    const normalizedY = add(mul(py, 2.2), 0.5);
+
+    // Extremely narrow width that tapers to sharp points
+    const centerDist = abs(sub(normalizedY, 0.5));
+    const widthTaper = sub(1.0, mul(centerDist, 2.2));
+    const baseWidth = mul(0.05, max(widthTaper, 0.0));
+
+    // Inside width test
+    const insideWidth = sub(
+      1.0,
+      smoothstep(mul(baseWidth, 0.7), baseWidth, abs(px)),
+    );
+
+    // Length mask - very sharp points
+    const lengthMask = mul(
+      smoothstep(-0.05, 0.08, normalizedY),
+      smoothstep(1.05, 0.92, normalizedY),
+    );
+
+    return mul(insideWidth, lengthMask);
+  });
+
+  // Select leaf shape based on option
+  const getLeafAlpha = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    switch (leafShape) {
+      case "ovate":
+        return leafShapeOvate(uvCoord);
+      case "maple":
+        return leafShapeMaple(uvCoord);
+      case "oak":
+        return leafShapeOak(uvCoord);
+      case "palm":
+        return leafShapePalm(uvCoord);
+      case "needle":
+        return leafShapeNeedle(uvCoord);
+      case "elliptic":
+      default:
+        return leafShapeElliptic(uvCoord);
+    }
+  });
+
+  // Leaf vein pattern - central vein with branching secondary veins
+  const leafVeins = Fn(([uvCoord]: [ReturnType<typeof vec2>]) => {
+    const px = sub(uvCoord.x, 0.5);
+    const py = uvCoord.y;
+
+    // Central vein - tapers toward tip
+    const centralWidth = mul(0.025, sub(1.0, mul(py, 0.6)));
+    const centralVein = sub(1.0, smoothstep(0.0, centralWidth, abs(px)));
+
+    // Secondary veins branching from center
+    // They angle outward as they go up the leaf
+    const veinCount = float(5.0);
+    const veinPhase = mul(py, veinCount);
+    const veinIndex = floor(veinPhase);
+    const veinLocalY = fract(veinPhase);
+
+    // Veins angle outward - calculate expected x position
+    const veinAngle = mul(0.4, add(veinIndex, 1.0)); // More angle for higher veins
+    const expectedX = mul(veinLocalY, mul(veinAngle, 0.15));
+
+    // Distance from expected vein position (for both sides)
+    const distLeft = abs(sub(px, expectedX));
+    const distRight = abs(add(px, expectedX));
+    const veinDist = min(distLeft, distRight);
+
+    // Secondary vein thickness - thinner than central
+    const secondaryWidth = mul(0.012, sub(1.0, mul(veinLocalY, 0.5)));
+    const secondaryVein = mul(
+      sub(1.0, smoothstep(0.0, secondaryWidth, veinDist)),
+      smoothstep(0.0, 0.15, veinLocalY), // Fade in from center
+    );
+
+    // Combine veins
+    return mul(max(centralVein, mul(secondaryVein, 0.5)), 0.5);
+  });
+
+  // ========== VERTEX POSITION NODE ==========
+  // Get instance orientation from attribute
+  const instanceOrientation = attribute("instanceOrientation", "vec4");
+
+  // Custom position calculation with quaternion rotation
+  const customPosition = Fn(() => {
+    const pos = positionLocal;
+    const quat = instanceOrientation;
+
+    // Apply quaternion rotation to position
+    const rotatedPos = rotateByQuat(pos, quat);
+
+    // Wind animation using select (conditional)
+    const windPhase = mul(hash(float(instanceIndex)), 6.28);
+    const windAmount = mul(mul(uWindStrength, pos.y), 0.1);
+    const windX = mul(sin(add(mul(uTime, 2.0), windPhase)), windAmount);
+    const windZ = mul(
+      mul(cos(add(mul(uTime, 1.5), mul(windPhase, 0.7))), windAmount),
+      0.5,
+    );
+
+    // Apply wind only if windStrength > 0
+    const hasWind = uWindStrength.greaterThan(0.0);
+    const finalX = select(hasWind, add(rotatedPos.x, windX), rotatedPos.x);
+    const finalZ = select(hasWind, add(rotatedPos.z, windZ), rotatedPos.z);
+
+    return vec3(finalX, rotatedPos.y, finalZ);
+  });
+
+  // Set custom position
+  material.positionNode = customPosition();
+
+  // ========== DIFFUSE COLOR NODE ==========
+  // Only provides the diffuse/albedo color - scene lights handle actual lighting
+  const diffuseColorNode = Fn(() => {
+    const uvCoord = uv();
+    const instIdx = float(instanceIndex);
+
+    // Get procedural leaf alpha for edge darkening
+    const alpha = getLeafAlpha(uvCoord);
+
+    // Instance-based color variation
+    const variation = sub(mul(hash3(instIdx), 2.0), 1.0);
+    const leafColor = add(uColor, mul(variation, uColorVariation));
+
+    // Darken edges slightly for depth
+    const edgeDark = add(mul(smoothstep(0.3, 0.8, alpha), 0.2), 0.8);
+    const darkendColor = mul(leafColor, edgeDark);
+
+    // Add subtle vein pattern (darker)
+    const veins = leafVeins(uvCoord);
+    const veinedColor = mix(
+      darkendColor,
+      mul(darkendColor, 0.7),
+      mul(veins, 0.3),
+    );
+
+    return veinedColor; // Return vec3 - scene lights will handle the rest
+  });
+
+  material.colorNode = diffuseColorNode();
+
+  // ========== OPACITY NODE ==========
+  // Handles procedural leaf shape cutout
+  const opacityNode = Fn(() => {
+    const uvCoord = uv();
+    const alpha = getLeafAlpha(uvCoord);
+    return mul(alpha, uOpacity);
+  });
+
+  material.opacityNode = opacityNode();
+
+  // Alpha test node - required for TSL materials to enable alpha cutoff
+  // Fragment is discarded when opacity < alphaTestNode
+  material.alphaTestNode = uAlphaTest;
+  material.alphaTest = alphaTest; // Fallback for non-TSL path
+
+  // ========== EMISSIVE NODE (SUBSURFACE SCATTERING) ==========
+  // Simulates light passing through leaves when backlit by the sun
+  const emissiveNode = Fn(() => {
+    const instIdx = float(instanceIndex);
+
+    // Get base leaf color for subsurface tint
+    const variation = sub(mul(hash3(instIdx), 2.0), 1.0);
+    const leafColor = add(uColor, mul(variation, uColorVariation));
+
+    // View direction (from fragment to camera)
+    const worldPos = positionWorld;
+    const viewDir = normalize(sub(cameraPosition, worldPos));
+
+    // World normal - for double-sided, we use the geometric normal
+    const worldNorm = normalWorld;
+
+    // Check if backlit: light coming through the leaf from behind
+    // When view direction and sun direction are roughly opposite, leaf is backlit
+    const NdotSun = dot(worldNorm, uSunDirection);
+    const VdotSun = dot(viewDir, uSunDirection);
+
+    // Backlit when normal faces away from sun but we're looking toward sun
+    // This is a simplified wrap lighting / SSS approximation
+    const backlitAmount = max(
+      float(0.0),
+      mul(mul(NdotSun, -1.0), max(float(0.0), VdotSun)),
+    );
+
+    // Subsurface scattering intensity - warmer, brighter color
+    const subsurfaceColor = mul(leafColor, vec3(1.3, 1.1, 0.7)); // Warm yellow-green tint
+    const sssIntensity = mul(mul(backlitAmount, uSubsurface), uDayNightMix);
+
+    return mul(subsurfaceColor, sssIntensity);
+  });
+
+  material.emissiveNode = emissiveNode();
+
+  // Store uniforms for runtime updates
+  const tslMaterial = material as TSLInstancedLeafMaterial;
+  tslMaterial.leafUniforms = {
+    color: uColor,
+    colorVariation: uColorVariation,
+    alphaTest: uAlphaTest,
+    opacity: uOpacity,
+    subsurface: uSubsurface,
+    windStrength: uWindStrength,
+    time: uTime,
+    sunDirection: uSunDirection,
+    dayNightMix: uDayNightMix,
+  };
+
+  // Update methods
+  tslMaterial.updateTime = (time: number) => {
+    uTime.value = time;
+  };
+
+  /**
+   * Update lighting parameters for day/night cycle
+   * @param sunDir - Direction TO the sun (normalized)
+   * @param dayMix - Day/night mix factor (0 = night, 1 = day)
+   */
+  tslMaterial.updateLighting = (sunDir: THREE.Vector3, dayMix: number) => {
+    uSunDirection.value.copy(sunDir);
+    uDayNightMix.value = dayMix;
+  };
+
+  return tslMaterial;
+}
+
+/**
+ * Check if a material is a TSL instanced leaf material.
+ */
+export function isTSLInstancedLeafMaterial(
+  material: THREE.Material,
+): material is TSLInstancedLeafMaterial {
+  return (
+    material instanceof MeshStandardNodeMaterial &&
+    "leafUniforms" in material &&
+    "updateTime" in material
+  );
+}
+``` 
+
+2. Beispiel
+```
+import * as THREE from "three";
+import { MeshBasicNodeMaterial } from "three/webgpu";
+import {
+  Fn,
+  Loop,
+  abs,
+  clamp,
+  float,
+  length,
+  max,
+  mix,
+  screenUV,
+  smoothstep,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
+import { evaluatePermutationFamilyNode } from "../modeFamilyNode.js";
+
+const CYMATICS_2D_TUNING = Object.freeze({
+  detailLayerWeight: 0.35,
+  fieldBandScale: 1.85,
+  contourBlend: 0.74,
+  densityMax: 1.5,
+  fieldViewScale: 1.7,
+  highlightStart: 0.08,
+  highlightEnd: 0.9,
+  colorBlendStart: 0.18,
+  colorBlendEnd: 0.9,
+});
+
+function accumulateLayer({
+  buffer,
+  colorBuffer,
+  capacity,
+  weight,
+  pi,
+  x,
+  y,
+  slice,
+  boundaryMode,
+  field,
+  gradX,
+  gradY,
+  colorSum,
+  colorWeight,
+}) {
+  Loop(capacity, ({ i }) => {
+    const slot = buffer.element(i);
+    const amplitude = slot.w.mul(weight);
+    const family = evaluatePermutationFamilyNode({
+      u: slot.x,
+      v: slot.y,
+      w: slot.z,
+      xCoord: x,
+      yCoord: y,
+      zCoord: slice,
+      scale: pi,
+      boundaryMode,
+    });
+    field.addAssign(amplitude.mul(family.field));
+    gradX.addAssign(amplitude.mul(family.gradX));
+    gradY.addAssign(amplitude.mul(family.gradY));
+
+    if (colorBuffer && colorSum && colorWeight) {
+      const colorSlot = colorBuffer.element(i);
+      const localInfluence = amplitude.mul(abs(family.field));
+      colorSum.addAssign(
+        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
+          localInfluence.mul(colorSlot.w),
+        ),
+      );
+      colorWeight.addAssign(localInfluence.mul(colorSlot.w));
+    }
+  });
+}
+
+function createFieldNode({
+  backboneModeBuffer,
+  detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
+  capacity,
+  uniforms,
+}) {
+  const {
+    uThreshold,
+    uStructureMin,
+    uStructureMax,
+    uBoundaryMode,
+    uActiveModeCount,
+    uBackboneModeCount,
+    uDetailModeCount,
+    uColor,
+    uSurfaceColor,
+    uChromesthesiaMix,
+    uDensityGain,
+    uOpacityGain,
+    uContourSharpness,
+    uTransientEnergy,
+    uSpectralCentroid,
+    uSpectralFlux,
+    uSlicePosition,
+  } = uniforms;
+  const pi = float(Math.PI);
+
+  return Fn(() => {
+    const centered = vec2(
+      screenUV.x
+        .mul(2.0)
+        .sub(1.0)
+        .mul(float(CYMATICS_2D_TUNING.fieldViewScale)),
+      screenUV.y
+        .mul(2.0)
+        .sub(1.0)
+        .mul(float(CYMATICS_2D_TUNING.fieldViewScale)),
+    );
+    const field = float(0.0).toVar();
+    const gradX = float(0.0).toVar();
+    const gradY = float(0.0).toVar();
+    const colorSum = vec3(0.0).toVar();
+    const colorWeight = float(0.0).toVar();
+
+    accumulateLayer({
+      buffer: backboneModeBuffer,
+      colorBuffer: backboneColorBuffer,
+      capacity,
+      weight: float(1.0),
+      pi,
+      x: centered.x,
+      y: centered.y,
+      slice: uSlicePosition,
+      boundaryMode: uBoundaryMode,
+      field,
+      gradX,
+      gradY,
+      colorSum,
+      colorWeight,
+    });
+    accumulateLayer({
+      buffer: detailModeBuffer,
+      colorBuffer: detailColorBuffer,
+      capacity,
+      weight: float(CYMATICS_2D_TUNING.detailLayerWeight),
+      pi,
+      x: centered.x,
+      y: centered.y,
+      slice: uSlicePosition,
+      boundaryMode: uBoundaryMode,
+      field,
+      gradX,
+      gradY,
+      colorSum,
+      colorWeight,
+    });
+
+    const fieldAbs = abs(field);
+    const gradientMagnitude = length(vec2(gradX, gradY)).mul(float(0.16));
+    const activeCount = float(uActiveModeCount);
+    const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
+    const nodeBand = float(1.0).sub(
+      smoothstep(float(0.0), uThreshold, fieldAbs),
+    );
+    const broadBand = float(1.0).sub(
+      smoothstep(
+        float(0.0),
+        uThreshold.mul(float(CYMATICS_2D_TUNING.fieldBandScale)),
+        fieldAbs,
+      ),
+    );
+    const contourCore = nodeBand.pow(
+      uContourSharpness.mul(float(1.0).add(uTransientEnergy.mul(0.25))),
+    );
+    const contourShape = mix(
+      broadBand,
+      contourCore,
+      float(CYMATICS_2D_TUNING.contourBlend),
+    );
+    const structure = smoothstep(
+      uStructureMin,
+      uStructureMax,
+      gradientMagnitude,
+    );
+    const density = clamp(
+      contourShape
+        .mul(structure.add(float(0.12)))
+        .mul(activeMask)
+        .mul(uDensityGain)
+        .mul(
+          float(1.0)
+            .add(uTransientEnergy.mul(0.26))
+            .add(uSpectralFlux.mul(0.18)),
+        ),
+      float(0.0),
+      float(CYMATICS_2D_TUNING.densityMax),
+    );
+    const visibleDensity = density.mul(
+      smoothstep(float(0.02), float(0.24), /** @type {any} */ (density)),
+    );
+    const opacity = clamp(
+      visibleDensity
+        .mul(uOpacityGain)
+        .mul(float(0.82).add(uSpectralFlux.mul(0.12))),
+      float(0.0),
+      float(1.0),
+    );
+    const highlightMask = smoothstep(
+      float(CYMATICS_2D_TUNING.highlightStart),
+      float(CYMATICS_2D_TUNING.highlightEnd),
+      /** @type {any} */ (visibleDensity),
+    );
+    const contourMix = smoothstep(
+      float(CYMATICS_2D_TUNING.colorBlendStart),
+      float(CYMATICS_2D_TUNING.colorBlendEnd),
+      contourShape,
+    );
+    const spectralColorBias = clamp(
+      contourMix
+        .add(uSpectralCentroid.mul(0.22))
+        .add(uTransientEnergy.mul(0.1)),
+      float(0.0),
+      float(1.0),
+    );
+    const staticBaseColor = mix(uColor, uSurfaceColor, spectralColorBias);
+    const spectralColor = colorSum.div(max(colorWeight, float(1e-4)));
+    const chromesthesiaPresence = smoothstep(
+      float(0.0),
+      float(0.18),
+      colorWeight,
+    );
+    const chromesthesiaWeight = clamp(
+      uChromesthesiaMix.mul(chromesthesiaPresence),
+      float(0.0),
+      float(1.0),
+    );
+    const chromesthesiaNeutralColor = mix(
+      vec3(0.7),
+      vec3(1.0),
+      spectralColorBias,
+    );
+    const chromesthesiaBaseColor = mix(
+      chromesthesiaNeutralColor,
+      spectralColor,
+      chromesthesiaWeight,
+    );
+    const staticColor = mix(
+      staticBaseColor.mul(float(0.86)),
+      staticBaseColor,
+      highlightMask,
+    );
+    const chromesthesiaColor = mix(
+      chromesthesiaBaseColor.mul(float(0.9)),
+      chromesthesiaBaseColor,
+      highlightMask,
+    );
+    const backbonePresence = smoothstep(
+      float(0.0),
+      float(1.0),
+      float(uBackboneModeCount),
+    );
+    const detailPresence = smoothstep(
+      float(0.0),
+      float(1.0),
+      float(uDetailModeCount),
+    );
+    const activityAccent = backbonePresence.add(
+      detailPresence.mul(float(0.14)),
+    );
+    const color = mix(
+      staticColor,
+      chromesthesiaColor,
+      smoothstep(float(0.0), float(1e-4), uChromesthesiaMix),
+    )
+      .mul(float(0.9).add(activityAccent.mul(float(0.08))))
+      .mul(visibleDensity);
+
+    return vec4(color, opacity);
+  })();
+}
+
+export function createFullscreenFieldMesh({
+  backboneModeBuffer,
+  detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
+  capacity,
+  uniforms,
+}) {
+  const geometry = new THREE.PlaneGeometry(100, 100, 1, 1);
+  const material = new MeshBasicNodeMaterial();
+  material.transparent = true;
+  material.depthWrite = false;
+  material.depthTest = false;
+  material.fog = false;
+  material.outputNode = createFieldNode({
+    backboneModeBuffer,
+    detailModeBuffer,
+    backboneColorBuffer,
+    detailColorBuffer,
+    capacity,
+    uniforms,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1;
+
+  return mesh;
+}
+``` 
+
+
+3. Beispiel
+```
+/**
+ * Building Material System - WebGPU TSL Version
+ *
+ * Provides procedural building materials using Three.js TSL (Three Shading Language).
+ * Fully compatible with WebGPU renderer.
+ *
+ * Materials available:
+ * - Brick (running bond pattern)
+ * - Stone (ashlar and rubble)
+ * - Wood (planks and timber frame)
+ * - Plaster/stucco
+ * - Shingles (roofing)
+ */
+
+import * as THREE from "three";
+import { MeshStandardNodeMaterial } from "three/webgpu";
+import {
+  Fn,
+  uv,
+  uniform,
+  vec2,
+  vec3,
+  vec4,
+  float,
+  floor,
+  fract,
+  sin,
+  dot,
+  mix,
+  clamp,
+  smoothstep,
+  step,
+  min,
+  sqrt,
+  select,
+  attribute,
+} from "three/tsl";
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/**
+ * Building material type identifier
+ */
+export type BuildingMaterialType =
+  | "brick"
+  | "stone-ashlar"
+  | "stone-rubble"
+  | "wood-plank"
+  | "timber-frame"
+  | "plaster"
+  | "shingle";
+
+/**
+ * Configuration for building materials
+ */
+export interface BuildingMaterialConfig {
+  /** Material type */
+  type: BuildingMaterialType;
+  /** Primary color (hex string) */
+  baseColor: string;
+  /** Secondary color for variation (hex string) */
+  secondaryColor: string;
+  /** Accent/mortar color (hex string) */
+  accentColor: string;
+  /** Texture scale (world units per tile) */
+  scale: number;
+  /** Surface roughness (0-1) */
+  roughness: number;
+  /** Surface metalness (0-1) */
+  metalness: number;
+  /** Color variation amount (0-1) */
+  variation: number;
+  /** Whether to use vertex colors for tinting */
+  useVertexColors: boolean;
+}
+
+/**
+ * Default material configurations per type
+ */
+export const DEFAULT_MATERIAL_CONFIGS: Record<
+  BuildingMaterialType,
+  Omit<BuildingMaterialConfig, "type">
+> = {
+  brick: {
+    baseColor: "#8B4513",
+    secondaryColor: "#A0522D",
+    accentColor: "#D2B48C",
+    scale: 1.0,
+    roughness: 0.85,
+    metalness: 0.0,
+    variation: 0.15,
+    useVertexColors: true,
+  },
+  "stone-ashlar": {
+    baseColor: "#808080",
+    secondaryColor: "#696969",
+    accentColor: "#A9A9A9",
+    scale: 0.6,
+    roughness: 0.75,
+    metalness: 0.0,
+    variation: 0.1,
+    useVertexColors: true,
+  },
+  "stone-rubble": {
+    baseColor: "#6B6B6B",
+    secondaryColor: "#555555",
+    accentColor: "#8B8B8B",
+    scale: 0.3,
+    roughness: 0.9,
+    metalness: 0.0,
+    variation: 0.25,
+    useVertexColors: true,
+  },
+  "wood-plank": {
+    baseColor: "#8B7355",
+    secondaryColor: "#6B4423",
+    accentColor: "#D2B48C",
+    scale: 0.2,
+    roughness: 0.7,
+    metalness: 0.0,
+    variation: 0.2,
+    useVertexColors: true,
+  },
+  "timber-frame": {
+    baseColor: "#5C4033",
+    secondaryColor: "#3C2415",
+    accentColor: "#F5F5DC",
+    scale: 1.0,
+    roughness: 0.75,
+    metalness: 0.0,
+    variation: 0.1,
+    useVertexColors: true,
+  },
+  plaster: {
+    baseColor: "#F5F5DC",
+    secondaryColor: "#FFFAF0",
+    accentColor: "#E8E8E8",
+    scale: 2.0,
+    roughness: 0.6,
+    metalness: 0.0,
+    variation: 0.05,
+    useVertexColors: true,
+  },
+  shingle: {
+    baseColor: "#4A3728",
+    secondaryColor: "#3C2A1E",
+    accentColor: "#5C4033",
+    scale: 0.3,
+    roughness: 0.8,
+    metalness: 0.0,
+    variation: 0.15,
+    useVertexColors: true,
+  },
+};
+
+// ============================================================================
+// TSL NOISE FUNCTIONS
+// ============================================================================
+
+/**
+ * Hash function for pseudo-random values (TSL)
+ */
+const tslHash = Fn(([p]: [ReturnType<typeof vec2>]) => {
+  return fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453123));
+});
+
+/**
+ * 2D noise function (TSL)
+ */
+const tslNoise2D = Fn(([p]: [ReturnType<typeof vec2>]) => {
+  const i = floor(p);
+  const f = fract(p);
+  const smoothF = f.mul(f).mul(float(3.0).sub(f.mul(2.0)));
+
+  const a = tslHash(i);
+  const b = tslHash(i.add(vec2(1.0, 0.0)));
+  const c = tslHash(i.add(vec2(0.0, 1.0)));
+  const d = tslHash(i.add(vec2(1.0, 1.0)));
+
+  return mix(mix(a, b, smoothF.x), mix(c, d, smoothF.x), smoothF.y);
+});
+
+/**
+ * FBM (Fractal Brownian Motion) noise (TSL)
+ */
+const tslFBM = Fn(([p]: [ReturnType<typeof vec2>]) => {
+  const value = float(0.0).toVar();
+  const amplitude = float(0.5).toVar();
+  const frequency = float(1.0).toVar();
+
+  // 4 octaves unrolled (TSL doesn't support loops well)
+  value.addAssign(tslNoise2D(p.mul(frequency)).mul(amplitude));
+  amplitude.mulAssign(0.5);
+  frequency.mulAssign(2.0);
+
+  value.addAssign(tslNoise2D(p.mul(frequency)).mul(amplitude));
+  amplitude.mulAssign(0.5);
+  frequency.mulAssign(2.0);
+
+  value.addAssign(tslNoise2D(p.mul(frequency)).mul(amplitude));
+  amplitude.mulAssign(0.5);
+  frequency.mulAssign(2.0);
+
+  value.addAssign(tslNoise2D(p.mul(frequency)).mul(amplitude));
+
+  return value;
+});
+
+// ============================================================================
+// TSL PATTERN FUNCTIONS
+// ============================================================================
+
+/**
+ * Brick pattern - returns (isBrick, brickIdX, brickIdY, 0)
+ */
+const brickPattern = Fn(([uvIn]: [ReturnType<typeof vec2>]) => {
+  const brickWidth = float(0.25);
+  const brickHeight = float(0.065);
+  const mortarWidth = float(0.01);
+
+  const scaled = uvIn.div(vec2(brickWidth, brickHeight));
+  const row = floor(scaled.y);
+  const rowOffset = row.mod(2.0).mul(0.5);
+  const offsetUV = vec2(scaled.x.add(rowOffset), scaled.y);
+
+  const brickId = floor(offsetUV);
+  const localUV = fract(offsetUV);
+
+  const mortarU = mortarWidth.div(brickWidth);
+  const mortarV = mortarWidth.div(brickHeight);
+
+  const inMortarX = step(localUV.x, mortarU).add(
+    step(float(1.0).sub(mortarU), localUV.x),
+  );
+  const inMortarY = step(localUV.y, mortarV).add(
+    step(float(1.0).sub(mortarV), localUV.y),
+  );
+  const inMortar = clamp(inMortarX.add(inMortarY), 0.0, 1.0);
+
+  const isBrick = float(1.0).sub(inMortar);
+  return vec4(isBrick, brickId.x, brickId.y, 0.0);
+});
+
+/**
+ * Ashlar stone pattern - returns (isStone, stoneIdX, stoneIdY, bevel)
+ */
+const ashlarPattern = Fn(([uvIn]: [ReturnType<typeof vec2>]) => {
+  const blockWidth = float(0.6);
+  const blockHeight = float(0.3);
+  const mortarWidth = float(0.015);
+
+  const scaled = uvIn.div(vec2(blockWidth, blockHeight));
+  const row = floor(scaled.y);
+  const rowOffset = row.mod(2.0).mul(0.5);
+  const offsetUV = vec2(scaled.x.add(rowOffset), scaled.y);
+
+  const blockId = floor(offsetUV);
+  const localUV = fract(offsetUV);
+
+  const mortarU = mortarWidth.div(blockWidth);
+  const mortarV = mortarWidth.div(blockHeight);
+
+  // Bevel at edges
+  const edgeDistX = min(localUV.x, float(1.0).sub(localUV.x));
+  const edgeDistY = min(localUV.y, float(1.0).sub(localUV.y));
+  const bevel = smoothstep(0.0, 0.05, min(edgeDistX, edgeDistY));
+
+  const inMortarX = step(localUV.x, mortarU).add(
+    step(float(1.0).sub(mortarU), localUV.x),
+  );
+  const inMortarY = step(localUV.y, mortarV).add(
+    step(float(1.0).sub(mortarV), localUV.y),
+  );
+  const inMortar = clamp(inMortarX.add(inMortarY), 0.0, 1.0);
+
+  const isStone = float(1.0).sub(inMortar);
+  return vec4(isStone, blockId.x, blockId.y, bevel);
+});
+
+/**
+ * Rubble stone pattern (Voronoi-based) - returns (isStone, cellIdX, cellIdY, 0)
+ */
+const rubblePattern = Fn(([uvIn]: [ReturnType<typeof vec2>]) => {
+  const scale = float(0.15);
+  const scaled = uvIn.div(scale);
+  const cellId = floor(scaled);
+  const localPos = fract(scaled);
+
+  // Find closest cell center (3x3 search unrolled)
+  const minDist = float(10.0).toVar();
+  const closestCellX = float(0.0).toVar();
+  const closestCellY = float(0.0).toVar();
+
+  // Unrolled 3x3 loop for Voronoi
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const neighbor = cellId.add(vec2(float(dx), float(dy)));
+      const cellHash = tslHash(neighbor);
+      const cellCenter = vec2(0.5, 0.5).add(cellHash.sub(0.5).mul(0.8));
+      const toCenter = localPos.sub(cellCenter).add(vec2(float(dx), float(dy)));
+      const dist = dot(toCenter, toCenter);
+
+      // Update closest if this is nearer
+      closestCellX.assign(
+        select(dist.lessThan(minDist), neighbor.x, closestCellX),
+      );
+      closestCellY.assign(
+        select(dist.lessThan(minDist), neighbor.y, closestCellY),
+      );
+      minDist.assign(min(minDist, dist));
+    }
+  }
+
+  const mortarWidthV = float(0.08);
+  const isStone = smoothstep(
+    mortarWidthV,
+    mortarWidthV.mul(1.5),
+    sqrt(minDist),
+  );
+
+  return vec4(isStone, closestCellX, closestCellY, 0.0);
+});
+
+/**
+ * Wood plank pattern - returns (isPlank, plankId, grainOffset, 0)
+ */
+const woodPlankPattern = Fn(([uvIn]: [ReturnType<typeof vec2>]) => {
+  const plankWidth = float(0.15);
+  const plankHeight = float(2.0);
+  const gapWidth = float(0.005);
+
+  const scaled = vec2(uvIn.x.div(plankHeight), uvIn.y.div(plankWidth));
+  const plankId = floor(scaled.y);
+  const localUV = vec2(fract(scaled.x), fract(scaled.y));
+
+  // Random offset per plank
+  const plankOffset = tslHash(vec2(plankId, 0.0)).mul(0.3);
+  const offsetU = fract(localUV.x.add(plankOffset));
+
+  // Gap between planks
+  const gapV = gapWidth.div(plankWidth);
+  const inGap = step(localUV.y, gapV).add(
+    step(float(1.0).sub(gapV), localUV.y),
+  );
+
+  const isPlank = float(1.0).sub(clamp(inGap, 0.0, 1.0));
+  return vec4(isPlank, plankId, offsetU, 0.0);
+});
+
+/**
+ * Shingle pattern - returns (isShingle, shingleIdX, shingleIdY, thickness)
+ */
+const shinglePattern = Fn(([uvIn]: [ReturnType<typeof vec2>]) => {
+  const shingleWidth = float(0.2);
+  const shingleHeight = float(0.15);
+  const overlap = float(0.3);
+
+  const scaled = vec2(
+    uvIn.x.div(shingleWidth),
+    uvIn.y.div(shingleHeight.mul(float(1.0).sub(overlap))),
+  );
+  const row = floor(scaled.y);
+  const rowOffset = row.mod(2.0).mul(0.5);
+  const offsetUV = vec2(scaled.x.add(rowOffset), scaled.y);
+
+  const shingleId = floor(offsetUV);
+  const localUV = fract(offsetUV);
+
+  // Rounded bottom
+  const bottomCurve = sin(localUV.x.mul(3.14159)).mul(0.1);
+  const bottomEdge = bottomCurve.add(0.05);
+  const isShingle = step(bottomEdge, localUV.y);
+
+  const thickness = float(0.95).add(tslHash(shingleId).mul(0.1));
+  return vec4(isShingle, shingleId.x, shingleId.y, thickness);
+});
+
+/**
+ * Plaster pattern - returns (1.0, variationValue, 0, 0)
+ */
+const plasterPattern = Fn(([uvIn]: [ReturnType<typeof vec2>]) => {
+  const scaled = uvIn.mul(2.0);
+  const noise1 = tslFBM(scaled);
+  const noise2 = tslFBM(scaled.mul(3.0));
+  const variation = noise1.mul(0.7).add(noise2.mul(0.3));
+  return vec4(1.0, variation, 0.0, 0.0);
+});
+
+// ============================================================================
+// PATTERN INDICES
+// ============================================================================
+
+const PATTERN_INDICES: Record<BuildingMaterialType, number> = {
+  brick: 0,
+  "stone-ashlar": 1,
+  "stone-rubble": 2,
+  "wood-plank": 3,
+  "timber-frame": 4,
+  plaster: 5,
+  shingle: 6,
+};
+
+// ============================================================================
+// TSL MATERIAL FACTORY
+// ============================================================================
+
+/**
+ * Extended material type with building uniforms
+ */
+export type TSLBuildingMaterial = MeshStandardNodeMaterial & {
+  buildingUniforms: {
+    baseColor: { value: THREE.Color };
+    secondaryColor: { value: THREE.Color };
+    accentColor: { value: THREE.Color };
+    textureScale: { value: number };
+    variation: { value: number };
+  };
+};
+
+/**
+ * Create a procedural building material using TSL for WebGPU
+ */
+export function createBuildingMaterial(
+  config: Partial<BuildingMaterialConfig> & { type: BuildingMaterialType },
+): TSLBuildingMaterial {
+  const defaults = DEFAULT_MATERIAL_CONFIGS[config.type];
+  const fullConfig: BuildingMaterialConfig = {
+    ...defaults,
+    ...config,
+    type: config.type,
+  };
+
+  const material = new MeshStandardNodeMaterial();
+  material.roughness = fullConfig.roughness;
+  material.metalness = fullConfig.metalness;
+
+  // Uniforms
+  const uBaseColor = uniform(new THREE.Color(fullConfig.baseColor));
+  const uSecondaryColor = uniform(new THREE.Color(fullConfig.secondaryColor));
+  const uAccentColor = uniform(new THREE.Color(fullConfig.accentColor));
+  const uTextureScale = uniform(fullConfig.scale);
+  const uVariation = uniform(fullConfig.variation);
+  const patternType = PATTERN_INDICES[fullConfig.type];
+
+  // Color node - procedural pattern generation
+  const colorNode = Fn(() => {
+    // Get UV from mesh UV attribute, scaled
+    const meshUV = uv();
+    const scaledUV = meshUV.div(uTextureScale);
+
+    // Get vertex color for tinting (if available)
+    const vertexColor = fullConfig.useVertexColors
+      ? attribute("color", "vec3")
+      : vec3(1.0, 1.0, 1.0);
+
+    // Pattern result placeholder
+    const patternResult = vec4(1.0, 0.0, 0.0, 0.0).toVar();
+    const surfaceColor = vec3(1.0, 1.0, 1.0).toVar();
+
+    // Select pattern based on type
+    if (patternType === 0) {
+      // Brick
+      patternResult.assign(brickPattern(scaledUV));
+      const isBrick = patternResult.x;
+      const brickId = patternResult.yz;
+
+      const brickNoise = tslHash(brickId);
+      const brickColor = mix(
+        uBaseColor,
+        uSecondaryColor,
+        brickNoise.mul(uVariation),
+      );
+      surfaceColor.assign(mix(uAccentColor, brickColor, isBrick));
+    } else if (patternType === 1) {
+      // Stone Ashlar
+      patternResult.assign(ashlarPattern(scaledUV));
+      const isStone = patternResult.x;
+      const stoneId = patternResult.yz;
+      const bevel = patternResult.w;
+
+      const stoneNoise = tslHash(stoneId);
+      const stoneColor = mix(
+        uBaseColor,
+        uSecondaryColor,
+        stoneNoise.mul(uVariation),
+      );
+      const beveledColor = mix(stoneColor.mul(0.8), stoneColor, bevel);
+      surfaceColor.assign(mix(uAccentColor, beveledColor, isStone));
+    } else if (patternType === 2) {
+      // Stone Rubble
+      patternResult.assign(rubblePattern(scaledUV));
+      const isStone = patternResult.x;
+      const stoneId = patternResult.yz;
+
+      const stoneNoise = tslHash(stoneId);
+      const stoneColor = mix(
+        uBaseColor,
+        uSecondaryColor,
+        stoneNoise.mul(uVariation.mul(2.0)),
+      );
+      surfaceColor.assign(mix(uAccentColor, stoneColor, isStone));
+    } else if (patternType === 3) {
+      // Wood Plank
+      patternResult.assign(woodPlankPattern(scaledUV));
+      const isPlank = patternResult.x;
+      const plankId = patternResult.y;
+      const grainOffset = patternResult.z;
+
+      const plankNoise = tslHash(vec2(plankId, 0.0));
+      const baseWood = mix(
+        uBaseColor,
+        uSecondaryColor,
+        plankNoise.mul(uVariation),
+      );
+
+      const grainNoise = tslNoise2D(vec2(grainOffset.mul(20.0), plankId));
+      const grainedColor = mix(
+        baseWood,
+        baseWood.mul(0.85),
+        grainNoise.mul(0.3),
+      );
+      surfaceColor.assign(mix(uAccentColor, grainedColor, isPlank));
+    } else if (patternType === 4 || patternType === 5) {
+      // Timber Frame or Plaster
+      patternResult.assign(plasterPattern(scaledUV));
+      const variationValue = patternResult.y;
+      surfaceColor.assign(
+        mix(uBaseColor, uSecondaryColor, variationValue.mul(uVariation)),
+      );
+    } else if (patternType === 6) {
+      // Shingle
+      patternResult.assign(shinglePattern(scaledUV));
+      const isShingle = patternResult.x;
+      const shingleId = patternResult.yz;
+      const thickness = patternResult.w;
+
+      const shingleNoise = tslHash(shingleId);
+      const shingleColor = mix(
+        uBaseColor,
+        uSecondaryColor,
+        shingleNoise.mul(uVariation),
+      );
+      const shadedColor = shingleColor.mul(thickness);
+      surfaceColor.assign(mix(uBaseColor.mul(0.3), shadedColor, isShingle));
+    } else {
+      surfaceColor.assign(uBaseColor);
+    }
+
+    // Blend with vertex colors for tinting
+    const finalColor = surfaceColor.mul(vertexColor);
+
+    return finalColor;
+  })();
+
+  material.colorNode = colorNode;
+
+  // Store uniforms for runtime updates
+  const tslMaterial = material as TSLBuildingMaterial;
+  tslMaterial.buildingUniforms = {
+    baseColor: uBaseColor,
+    secondaryColor: uSecondaryColor,
+    accentColor: uAccentColor,
+    textureScale: uTextureScale,
+    variation: uVariation,
+  };
+
+  return tslMaterial;
+}
+
+// ============================================================================
+// MATERIAL PRESETS
+// ============================================================================
+
+/**
+ * Pre-configured material presets for common building types
+ */
+export const BUILDING_MATERIAL_PRESETS = {
+  // Residential
+  "house-brick": {
+    type: "brick" as const,
+    baseColor: "#8B4513",
+    secondaryColor: "#A0522D",
+    accentColor: "#D2B48C",
+  },
+  "house-stone": {
+    type: "stone-ashlar" as const,
+    baseColor: "#808080",
+    secondaryColor: "#696969",
+    accentColor: "#A9A9A9",
+  },
+  "house-plaster": {
+    type: "plaster" as const,
+    baseColor: "#F5F5DC",
+    secondaryColor: "#FFFAF0",
+    accentColor: "#E8E8E8",
+  },
+
+  // Commercial
+  "shop-timber": {
+    type: "timber-frame" as const,
+    baseColor: "#F5F5DC",
+    secondaryColor: "#FFFAF0",
+    accentColor: "#5C4033",
+  },
+  "inn-brick": {
+    type: "brick" as const,
+    baseColor: "#6B4423",
+    secondaryColor: "#8B4513",
+    accentColor: "#C4A484",
+  },
+
+  // Civic
+  "bank-stone": {
+    type: "stone-ashlar" as const,
+    baseColor: "#A9A9A9",
+    secondaryColor: "#808080",
+    accentColor: "#D3D3D3",
+  },
+  "church-stone": {
+    type: "stone-ashlar" as const,
+    baseColor: "#C0C0C0",
+    secondaryColor: "#A9A9A9",
+    accentColor: "#E8E8E8",
+  },
+
+  // Fortification
+  "keep-stone": {
+    type: "stone-ashlar" as const,
+    baseColor: "#696969",
+    secondaryColor: "#555555",
+    accentColor: "#808080",
+  },
+  "fortress-rubble": {
+    type: "stone-rubble" as const,
+    baseColor: "#555555",
+    secondaryColor: "#444444",
+    accentColor: "#666666",
+  },
+
+  // Roofing
+  "roof-shingle": {
+    type: "shingle" as const,
+    baseColor: "#4A3728",
+    secondaryColor: "#3C2A1E",
+    accentColor: "#5C4033",
+  },
+  "roof-slate": {
+    type: "shingle" as const,
+    baseColor: "#3C3C3C",
+    secondaryColor: "#2F2F2F",
+    accentColor: "#4A4A4A",
+  },
+
+  // Interior
+  "floor-wood": {
+    type: "wood-plank" as const,
+    baseColor: "#8B7355",
+    secondaryColor: "#6B4423",
+    accentColor: "#D2B48C",
+  },
+  "floor-stone": {
+    type: "stone-ashlar" as const,
+    baseColor: "#6B6B6B",
+    secondaryColor: "#555555",
+    accentColor: "#808080",
+  },
+} as const;
+
+export type BuildingMaterialPreset = keyof typeof BUILDING_MATERIAL_PRESETS;
+
+/**
+ * Create a material from a preset name
+ */
+export function createMaterialFromPreset(
+  preset: BuildingMaterialPreset,
+): TSLBuildingMaterial {
+  const config = BUILDING_MATERIAL_PRESETS[preset];
+  return createBuildingMaterial(config);
+}
+
+/**
+ * Get the default material config for a building type based on recipe type
+ */
+export function getMaterialConfigForBuildingType(
+  buildingType: string,
+): Partial<BuildingMaterialConfig> & { type: BuildingMaterialType } {
+  switch (buildingType) {
+    case "bank":
+    case "guild-hall":
+      return BUILDING_MATERIAL_PRESETS["bank-stone"];
+    case "church":
+    case "cathedral":
+      return BUILDING_MATERIAL_PRESETS["church-stone"];
+    case "keep":
+    case "fortress":
+      return BUILDING_MATERIAL_PRESETS["keep-stone"];
+    case "inn":
+      return BUILDING_MATERIAL_PRESETS["inn-brick"];
+    case "store":
+    case "smithy":
+      return BUILDING_MATERIAL_PRESETS["shop-timber"];
+    case "simple-house":
+    case "long-house":
+    default:
+      return BUILDING_MATERIAL_PRESETS["house-brick"];
+  }
+}
+```
+
+
+4. Beispiel
+```
+import * as THREE from "three";
+import { VolumeNodeMaterial } from "three/webgpu";
+import {
+  Break,
+  Fn,
+  If,
+  Loop,
+  abs,
+  clamp,
+  dot,
+  float,
+  fract,
+  length,
+  max,
+  mix,
+  modelWorldMatrixInverse,
+  screenCoordinate,
+  smoothstep,
+  texture3D,
+  int,
+  vec3,
+  vec4,
+} from "three/tsl";
+import SafeVolumetricLightingModel, {
+  raymarchLightNode,
+  raymarchOpacityNode,
+} from "./SafeVolumetricLightingModel.js";
+import { normalizeCavityGeometry } from "../cavityGeometry.js";
+import { getModalGeometryBackend } from "../modalGeometryBackend.js";
+import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
+import {
+  RAYMARCH_BOUNDARY_END,
+  RAYMARCH_BOUNDARY_START,
+} from "./intersection.js";
+import {
+  BASS_STRUCTURE_FLOOR_BAND_WEIGHT,
+  BASS_STRUCTURE_FLOOR_MAX,
+  BASS_STRUCTURE_FLOOR_OUTER_REDUCTION,
+  BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT,
+  BOUNDARY_CONTOUR_ACCENT_WEIGHT,
+  AIR_BAND_WEIGHT,
+  BODY_BOUNDARY_REDUCTION,
+  BODY_DENSITY_GAIN,
+  BODY_DENSITY_MIX,
+  BEAM_POWER_BASE,
+  BEAM_POWER_TRANSIENT_GAIN,
+  BEAM_SPECTRAL_GAIN,
+  BEAM_TRANSIENT_GAIN,
+  BROAD_BAND_SCALE,
+  COLOR_BIAS_SCALE,
+  COLOR_BLEND_END,
+  COLOR_BLEND_START,
+  CONTOUR_BLEND,
+  DENSITY_BOOST,
+  DENSITY_MAX,
+  DETAIL_LAYER_WEIGHT,
+  EMISSION_ROLLOFF_BASE,
+  EMISSION_ROLLOFF_MIX,
+  EMISSION_ROLLOFF_TRANSIENT_GAIN,
+  EDGE_FADE_END,
+  EDGE_FADE_START,
+  EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
+  EXCITATION_VISIBILITY_HARMONICITY_WEIGHT,
+  EXCITATION_VISIBILITY_MAX_FLOOR,
+  HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
+  HOT_CORE_END,
+  HOT_CORE_START,
+  HIGHLIGHT_MASK_END,
+  HIGHLIGHT_MASK_START,
+  HOLOGRAPHIC_TINT_BLUE,
+  HOLOGRAPHIC_TINT_GREEN,
+  HOLOGRAPHIC_TINT_RED,
+  HIGH_MID_BAND_WEIGHT,
+  INNER_BAND_WEIGHT,
+  INTERIOR_MASK_END,
+  INTERIOR_MASK_START,
+  LATCHED_FOG_BEAM_REDUCTION,
+  LATCHED_FOG_BODY_REDUCTION,
+  LATCHED_FOG_CHANGE_END,
+  LATCHED_FOG_STRUCTURE_RANGE,
+  LATCHED_FOG_STRUCTURE_START,
+  LOW_DENSITY_FADE_END,
+  LOW_DENSITY_FADE_START,
+  LOW_MID_BAND_WEIGHT,
+  RIM_BLOOM_BIAS_BASE,
+  RIM_BLOOM_BIAS_GAIN,
+  RIM_COMPRESSION_BOUNDARY_GAIN,
+  RIM_COMPRESSION_OUTER_GAIN,
+  SHELL_WEIGHT_END,
+  SHELL_WEIGHT_MAX,
+  SHELL_WEIGHT_MIN,
+  SHELL_WEIGHT_START,
+} from "./fieldShaping.js";
+
+// Excitation gate: smoothstep range for uAverageAmplitude / 255.
+// Below LOW the field is under-excited; gating reduces body fill and hot-core.
+// Above HIGH the gate is fully open and behavior is identical to pre-fix.
+const EXCITATION_GATE_LOW = 0.04;
+const EXCITATION_GATE_HIGH = 0.35;
+const DIRECT_CHROMESTHESIA_PRESENCE_END = 0.18;
+const CACHED_CHROMESTHESIA_PRESENCE_END = 0.26;
+
+/** @type {{ off: string; direct: string; cached: string; tonalFallback: string }} */
+export const RAYMARCH_CHROMA_EVALUATION_MODES = Object.freeze({
+  off: "off",
+  direct: "direct",
+  cached: "cached",
+  tonalFallback: "tonal-fallback",
+});
+
+function normalizeFieldEvaluationMode(fieldEvaluationMode) {
+  return fieldEvaluationMode === "cached" ? "cached" : "direct";
+}
+
+function normalizeChromaEvaluationMode(chromaEvaluationMode) {
+  switch (chromaEvaluationMode) {
+    case RAYMARCH_CHROMA_EVALUATION_MODES.off:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.off;
+    case RAYMARCH_CHROMA_EVALUATION_MODES.cached:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.cached;
+    case RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
+    case RAYMARCH_CHROMA_EVALUATION_MODES.direct:
+    default:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.direct;
+  }
+}
+
+/**
+ * @typedef {{
+ *   positionRay: any,
+ *   positionRayLocal: any,
+ *   viewDirLocal: any
+ * }} ScatteringNodeInputs
+ */
+
+/**
+ * @typedef {import("three/webgpu").VolumeNodeMaterial & {
+ *   steps: number,
+ *   radiusNode?: any,
+ *   scatteringNode?: any,
+ *   opacityGainNode?: any,
+ *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
+ *   fieldEvaluationMode?: string,
+ *   chromaEvaluationMode?: string
+ * }} BaryonVolumeMaterial
+ */
+
+class BaryonVolumeNodeMaterial extends VolumeNodeMaterial {
+  setupLightingModel() {
+    return new SafeVolumetricLightingModel();
+  }
+}
+
+function accumulateSpecializedLayer({
+  buffer,
+  colorBuffer,
+  capacity,
+  activeCount,
+  weight,
+  localPosition,
+  uRadius,
+  boundaryMode,
+  cavityGeometry,
+  enableColorAccumulation = null,
+  field,
+  gradX,
+  gradY,
+  gradZ,
+  colorSum,
+  colorWeight,
+}) {
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+  const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
+  Loop(
+    { start: int(0), end: int(capacity), type: "int", condition: "<" },
+    ({ i }) => {
+      If(i.greaterThanEqual(activeCount), () => {
+        Break();
+      });
+      const slot = buffer.element(i);
+      const amplitude = slot.w.mul(weight);
+      const u = slot.x;
+      const v = slot.y;
+      const w = slot.z;
+      const family = geometryBackend.evaluateModeNode({
+        u,
+        v,
+        w,
+        xCoord: localPosition.x,
+        yCoord: localPosition.y,
+        zCoord: localPosition.z,
+        scale,
+        boundaryMode,
+      });
+      field.addAssign(amplitude.mul(family.field));
+      gradX.addAssign(amplitude.mul(family.gradX));
+      gradY.addAssign(amplitude.mul(family.gradY));
+      gradZ.addAssign(amplitude.mul(family.gradZ));
+      if (colorBuffer && colorSum && colorWeight && enableColorAccumulation) {
+        If(enableColorAccumulation.greaterThan(0.5), () => {
+          const colorSlot = colorBuffer.element(i);
+          const localInfluence = amplitude.mul(abs(family.field));
+          colorSum.addAssign(
+            vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
+              localInfluence.mul(colorSlot.w),
+            ),
+          );
+          colorWeight.addAssign(localInfluence.mul(colorSlot.w));
+        });
+      }
+    },
+  );
+}
+
+function accumulateSpecializedLayerColorOnly({
+  buffer,
+  colorBuffer,
+  capacity,
+  activeCount,
+  weight,
+  localPosition,
+  uRadius,
+  boundaryMode,
+  cavityGeometry,
+  colorSum,
+  colorWeight,
+}) {
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+  const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
+  Loop(
+    { start: int(0), end: int(capacity), type: "int", condition: "<" },
+    ({ i }) => {
+      If(i.greaterThanEqual(activeCount), () => {
+        Break();
+      });
+      const slot = buffer.element(i);
+      const amplitude = slot.w.mul(weight);
+      const family = geometryBackend.evaluateModeNode({
+        u: slot.x,
+        v: slot.y,
+        w: slot.z,
+        xCoord: localPosition.x,
+        yCoord: localPosition.y,
+        zCoord: localPosition.z,
+        scale,
+        boundaryMode,
+      });
+      const colorSlot = colorBuffer.element(i);
+      const localInfluence = amplitude.mul(abs(family.field));
+      colorSum.addAssign(
+        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
+          localInfluence.mul(colorSlot.w),
+        ),
+      );
+      colorWeight.addAssign(localInfluence.mul(colorSlot.w));
+    },
+  );
+}
+
+function accumulateFieldLayers({
+  backboneModeBuffer,
+  detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
+  backboneCapacity,
+  detailCapacity,
+  backboneActiveCount,
+  detailActiveCount,
+  localPosition,
+  uRadius,
+  boundaryMode,
+  cavityGeometry,
+  chromesthesiaEnabled,
+  field,
+  gradX,
+  gradY,
+  gradZ,
+  colorSum,
+  colorWeight,
+}) {
+  If(backboneActiveCount.greaterThan(0), () => {
+    accumulateSpecializedLayer({
+      buffer: backboneModeBuffer,
+      colorBuffer: backboneColorBuffer,
+      capacity: backboneCapacity,
+      activeCount: backboneActiveCount,
+      weight: float(1.0),
+      localPosition,
+      uRadius,
+      boundaryMode,
+      cavityGeometry,
+      enableColorAccumulation: chromesthesiaEnabled,
+      field,
+      gradX,
+      gradY,
+      gradZ,
+      colorSum,
+      colorWeight,
+    });
+  });
+  If(detailActiveCount.greaterThan(0), () => {
+    accumulateSpecializedLayer({
+      buffer: detailModeBuffer,
+      colorBuffer: detailColorBuffer,
+      capacity: detailCapacity,
+      activeCount: detailActiveCount,
+      weight: float(DETAIL_LAYER_WEIGHT),
+      localPosition,
+      uRadius,
+      boundaryMode,
+      cavityGeometry,
+      enableColorAccumulation: chromesthesiaEnabled,
+      field,
+      gradX,
+      gradY,
+      gradZ,
+      colorSum,
+      colorWeight,
+    });
+  });
+}
+
+function accumulateColorLayers({
+  backboneModeBuffer,
+  detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
+  backboneCapacity,
+  detailCapacity,
+  backboneActiveCount,
+  detailActiveCount,
+  localPosition,
+  uRadius,
+  boundaryMode,
+  cavityGeometry,
+  chromesthesiaEnabled,
+  colorSum,
+  colorWeight,
+}) {
+  If(chromesthesiaEnabled.greaterThan(0.5), () => {
+    If(backboneActiveCount.greaterThan(0), () => {
+      accumulateSpecializedLayerColorOnly({
+        buffer: backboneModeBuffer,
+        colorBuffer: backboneColorBuffer,
+        capacity: backboneCapacity,
+        activeCount: backboneActiveCount,
+        weight: float(1.0),
+        localPosition,
+        uRadius,
+        boundaryMode,
+        cavityGeometry,
+        colorSum,
+        colorWeight,
+      });
+    });
+    If(detailActiveCount.greaterThan(0), () => {
+      accumulateSpecializedLayerColorOnly({
+        buffer: detailModeBuffer,
+        colorBuffer: detailColorBuffer,
+        capacity: detailCapacity,
+        activeCount: detailActiveCount,
+        weight: float(DETAIL_LAYER_WEIGHT),
+        localPosition,
+        uRadius,
+        boundaryMode,
+        cavityGeometry,
+        colorSum,
+        colorWeight,
+      });
+    });
+  });
+}
+
+function createScatteringNode({
+  backboneModeBuffer,
+  detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
+  backboneCapacity,
+  detailCapacity,
+  uniforms,
+  boundaryMode = BOUNDARY_MODES.neumann,
+  cavityGeometry = "rectangular",
+  fieldCacheTexture = null,
+  chromaCacheTexture = null,
+  chromaEvaluationMode = RAYMARCH_CHROMA_EVALUATION_MODES.direct,
+}) {
+  const {
+    uRadius,
+    uThreshold,
+    uStructureMin,
+    uStructureMax,
+    uAverageAmplitude,
+    uActiveModeCount,
+    uBackboneModeCount,
+    uDetailModeCount,
+    uColor,
+    uSurfaceColor,
+    uChromesthesiaMix,
+    uDensityAbsorption,
+    uContourSharpness,
+    uRimBloomBias,
+    uRimCompression,
+    uHolographicIntensity,
+    uHolographicShift,
+    uHolographicFresnelPower,
+    uBandEnergies,
+    uTransientEnergy,
+    uSpectralCentroid,
+    uSpectralFlux,
+    uStructureSignal,
+    uEnergySignal,
+    uChangeSignal,
+    uHarmonicity,
+    uBassSalience,
+    uTextureSpread,
+    uNovelty,
+    uBeatPulse,
+    uBeatPhase,
+    uRhythmicDensity,
+    uKeyTint,
+    uKeyTintStrength,
+    uKeyMode,
+    uTrebleBroadbandEnergy,
+    uModeCoherence,
+    uTotalSlotAmplitude,
+  } = uniforms;
+  // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
+  // at the TSL graph level and do not re-evaluate every raymarch step.
+  const dynamicEdgeFadeStart = float(EDGE_FADE_START).sub(
+    uEnergySignal.mul(0.06),
+  );
+  const dynamicInteriorMaskStart = float(INTERIOR_MASK_START).add(
+    uStructureSignal.mul(0.1),
+  );
+  // Beat phase decay: 1.0 on the beat, fades to 0 at ~2/3 of the beat period.
+  // Uniform-only — loop-invariant, hoisted outside the Fn.
+  const beatPhaseDecay = max(float(0.0), float(1.0).sub(uBeatPhase.mul(1.5)));
+  const hotCoreStartDynamic = float(HOT_CORE_START)
+    .sub(uBeatPulse.mul(0.12))
+    .sub(beatPhaseDecay.mul(0.07))
+    .add(uRhythmicDensity.mul(0.04));
+  const contourGainBase = uStructureSignal
+    .mul(0.3)
+    .add(uHarmonicity.mul(0.15))
+    .add(beatPhaseDecay.mul(0.18));
+  const dynamicHolographicIntensity = uHolographicIntensity
+    .mul(float(1.0).add(uTextureSpread.mul(0.35)))
+    .mul(float(1.0).add(beatPhaseDecay.mul(0.22)));
+  const dynamicHolographicShift = clamp(
+    uHolographicShift.add(uNovelty.mul(0.2)).sub(uKeyMode.mul(0.12)),
+    float(0.0),
+    float(1.0),
+  );
+  const spectralColorBiasHintOffset = uHarmonicity
+    .mul(0.12)
+    .sub(uChangeSignal.mul(0.08));
+  // Excitation gate: 0 when field is under-excited (weak/noisy input), 1 when
+  // fully excited. Three-input weighted formula prevents noise-floor-elevated
+  // amplitude alone from keeping the gate open — coherent structure and tonal
+  // purity are required. Hoisted as loop-invariant — does not re-evaluate per step.
+  const excitationInput = uAverageAmplitude
+    .div(float(255.0))
+    .mul(float(0.3))
+    .add(uStructureSignal.mul(float(0.45)))
+    .add(uHarmonicity.mul(float(0.25)));
+  const excitationGate = smoothstep(
+    float(EXCITATION_GATE_LOW),
+    float(EXCITATION_GATE_HIGH),
+    excitationInput,
+  );
+  const excitationVisibility = max(
+    excitationGate,
+    clamp(
+      uModeCoherence
+        .mul(float(EXCITATION_VISIBILITY_COHERENCE_WEIGHT))
+        .add(uHarmonicity.mul(float(EXCITATION_VISIBILITY_HARMONICITY_WEIGHT))),
+      float(0.0),
+      float(EXCITATION_VISIBILITY_MAX_FLOOR),
+    ),
+  );
+  const latchedFogMask = clamp(
+    uStructureSignal
+      .sub(float(LATCHED_FOG_STRUCTURE_START))
+      .div(float(LATCHED_FOG_STRUCTURE_RANGE)),
+    float(0.0),
+    float(1.0),
+  ).mul(
+    clamp(
+      float(LATCHED_FOG_CHANGE_END)
+        .sub(uChangeSignal)
+        .div(float(LATCHED_FOG_CHANGE_END)),
+      float(0.0),
+      float(1.0),
+    ),
+  );
+
+  return Fn(
+    /**
+     * @param {ScatteringNodeInputs} args
+     */
+    ({ positionRay, positionRayLocal, viewDirLocal }) => {
+      const localPosition =
+        positionRayLocal ??
+        modelWorldMatrixInverse.mul(vec4(positionRay, 1.0)).xyz;
+      const normalizedPosition = localPosition.div(uRadius);
+      const radialDistance = length(normalizedPosition);
+      // High energy = tighter boundary (more solid); low energy = diffuse, ghostly
+      const edgeFade = float(1.0).sub(
+        smoothstep(dynamicEdgeFadeStart, float(EDGE_FADE_END), radialDistance),
+      );
+      const field = float(0.0).toVar();
+      const gradX = float(0.0).toVar();
+      const gradY = float(0.0).toVar();
+      const gradZ = float(0.0).toVar();
+      const colorSum = vec3(0.0).toVar();
+      const colorWeight = float(0.0).toVar();
+      const chromesthesiaEnabled = smoothstep(
+        float(0.0),
+        float(1e-4),
+        uChromesthesiaMix,
+      );
+      const directChromaEnabled =
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.direct;
+      const cachedChromaEnabled =
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.cached &&
+        Boolean(chromaCacheTexture);
+      const tonalFallbackEnabled =
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
+      const chromaModeEnabled =
+        directChromaEnabled || cachedChromaEnabled || tonalFallbackEnabled;
+      const backboneActiveCount = int(uBackboneModeCount);
+      const detailActiveCount = int(uDetailModeCount);
+      if (fieldCacheTexture) {
+        const cacheUv = clamp(
+          normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
+          vec3(0.0),
+          vec3(1.0),
+        );
+        const cachedSample = texture3D(fieldCacheTexture).sample(cacheUv);
+        field.assign(cachedSample.x);
+        gradX.assign(cachedSample.y);
+        gradY.assign(cachedSample.z);
+        gradZ.assign(cachedSample.w);
+
+        if (cachedChromaEnabled) {
+          const cacheUv = clamp(
+            normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
+            vec3(0.0),
+            vec3(1.0),
+          );
+          const cachedChromaSample =
+            texture3D(chromaCacheTexture).sample(cacheUv);
+          colorSum.assign(cachedChromaSample.xyz);
+          colorWeight.assign(cachedChromaSample.w);
+        } else if (directChromaEnabled) {
+          accumulateColorLayers({
+            backboneModeBuffer,
+            detailModeBuffer,
+            backboneColorBuffer,
+            detailColorBuffer,
+            backboneCapacity,
+            detailCapacity,
+            backboneActiveCount,
+            detailActiveCount,
+            localPosition,
+            uRadius,
+            boundaryMode,
+            cavityGeometry,
+            chromesthesiaEnabled,
+            colorSum,
+            colorWeight,
+          });
+        }
+      } else {
+        accumulateFieldLayers({
+          backboneModeBuffer,
+          detailModeBuffer,
+          backboneColorBuffer,
+          detailColorBuffer,
+          backboneCapacity,
+          detailCapacity,
+          backboneActiveCount,
+          detailActiveCount,
+          localPosition,
+          uRadius,
+          boundaryMode,
+          cavityGeometry,
+          chromesthesiaEnabled: directChromaEnabled
+            ? chromesthesiaEnabled
+            : float(0.0),
+          field,
+          gradX,
+          gradY,
+          gradZ,
+          colorSum,
+          colorWeight,
+        });
+      }
+
+      const fieldAbs = abs(field);
+      const gradient = vec3(gradX, gradY, gradZ).toVar();
+      const gradientMagnitude = length(gradient);
+      const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
+      // Keep direct and cached field evaluation semantically identical.
+      // The cache descriptor already hashes slot amplitudes, so the cached field
+      // rebuilds when amplitudes change; both paths can safely use the same
+      // amplitude-normalized shaping terms.
+      const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
+      const normalizedFieldAbs = fieldAbs.div(amplitudeNorm);
+      const normalizedGradMagnitude = gradientMagnitude.div(amplitudeNorm);
+      const activeCount = float(uActiveModeCount);
+      const backboneCount = float(uBackboneModeCount);
+      const detailCount = float(uDetailModeCount);
+      // Harmonic/complex audio = sharper, crisper nodal lines
+      // contourGainBase (structure + harmonicity terms) is pre-computed above the Fn
+      const contourGain = float(1.0)
+        .add(uTransientEnergy.mul(0.25))
+        .add(contourGainBase);
+      const nodeBand = float(1.0).sub(
+        smoothstep(float(0.0), uThreshold, normalizedFieldAbs),
+      );
+      const broadBand = float(1.0).sub(
+        smoothstep(
+          float(0.0),
+          uThreshold.mul(float(BROAD_BAND_SCALE)),
+          normalizedFieldAbs,
+        ),
+      );
+      const structure = smoothstep(
+        uStructureMin,
+        uStructureMax,
+        normalizedGradMagnitude,
+      );
+      const innerShellAccent = smoothstep(
+        float(0.0),
+        float(0.45),
+        radialDistance,
+      );
+      const outerShellAccent = smoothstep(
+        float(0.35),
+        float(1.0),
+        radialDistance,
+      );
+      const rimBandBias = float(RIM_BLOOM_BIAS_BASE).add(
+        uRimBloomBias.mul(float(RIM_BLOOM_BIAS_GAIN)),
+      );
+      const shellBandMod = float(1.0)
+        .add(
+          uBandEnergies.x
+            .mul(float(INNER_BAND_WEIGHT))
+            .mul(float(1.0).sub(innerShellAccent)),
+        )
+        .add(uBandEnergies.y.mul(float(LOW_MID_BAND_WEIGHT)))
+        .add(
+          uBandEnergies.z
+            .mul(float(HIGH_MID_BAND_WEIGHT))
+            .mul(rimBandBias)
+            .mul(outerShellAccent),
+        )
+        .add(
+          uBandEnergies.w
+            .mul(float(AIR_BAND_WEIGHT))
+            .mul(rimBandBias)
+            .mul(outerShellAccent),
+        );
+      // Bass salience thickens the inner shell — bass-heavy music looks heavier
+      const bassShellBoost = uBassSalience
+        .mul(0.2)
+        .mul(float(1.0).sub(outerShellAccent));
+      const shellWeight = mix(
+        float(SHELL_WEIGHT_MIN),
+        float(SHELL_WEIGHT_MAX),
+        smoothstep(
+          float(SHELL_WEIGHT_START),
+          float(SHELL_WEIGHT_END),
+          radialDistance,
+        ),
+      )
+        .mul(shellBandMod)
+        .mul(float(1.0).add(bassShellBoost));
+      const contourCore = nodeBand.pow(uContourSharpness.mul(contourGain));
+      const contourShape = mix(broadBand, contourCore, float(CONTOUR_BLEND));
+      // Low-order / bass-heavy modes have weaker gradients than bright treble modes.
+      // Give them a bounded visibility floor at nodal surfaces so the pattern reads
+      // without restoring a sphere-wide density floor.
+      const bassEnvelope = clamp(
+        uBandEnergies.x
+          .mul(float(BASS_STRUCTURE_FLOOR_BAND_WEIGHT))
+          .add(uBandEnergies.y.mul(float(LOW_MID_BAND_WEIGHT)))
+          .add(uBassSalience.mul(float(BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT))),
+        float(0.0),
+        float(1.0),
+      );
+      const bassStructureFloor = bassEnvelope
+        .mul(nodeBand)
+        .mul(
+          float(1.0).sub(
+            outerShellAccent.mul(float(BASS_STRUCTURE_FLOOR_OUTER_REDUCTION)),
+          ),
+        )
+        .mul(float(BASS_STRUCTURE_FLOOR_MAX));
+      const visibleStructure = max(structure, bassStructureFloor);
+      const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
+      // Beat pulse drives a visible density surge through the volume
+      const densityMod = float(1.0)
+        .add(uTransientEnergy.mul(0.3))
+        .add(uSpectralFlux.mul(0.2))
+        .add(uBeatPulse.mul(0.35));
+      const boundaryMask = smoothstep(
+        float(RAYMARCH_BOUNDARY_START),
+        float(RAYMARCH_BOUNDARY_END),
+        radialDistance,
+      );
+      // Complex harmonic content opens up the interior — more inner detail visible
+      const interiorMask = float(1.0).sub(
+        smoothstep(
+          dynamicInteriorMaskStart,
+          float(INTERIOR_MASK_END),
+          radialDistance,
+        ),
+      );
+      // Reduce body fill when treble is incoherent (broadband hiss/cymbal noise
+      // with low modal coherence). Max 45% body reduction — prevents diffuse white fog
+      // from high-freq noise without suppressing tonal treble structure.
+      const incoherentTrebleSuppression = float(1.0).sub(
+        uTrebleBroadbandEnergy
+          .mul(float(1.0).sub(uModeCoherence))
+          .mul(float(0.45)),
+      );
+      const bodyDensity = broadBand
+        .mul(visibleStructure)
+        .mul(edgeFade)
+        .mul(activeMask)
+        .mul(interiorMask)
+        .mul(float(BODY_DENSITY_GAIN))
+        .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))))
+        .mul(incoherentTrebleSuppression)
+        // Under-excited fields get much less body fill to avoid diffuse white fog
+        .mul(excitationVisibility.pow(float(1.2)));
+      const dampedBodyDensity = bodyDensity.mul(
+        float(1.0).sub(latchedFogMask.mul(float(LATCHED_FOG_BODY_REDUCTION))),
+      );
+      // Beat pulse adds an emission flash — each hit brightens the beam layer
+      const transientBoost = float(1.0)
+        .add(uTransientEnergy.mul(float(BEAM_TRANSIENT_GAIN)))
+        .add(uSpectralFlux.mul(float(BEAM_SPECTRAL_GAIN)))
+        .add(uBeatPulse.mul(0.5));
+      const rimCompressionMix = clamp(
+        boundaryMask
+          .mul(uRimCompression)
+          .mul(float(RIM_COMPRESSION_BOUNDARY_GAIN))
+          .add(
+            outerShellAccent
+              .mul(uRimCompression)
+              .mul(float(RIM_COMPRESSION_OUTER_GAIN)),
+          ),
+        float(0.0),
+        float(1.0),
+      );
+      const compressedShellWeight = shellWeight.mul(
+        float(1.0).sub(rimCompressionMix),
+      );
+      const beamCore = contourShape.pow(
+        float(BEAM_POWER_BASE).add(
+          uTransientEnergy.mul(float(BEAM_POWER_TRANSIENT_GAIN)),
+        ),
+      );
+      const beamDensity = beamCore
+        .mul(visibleStructure)
+        .mul(compressedShellWeight)
+        .mul(transientBoost)
+        // Gate beam brightness by audio energy — prevents surface glow persisting
+        // at full brightness when field→0 causes contourShape→1 everywhere.
+        // Power 1.0 gives linear rolloff, less aggressive than body's pow(1.5).
+        .mul(excitationVisibility)
+        .mul(
+          float(1.0).sub(latchedFogMask.mul(float(LATCHED_FOG_BEAM_REDUCTION))),
+        );
+      const rolledBeamDensity = mix(
+        beamDensity,
+        beamDensity.div(
+          float(1.0).add(
+            beamDensity.mul(
+              float(EMISSION_ROLLOFF_BASE).add(
+                uTransientEnergy.mul(float(EMISSION_ROLLOFF_TRANSIENT_GAIN)),
+              ),
+            ),
+          ),
+        ),
+        float(EMISSION_ROLLOFF_MIX),
+      );
+      const density = clamp(
+        rolledBeamDensity
+          .add(dampedBodyDensity.mul(float(BODY_DENSITY_MIX)))
+          .mul(edgeFade)
+          .mul(uDensityAbsorption)
+          .mul(densityMod)
+          .mul(activeMask),
+        float(0.0),
+        float(DENSITY_MAX),
+      ).mul(float(DENSITY_BOOST));
+      const { visibleDensity } = deriveVisibleDensityNode(density);
+      const highlightMask = smoothstep(
+        float(HIGHLIGHT_MASK_START),
+        float(HIGHLIGHT_MASK_END),
+        visibleDensity,
+      );
+      const stabilizedDensity = visibleDensity;
+      const contourMix = smoothstep(
+        float(COLOR_BLEND_START),
+        float(COLOR_BLEND_END),
+        contourShape,
+      );
+      // Harmonic content warms color; rapid change cools it
+      // spectralColorBiasHintOffset (harmonicity - changeSignal terms) is pre-computed above the Fn
+      const spectralColorBias = clamp(
+        contourMix
+          .add(uSpectralCentroid.mul(0.25))
+          .add(uTransientEnergy.mul(0.1))
+          .add(spectralColorBiasHintOffset)
+          .mul(float(COLOR_BIAS_SCALE)),
+        float(0.0),
+        float(1.0),
+      );
+      const staticBaseColor = mix(uColor, uSurfaceColor, spectralColorBias);
+      const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
+      const contourAccent = contourMix
+        .mul(float(0.18))
+        .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
+        .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)));
+      // Beat pulse briefly expands the bright hot core — "bloom from within" on hits
+      // hotCoreStartDynamic is pre-computed above the Fn.
+      // excitationGate prevents weak tonal fields from triggering the white laser core.
+      const hotCoreMix = smoothstep(
+        hotCoreStartDynamic,
+        float(HOT_CORE_END),
+        /** @type {any} */ (
+          rolledBeamDensity
+            .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+            .add(highlightMask.mul(float(0.12)))
+            .add(uTransientEnergy.mul(float(0.08)))
+            .div(
+              float(1.0).add(
+                rolledBeamDensity
+                  .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+                  .add(highlightMask.mul(float(0.12)))
+                  .add(uTransientEnergy.mul(float(0.08)))
+                  .mul(float(0.22)),
+              ),
+            )
+        ),
+      ).mul(excitationGate);
+      const fresnelBase = clamp(
+        float(1.0)
+          .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
+          .pow(max(uHolographicFresnelPower, float(0.01))),
+        float(0.0),
+        float(1.0),
+      );
+      // Rich timbres (high textureSpread) boost iridescence; novelty shifts the hue
+      // dynamicHolographicIntensity and dynamicHolographicShift pre-computed above the Fn
+      const holographicFresnel = fresnelBase
+        .mul(dynamicHolographicIntensity)
+        .mul(structure)
+        .mul(edgeFade);
+      const holographicAccentColor = mix(
+        uSurfaceColor,
+        vec3(
+          float(HOLOGRAPHIC_TINT_RED),
+          float(HOLOGRAPHIC_TINT_GREEN),
+          float(HOLOGRAPHIC_TINT_BLUE),
+        ),
+        clamp(
+          float(0.25).add(dynamicHolographicShift.mul(float(0.75))),
+          float(0.0),
+          float(1.0),
+        ),
+      );
+      const holographicColorMix = clamp(
+        holographicFresnel.mul(
+          float(0.35).add(dynamicHolographicShift.mul(float(0.65))),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const holographicEmissionLift = clamp(
+        holographicFresnel.mul(
+          float(0.12).add(dynamicHolographicShift.mul(float(0.18))),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const staticContourColor = mix(
+        staticBaseColor,
+        uSurfaceColor,
+        contourAccent,
+      );
+      const staticLaserColor = mix(
+        staticContourColor,
+        uSurfaceColor,
+        hotCoreMix.mul(float(0.72)),
+      );
+      const staticHolographicColor = mix(
+        staticLaserColor,
+        holographicAccentColor,
+        /** @type {any} */ (holographicColorMix),
+      );
+      const staticHolographicLaserColor = mix(
+        staticHolographicColor,
+        vec3(1.0),
+        /** @type {any} */ (holographicEmissionLift.mul(float(0.45))),
+      );
+      const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
+      const backbonePresence = smoothstep(
+        float(0.0),
+        float(1.0),
+        backboneCount,
+      );
+      const activityAccent = backbonePresence.add(
+        detailPresence.mul(float(0.15)),
+      );
+      const staticVolumeColor = mix(
+        staticHolographicLaserColor.mul(float(0.9)),
+        staticHolographicLaserColor,
+        activityAccent,
+      );
+      const volumeColor = staticVolumeColor.toVar();
+      const neutralBase = mix(vec3(0.72), vec3(1.0), spectralColorBias);
+      const chromesthesiaNeutralColor = mix(
+        neutralBase,
+        uKeyTint,
+        uKeyTintStrength.mul(float(0.38)),
+      );
+      if (chromaModeEnabled) {
+        If(chromesthesiaEnabled.greaterThan(0.5), () => {
+          const chromesthesiaPresenceEnd = float(
+            cachedChromaEnabled
+              ? CACHED_CHROMESTHESIA_PRESENCE_END
+              : DIRECT_CHROMESTHESIA_PRESENCE_END,
+          );
+          const chromesthesiaPresence = smoothstep(
+            float(0.0),
+            chromesthesiaPresenceEnd,
+            colorWeight,
+          );
+          const cachedChromesthesiaWeight = clamp(
+            uChromesthesiaMix.mul(chromesthesiaPresence),
+            float(0.0),
+            float(1.0),
+          );
+          const tonalFallbackWeight = clamp(
+            uChromesthesiaMix.mul(excitationVisibility),
+            float(0.0),
+            float(1.0),
+          );
+          const chromesthesiaBlendWeight = tonalFallbackEnabled
+            ? tonalFallbackWeight
+            : cachedChromesthesiaWeight;
+          const chromesthesiaTargetColor = tonalFallbackEnabled
+            ? chromesthesiaNeutralColor
+            : spectralColor;
+          const chromesthesiaBaseColor = mix(
+            chromesthesiaNeutralColor,
+            chromesthesiaTargetColor,
+            chromesthesiaBlendWeight,
+          );
+          const chromesthesiaContourColor = mix(
+            chromesthesiaBaseColor.mul(float(0.92)),
+            chromesthesiaBaseColor,
+            contourAccent,
+          );
+          const chromesthesiaLaserColor = mix(
+            chromesthesiaContourColor,
+            uSurfaceColor,
+            hotCoreMix.mul(float(0.68)),
+          );
+          const chromesthesiaHolographicColor = mix(
+            chromesthesiaLaserColor,
+            holographicAccentColor,
+            /** @type {any} */ (holographicColorMix),
+          );
+          const chromesthesiaHolographicLaserColor = mix(
+            chromesthesiaHolographicColor,
+            vec3(1.0),
+            /** @type {any} */ (holographicEmissionLift.mul(float(0.4))),
+          );
+          const chromesthesiaVolumeColor = mix(
+            chromesthesiaHolographicLaserColor.mul(float(0.9)),
+            chromesthesiaHolographicLaserColor,
+            activityAccent,
+          );
+          volumeColor.assign(
+            mix(
+              staticVolumeColor,
+              chromesthesiaVolumeColor,
+              chromesthesiaEnabled,
+            ),
+          );
+        });
+      }
+
+      return volumeColor.mul(stabilizedDensity);
+    },
+  );
+}
+
+function deriveVisibleDensityNode(density) {
+  const visibilityGate = smoothstep(
+    float(LOW_DENSITY_FADE_START),
+    float(LOW_DENSITY_FADE_END),
+    density,
+  );
+
+  return {
+    visibilityGate,
+    visibleDensity: density.mul(visibilityGate),
+  };
+}
+
+function createRaymarchOffsetNode() {
+  // IGN (Interleaved Gradient Noise) — Jorge Jimenez's formula.
+  // No temporal phase here: TRAA's Halton sub-pixel camera jitter provides temporal
+  // decorrelation across frames. Animating the noise would cause TRAA to accumulate
+  // the scintillation instead of cancelling it, defeating the history pass.
+  return () => {
+    const c = screenCoordinate.x
+      .mul(0.06711056)
+      .add(screenCoordinate.y.mul(0.00583715));
+    return fract(fract(c).mul(52.9829189));
+  };
+}
+
+export function createRaymarchVolumeMesh({
+  radius,
+  backboneModeBuffer,
+  detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
+  fieldCacheTexture = null,
+  chromaCacheTexture = null,
+  capacity = null,
+  backboneCapacity = capacity ?? 0,
+  detailCapacity = capacity ?? 0,
+  uniforms,
+  cavityGeometry = "rectangular",
+}) {
+  // SphereGeometry instead of BoxGeometry: vertex velocities land on the actual
+  // sphere surface, so TRAA's interpolated velocity at each fragment closely matches
+  // the true sphere-surface motion during mesh rotation. BoxGeometry corners sit at
+  // depth sqrt(3)*radius ≈ 1.73r — far from the sphere surface — causing reprojection
+  // errors that blur the history buffer during rotation. Sphere geometry also culls
+  // the box corners (~22% fewer fragment invocations).
+  // 1% radius padding avoids precision clipping at the silhouette.
+  const geometry = new THREE.SphereGeometry(radius * 1.01, 32, 32);
+  const sharedOffsetNode = createRaymarchOffsetNode();
+  const createMaterialForBoundaryMode = (
+    boundaryMode,
+    fieldEvaluationMode,
+    chromaEvaluationMode,
+    materialCavityGeometry,
+  ) => {
+    const material = /** @type {BaryonVolumeMaterial} */ (
+      new BaryonVolumeNodeMaterial()
+    );
+    material.transparent = true;
+    material.blending = THREE.NormalBlending;
+    material.outputNode = vec4(raymarchLightNode, raymarchOpacityNode);
+    material.steps = Math.round(uniforms.uRaymarchSteps.value);
+    material.radiusNode = uniforms.uRadius;
+    material.opacityGainNode = uniforms.uOpacityGain;
+    material.offsetNode = sharedOffsetNode;
+    material.scatteringNode = createScatteringNode({
+      backboneModeBuffer,
+      detailModeBuffer,
+      backboneColorBuffer,
+      detailColorBuffer,
+      backboneCapacity,
+      detailCapacity,
+      uniforms,
+      boundaryMode,
+      cavityGeometry: materialCavityGeometry,
+      fieldCacheTexture:
+        fieldEvaluationMode === "cached" ? fieldCacheTexture : null,
+      chromaCacheTexture:
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.cached
+          ? chromaCacheTexture
+          : null,
+      chromaEvaluationMode,
+    });
+    material.fieldEvaluationMode = fieldEvaluationMode;
+    material.chromaEvaluationMode = chromaEvaluationMode;
+    return material;
+  };
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const materialCache = {
+    [BOUNDARY_MODES.dirichlet]: {
+      direct: {
+        [RAYMARCH_CHROMA_EVALUATION_MODES.direct]: {
+          [normalizedCavityGeometry]: createMaterialForBoundaryMode(
+            BOUNDARY_MODES.dirichlet,
+            "direct",
+            RAYMARCH_CHROMA_EVALUATION_MODES.direct,
+            normalizedCavityGeometry,
+          ),
+        },
+      },
+      cached: {},
+    },
+    [BOUNDARY_MODES.neumann]: {
+      direct: {
+        [RAYMARCH_CHROMA_EVALUATION_MODES.direct]: {
+          [normalizedCavityGeometry]: createMaterialForBoundaryMode(
+            BOUNDARY_MODES.neumann,
+            "direct",
+            RAYMARCH_CHROMA_EVALUATION_MODES.direct,
+            normalizedCavityGeometry,
+          ),
+        },
+      },
+      cached: {},
+    },
+  };
+  const mesh = new THREE.Mesh(
+    geometry,
+    materialCache[BOUNDARY_MODES.neumann].direct.direct[
+      normalizedCavityGeometry
+    ],
+  );
+  mesh.userData.raymarchMaterialCache = materialCache;
+  mesh.userData.raymarchCreateMaterialVariant = createMaterialForBoundaryMode;
+  mesh.userData.raymarchBoundaryMode = BOUNDARY_MODES.neumann;
+  mesh.userData.raymarchFieldEvaluationMode = "direct";
+  mesh.userData.raymarchChromaEvaluationMode =
+    RAYMARCH_CHROMA_EVALUATION_MODES.direct;
+  mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
+  mesh.frustumCulled = false;
+
+  return mesh;
+}
+
+export function getRaymarchMaterialCache(mesh) {
+  return mesh?.userData?.raymarchMaterialCache ?? null;
+}
+
+function getOrCreateRaymarchMaterial(
+  mesh,
+  boundaryMode,
+  fieldEvaluationMode,
+  chromaEvaluationMode,
+  cavityGeometry,
+) {
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    return null;
+  }
+
+  const boundaryMaterials = materialCache[boundaryMode];
+  if (!boundaryMaterials) {
+    return null;
+  }
+
+  const normalizedFieldEvaluationMode =
+    normalizeFieldEvaluationMode(fieldEvaluationMode);
+  const normalizedChromaEvaluationMode =
+    normalizeChromaEvaluationMode(chromaEvaluationMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const chromaMaterials =
+    boundaryMaterials[normalizedFieldEvaluationMode] ??
+    (boundaryMaterials[normalizedFieldEvaluationMode] = {});
+  const geometryMaterials =
+    chromaMaterials[normalizedChromaEvaluationMode] ??
+    (chromaMaterials[normalizedChromaEvaluationMode] = {});
+  if (geometryMaterials[normalizedCavityGeometry]) {
+    return geometryMaterials[normalizedCavityGeometry];
+  }
+
+  const createMaterialVariant = mesh?.userData?.raymarchCreateMaterialVariant;
+  if (typeof createMaterialVariant !== "function") {
+    return null;
+  }
+
+  const material = createMaterialVariant(
+    boundaryMode,
+    normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
+    normalizedCavityGeometry,
+  );
+  geometryMaterials[normalizedCavityGeometry] = material;
+  return material;
+}
+
+export function setRaymarchBoundaryMode(mesh, boundaryMode) {
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    return;
+  }
+
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(
+    mesh?.userData?.raymarchCavityGeometry,
+  );
+  const fieldEvaluationMode = normalizeFieldEvaluationMode(
+    mesh?.userData?.raymarchFieldEvaluationMode,
+  );
+  const chromaEvaluationMode = normalizeChromaEvaluationMode(
+    mesh?.userData?.raymarchChromaEvaluationMode,
+  );
+  const nextMaterial = getOrCreateRaymarchMaterial(
+    mesh,
+    normalizedBoundaryMode,
+    fieldEvaluationMode,
+    chromaEvaluationMode,
+    normalizedCavityGeometry,
+  );
+  if (!nextMaterial || mesh.material === nextMaterial) {
+    mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
+    return;
+  }
+
+  const currentMaterial = mesh.material;
+  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
+  mesh.material = nextMaterial;
+  mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
+}
+
+export function setRaymarchFieldEvaluationMode(mesh, fieldEvaluationMode) {
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    return;
+  }
+
+  const normalizedFieldEvaluationMode =
+    normalizeFieldEvaluationMode(fieldEvaluationMode);
+  const normalizedBoundaryMode = normalizeBoundaryMode(
+    mesh?.userData?.raymarchBoundaryMode,
+  );
+  const normalizedCavityGeometry = normalizeCavityGeometry(
+    mesh?.userData?.raymarchCavityGeometry,
+  );
+  const normalizedChromaEvaluationMode = normalizeChromaEvaluationMode(
+    mesh?.userData?.raymarchChromaEvaluationMode,
+  );
+  const nextMaterial = getOrCreateRaymarchMaterial(
+    mesh,
+    normalizedBoundaryMode,
+    normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
+    normalizedCavityGeometry,
+  );
+  if (!nextMaterial || mesh.material === nextMaterial) {
+    mesh.userData.raymarchFieldEvaluationMode = normalizedFieldEvaluationMode;
+    return;
+  }
+
+  const currentMaterial = mesh.material;
+  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
+  mesh.material = nextMaterial;
+  mesh.userData.raymarchFieldEvaluationMode = normalizedFieldEvaluationMode;
+}
+
+export function setRaymarchChromaEvaluationMode(mesh, chromaEvaluationMode) {
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    return;
+  }
+
+  const normalizedChromaEvaluationMode =
+    normalizeChromaEvaluationMode(chromaEvaluationMode);
+  const normalizedBoundaryMode = normalizeBoundaryMode(
+    mesh?.userData?.raymarchBoundaryMode,
+  );
+  const normalizedFieldEvaluationMode = normalizeFieldEvaluationMode(
+    mesh?.userData?.raymarchFieldEvaluationMode,
+  );
+  const normalizedCavityGeometry = normalizeCavityGeometry(
+    mesh?.userData?.raymarchCavityGeometry,
+  );
+  const nextMaterial = getOrCreateRaymarchMaterial(
+    mesh,
+    normalizedBoundaryMode,
+    normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
+    normalizedCavityGeometry,
+  );
+  if (!nextMaterial || mesh.material === nextMaterial) {
+    mesh.userData.raymarchChromaEvaluationMode = normalizedChromaEvaluationMode;
+    return;
+  }
+
+  const currentMaterial = mesh.material;
+  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
+  mesh.material = nextMaterial;
+  mesh.userData.raymarchChromaEvaluationMode = normalizedChromaEvaluationMode;
+}
+
+export function setRaymarchCavityGeometry(mesh, cavityGeometry) {
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    return;
+  }
+
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const normalizedBoundaryMode = normalizeBoundaryMode(
+    mesh?.userData?.raymarchBoundaryMode,
+  );
+  const normalizedFieldEvaluationMode = normalizeFieldEvaluationMode(
+    mesh?.userData?.raymarchFieldEvaluationMode,
+  );
+  const normalizedChromaEvaluationMode = normalizeChromaEvaluationMode(
+    mesh?.userData?.raymarchChromaEvaluationMode,
+  );
+  const nextMaterial = getOrCreateRaymarchMaterial(
+    mesh,
+    normalizedBoundaryMode,
+    normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
+    normalizedCavityGeometry,
+  );
+  if (!nextMaterial || mesh.material === nextMaterial) {
+    mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
+    return;
+  }
+
+  const currentMaterial = mesh.material;
+  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
+  mesh.material = nextMaterial;
+  mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
+}
+
+export function syncRaymarchMaterialSteps(mesh, steps) {
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    if (mesh?.material) {
+      mesh.material.steps = steps;
+    }
+    return;
+  }
+
+  Object.values(materialCache).forEach((boundaryMaterials) => {
+    Object.values(boundaryMaterials).forEach((chromaMaterials) => {
+      if (!chromaMaterials || typeof chromaMaterials !== "object") {
+        return;
+      }
+      Object.values(chromaMaterials).forEach((geometryMaterials) => {
+        if (!geometryMaterials || typeof geometryMaterials !== "object") {
+          return;
+        }
+        Object.values(geometryMaterials).forEach((material) => {
+          if (material) {
+            material.steps = steps;
+          }
+        });
+      });
+    });
+  });
+}
+
+export function createIdleOverlay({ baryonGeometry, uniforms }) {
+  const geometry = new THREE.EdgesGeometry(baryonGeometry);
+  const overlay = new THREE.LineSegments(
+    geometry,
+    new THREE.LineBasicMaterial({
+      color: uniforms.uSurfaceColor.value.clone(),
+      transparent: true,
+      opacity: uniforms.uIdleLogoAlpha.value,
+    }),
+  );
+  overlay.scale.setScalar(uniforms.uIdleLogoSize.value);
+  overlay.frustumCulled = false;
+
+  return overlay;
+}
+```
+

@@ -21,7 +21,7 @@
     "Inter Tight", "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
   --light-angle: -72deg;
-  --source-focus-x: 39%;
+  --source-focus-x: 50%;
   --source-focus-y: 60%;
   --cube-width: min(1320px, calc(100vw - clamp(6rem, 11vw, 18rem)));
   --cube-height: min(780px, calc(100vh - clamp(5rem, 10vh, 9rem)));
@@ -38,9 +38,11 @@
   --mat-obsidian: hsl(230, 5%, 7%);
   --mat-basalt: hsl(20, 6%, 9%);
   --mat-void: hsl(0, 0%, 3%);
-  /* Hot/cold zone tints — directional temperature per surface */
-  --zone-warm: rgba(255, 200, 140, 0.024);
+  /* Side walls: same neutral wash (symmetric chamber) */
+  --zone-side: rgba(220, 210, 200, 0.02);
+  /* Ceiling / floor only (not left vs right) */
   --zone-cool: rgba(180, 200, 230, 0.016);
+  --zone-warm: rgba(255, 200, 140, 0.024);
 }
 
 html,
@@ -97,7 +99,7 @@ select {
   overflow: hidden;
   perspective: var(--cube-perspective);
   /* Pointer parallax: perspective-origin moves subtly with mouse (Phase 4) */
-  perspective-origin: calc(50.3% + var(--mouse-x, 0) * -4%)
+  perspective-origin: calc(50% + var(--mouse-x, 0) * -4%)
     calc(29vh + var(--mouse-y, 0) * -6vh);
   transition: perspective-origin 0.14s ease-out;
   transform-style: preserve-3d;
@@ -213,8 +215,8 @@ select {
   position: relative;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.045),
-    inset 1px 0 0 rgba(247, 241, 231, 0.18),
-    inset -1px 0 0 rgba(247, 241, 231, 0.08),
+    inset 1px 0 0 rgba(247, 241, 231, 0.13),
+    inset -1px 0 0 rgba(247, 241, 231, 0.13),
     inset 0 1px 0 rgba(247, 241, 231, 0.12),
     inset 0 -1px 0 rgba(200, 160, 100, 0.06),
     inset 0 6rem 12rem rgba(255, 255, 255, 0.026),
@@ -222,7 +224,7 @@ select {
     inset -4rem 0 7rem rgba(0, 0, 0, 0.04);
 }
 
-/* Left wall — slightly warmer/brighter (directional light from left) */
+/* Side walls — same stone ramp; horizontal angle mirrors for each face */
 .cube-face-left {
   background:
     linear-gradient(
@@ -245,35 +247,32 @@ select {
       rgba(255, 255, 255, 0.03),
       transparent 54%
     ),
-    /* Hot zone tint — left wall is warmer (light source side) */
-    linear-gradient(90deg, var(--zone-warm), transparent 60%);
+    linear-gradient(90deg, var(--zone-side), transparent 60%);
 }
 
-/* Right wall (proof face inherits this) — cooler, in shadow */
 .cube-face-right {
   background:
     linear-gradient(
       270deg,
-      rgba(232, 234, 240, 0.22) 0%,
-      rgba(168, 174, 184, 0.15) 10%,
-      rgba(96, 102, 114, 0.82) 28%,
-      rgba(40, 44, 50, 0.88) 60%,
-      rgba(10, 11, 14, 0.97) 100%
+      rgba(242, 234, 224, 0.34) 0%,
+      rgba(196, 180, 160, 0.26) 10%,
+      rgba(122, 108, 92, 0.82) 28%,
+      rgba(58, 52, 46, 0.88) 60%,
+      rgba(14, 14, 14, 0.97) 100%
     ),
     linear-gradient(
       180deg,
-      rgba(200, 210, 224, 0.05) 0%,
+      rgba(255, 245, 230, 0.07) 0%,
       transparent 20%,
       transparent 74%,
       rgba(0, 0, 0, 0.18) 100%
     ),
     linear-gradient(
-      var(--light-angle),
-      rgba(255, 255, 255, 0.026),
+      calc(var(--light-angle) * -1),
+      rgba(255, 255, 255, 0.03),
       transparent 54%
     ),
-    /* Cool zone tint — right wall in shadow, slightly cooler */
-    linear-gradient(270deg, var(--zone-cool), transparent 60%);
+    linear-gradient(270deg, var(--zone-side), transparent 60%);
 }
 
 /* Ceiling — darker, recedes, with edge seams where it meets walls */
@@ -397,37 +396,34 @@ select {
   opacity: 0.38;
 }
 
-/* Charred 3-layer texture — right wall (grain angle mirrored: +72deg) */
+/* Charred 3-layer texture — right wall (mirrored grain, same weights as left) */
 .cube-face-right::before {
   background:
-    /* Macro grain: rare wide bands, mirrored angle */
     repeating-linear-gradient(
       calc(var(--light-angle) * -1),
       transparent 0% 6%,
-      rgba(247, 241, 231, 0.05) 6% 7.4%
+      rgba(247, 241, 231, 0.055) 6% 7.4%
     ),
-    /* Micro grain: frequent fine lines */
     repeating-linear-gradient(
         calc(var(--light-angle) * -1),
         transparent 0% 4%,
-        rgba(247, 241, 231, 0.016) 4% 4.5%
+        rgba(247, 241, 231, 0.018) 4% 4.5%
       ),
-    /* Mineral shimmer */
     repeating-linear-gradient(
         calc(var(--light-angle) * -1),
         transparent 0% 1.2%,
-        rgba(247, 241, 231, 0.07) 1.2% 2.1%
+        rgba(247, 241, 231, 0.08) 1.2% 2.1%
       ),
     radial-gradient(
       circle at 82% 16%,
-      rgba(247, 241, 231, 0.018),
+      rgba(247, 241, 231, 0.022),
       transparent 14%
     ),
     radial-gradient(circle at 26% 66%, rgba(0, 0, 0, 0.08), transparent 22%);
-  opacity: 0.34;
+  opacity: 0.38;
 }
 
-/* Vertical light fall-off on side walls — top lit, bottom in shadow */
+/* Vertical fall-off + symmetric horizontal edge read (centered key) */
 .cube-face-left::after,
 .cube-face-right::after {
   background:
@@ -440,15 +436,16 @@ select {
     ),
     linear-gradient(
       90deg,
-      rgba(247, 241, 231, 0.16),
-      transparent 5%,
-      transparent 90%,
-      rgba(0, 0, 0, 0.16)
+      rgba(0, 0, 0, 0.12),
+      transparent 8%,
+      rgba(247, 241, 231, 0.1) 50%,
+      transparent 92%,
+      rgba(0, 0, 0, 0.12)
     ),
     radial-gradient(
-      ellipse 20% 100% at 100% 50%,
-      rgba(0, 0, 0, 0.1),
-      transparent 60%
+      ellipse 24% 100% at 50% 50%,
+      rgba(0, 0, 0, 0.06),
+      transparent 62%
     );
   opacity: 0.96;
 }

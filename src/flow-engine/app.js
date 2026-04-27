@@ -8,6 +8,7 @@ import ParticleRenderer from "./mls-mpm/particleRenderer";
 import BackgroundGeometry from "./backgroundGeometry";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { PREENTER_VESSEL } from "./vesselDescriptors";
+import { forensicHoldReadIsolation } from "./post-enter/forensicPostEnter.js";
 import {
   ARREST_BLOOM_SPIKE,
   ARREST_EXPOSURE_DIP,
@@ -15,12 +16,10 @@ import {
   ARREST_FLASH_DURATION,
   ARREST_RIFT_BOOST,
   AUTHORITY_EXPOSURE_LIFT,
-  buildPostEnterFreezeSpaceContext,
   POST_ENTER_COOLED_LOOK,
   PUSH_IN_DISTANCE,
   runPostEnterDrive,
 } from "./post-enter/postEnterDrive.js";
-import { createHeroVVisualShell } from "./post-enter/heroVVisualShell.js";
 
 const HDRI_URL = "/flow-assets/autumn_field_puresky_1k.hdr";
 const MOBILE_BREAKPOINT = 768;
@@ -119,50 +118,38 @@ const createRuntimeState = (width = window.innerWidth) => {
     chamberFlowCenter: new THREE.Vector3(
       ...INITIAL_SOURCE_RUNTIME.chamberFlowCenter,
     ),
+    riftTargetMin: new THREE.Vector3(32, 5.5, 58),
+    riftTargetMax: new THREE.Vector3(32, 58.5, 58),
+    riftTargetCenter: new THREE.Vector3(32, 31.8, 58),
     maxParticles: width < MOBILE_BREAKPOINT ? 8192 * 8 : 8192 * 16,
     simSubsteps: 1,
+    postEnterActive: false,
 
     // Arrest runtime
     solverLocked: false,
     bodyScaleMul: 1,
-    authoredDirectionWeight: 0,
-    heroBodyWeight: 0,
-    compressT: 0,
-    coolT: 0,
     /** Effective MLS source radii multiplier (Field Dominance surrender tapers feed). */
     postEnterSourceRadiusMul: 1,
     convergenceSlowdown: 0,
     convergenceFreeze: 0,
     convergenceHeatRetention: 0,
     convergenceThermalExtinction: 0,
-    freezeCenter: null,
-    freezeBoundsMin: null,
-    freezeBoundsMax: null,
-    chamberBoundsMin: null,
-    chamberBoundsMax: null,
+    materialClaimT: 0,
+    postEnterHoverClamp: 1,
+    postEnterArrestActive: false,
+    postEnterArrestT: 0,
+    postEnterHoldT: 0,
+    postEnterRiftFlightActive: false,
+    postEnterFlightSec: 0,
+    postEnterFlightT: 0,
+    /** 1 = MLS kernel keeps previous particle color/heat (settle/hold only); 0 = normal thermal write. */
+    postEnterThermalColorLock: 0,
 
     // Future claim runtime
-    extractionT: 0,
-    massDimT: 0,
-    thinT: 0,
-    withdrawT: 0,
-    opacityT: 0,
-    backBiasT: 0,
-    returnBodyWeight: 0,
-    recallLateralWeight: 0,
-    recallVerticalWeight: 0,
-    settleWeight: 0,
-    settleDissolveUnlocked: 1,
-
-    // Future handoff runtime
     authorityLightT: 0,
     pushInT: 0,
     pageLockT: 0,
     heroT: 0,
-
-    /** Late-branch visual handoff (M1): shell opacity ramp; surrender inactive until M2. */
-    shellClaimT: 0,
-    particleSurrenderT: 0,
   };
 };
 
@@ -220,18 +207,7 @@ class App {
 
   postEnterDriveActive = false;
 
-  postEnterFlags = {
-    solverLocked: false,
-    freezeSnapshotReady: false,
-    withdrawalDone: false,
-    quietLocked: false,
-    cameraArrived: false,
-    pageLocked: false,
-    heroAllowed: false,
-  };
-
   quietElapsed = 0;
-  lastPostEnterElapsed = 0;
   cameraBaselineZ = null;
 
   pushInStartTime = null;
@@ -239,17 +215,10 @@ class App {
   heroStartTime = null;
   postEnterSolverLockTime = null;
 
-  /** @type {null | ReturnType<typeof createHeroVVisualShell>} */
-  heroVVisualShell = null;
-
-  /** @type {THREE.Object3D | null} */
-  heroVShellAnchorRoot = null;
-
   _lastPostEnterStageReturned = "none";
   _lastDrivePostEnterElapsed = 0;
   _arrestFlashApplied = false;
-
-  postEnterFreezeSnapshot = null;
+  _postEnterRiftFlightInitScheduled = false;
 
   constructor(renderer) {
     this.renderer = renderer;
@@ -258,104 +227,40 @@ class App {
   resetPostEnterRuntimeChannels() {
     if (!this.runtime) return;
 
+    this.mlsMpmSim?.resetPostEnterRiftFlightState?.();
+
+    this.runtime.postEnterActive = false;
+    this.runtime.run = BASE_RUNTIME_DEFAULTS.run;
+
     // Arrest runtime
     this.runtime.solverLocked = false;
     this.runtime.bodyScaleMul = 1;
-    this.runtime.authoredDirectionWeight = 0;
-    this.runtime.heroBodyWeight = 0;
-    this.runtime.compressT = 0;
-    this.runtime.coolT = 0;
     this.runtime.postEnterSourceRadiusMul = 1;
     this.runtime.convergenceFreeze = 0;
     this.runtime.convergenceSlowdown = 0;
     this.runtime.convergenceHeatRetention = 0;
     this.runtime.convergenceThermalExtinction = 0;
-    this.runtime.freezeCenter = null;
-    this.runtime.freezeBoundsMin = null;
-    this.runtime.freezeBoundsMax = null;
-    this.runtime.chamberBoundsMin = null;
-    this.runtime.chamberBoundsMax = null;
-
-    // Future claim runtime
-    this.runtime.extractionT = 0;
-    this.runtime.massDimT = 0;
-    this.runtime.thinT = 0;
-    this.runtime.withdrawT = 0;
-    this.runtime.opacityT = 0;
-    this.runtime.backBiasT = 0;
-    this.runtime.returnBodyWeight = 0;
-    this.runtime.recallLateralWeight = 0;
-    this.runtime.recallVerticalWeight = 0;
-    this.runtime.settleWeight = 0;
-    this.runtime.settleDissolveUnlocked = 0;
+    this.runtime.materialClaimT = 0;
+    this.runtime.postEnterHoverClamp = 1;
+    this.runtime.postEnterArrestActive = false;
+    this.runtime.postEnterArrestT = 0;
+    this.runtime.postEnterHoldT = 0;
+    this.runtime.postEnterRiftFlightActive = false;
+    this.runtime.postEnterFlightSec = 0;
+    this.runtime.postEnterFlightT = 0;
+    this.runtime.postEnterThermalColorLock = 0;
 
     // Future handoff runtime
     this.runtime.authorityLightT = 0;
     this.runtime.pushInT = 0;
     this.runtime.pageLockT = 0;
     this.runtime.heroT = 0;
-    this.runtime.shellClaimT = 0;
-    this.runtime.particleSurrenderT = 0;
-  }
-
-  clearPostEnterFreezeSnapshot() {
-    this.postEnterFreezeSnapshot = null;
-    this.particleRenderer?.clearFreezeSnapshot?.();
-
-    if (!this.runtime) return;
-    this.runtime.freezeCenter = null;
-    this.runtime.freezeBoundsMin = null;
-    this.runtime.freezeBoundsMax = null;
-    this.runtime.chamberBoundsMin = null;
-    this.runtime.chamberBoundsMax = null;
-  }
-
-  applyPostEnterFreezeSnapshot(snapshot) {
-    if (!snapshot || !this.runtime) return;
-
-    this.postEnterFreezeSnapshot = {
-      center: snapshot.center.clone(),
-      boundsMin: snapshot.boundsMin.clone(),
-      boundsMax: snapshot.boundsMax.clone(),
-    };
-
-    this.runtime.freezeCenter = this.postEnterFreezeSnapshot.center.clone();
-    this.runtime.freezeBoundsMin =
-      this.postEnterFreezeSnapshot.boundsMin.clone();
-    this.runtime.freezeBoundsMax =
-      this.postEnterFreezeSnapshot.boundsMax.clone();
-
-    this.particleRenderer?.setFreezeSnapshot?.(this.postEnterFreezeSnapshot);
-    this.postEnterFlags.freezeSnapshotReady = true;
-  }
-
-  buildPostEnterContext() {
-    return buildPostEnterFreezeSpaceContext(this.particleRenderer);
-  }
-
-  ensurePostEnterFreezeSnapshot() {
-    if (this.postEnterFreezeSnapshot) {
-      return this.postEnterFreezeSnapshot;
-    }
-
-    const context = this.buildPostEnterContext();
-    if (!context?.freezeSpaceSim) {
-      return null;
-    }
-
-    if (this.runtime && context.chamberBoundsSim) {
-      this.runtime.chamberBoundsMin = context.chamberBoundsSim.min.clone();
-      this.runtime.chamberBoundsMax = context.chamberBoundsSim.max.clone();
-    }
-    this.applyPostEnterFreezeSnapshot(context.freezeSpaceSim);
-    return this.postEnterFreezeSnapshot;
   }
 
   beginPostEnterDrive() {
     this.postEnterDriveActive = true;
 
     this.quietElapsed = 0;
-    this.lastPostEnterElapsed = 0;
     this.cameraBaselineZ = null;
 
     this.pushInStartTime = null;
@@ -363,24 +268,16 @@ class App {
     this.heroStartTime = null;
     this.postEnterSolverLockTime = null;
 
-    this.postEnterFlags.solverLocked = false;
-    this.postEnterFlags.freezeSnapshotReady = false;
-    this.postEnterFlags.withdrawalDone = false;
-    this.postEnterFlags.quietLocked = false;
-    this.postEnterFlags.cameraArrived = false;
-    this.postEnterFlags.pageLocked = false;
-    this.postEnterFlags.heroAllowed = false;
-
     this._lastPostEnterStageReturned = "none";
     this._lastDrivePostEnterElapsed = 0;
     this._forensicPostEnterLogBucket = undefined;
+    this._postEnterRiftFlightInitScheduled = false;
 
-    this.clearPostEnterFreezeSnapshot();
     this.resetPostEnterRuntimeChannels();
+    this.runtime.postEnterActive = true;
 
-    // Start the isolated arrest proof path; late claim and handoff channels stay reset.
-    this.mlsMpmSim?.scheduleVelocityZero?.();
-    this.mlsMpmSim?.buildHeroBodyTargets?.();
+    // Start the isolated post-enter path; late claim and handoff channels stay reset.
+    this.syncRiftFlightDescriptor();
 
     this.backgroundGeometry?.backPlateMaterial?.color?.setRGB?.(1, 1, 1);
     this._arrestFlashApplied = false;
@@ -388,7 +285,7 @@ class App {
 
   /**
    * @param {number} elapsedSec
-   * @returns {"none"|"impact"|"compress"|"hold"|"withdraw"|"quiet"|"push_in"|"page_lock"|"hero"}
+   * @returns {"none"|"impact"}
    */
   drivePostEnter(elapsedSec) {
     return runPostEnterDrive(this, elapsedSec, {
@@ -408,42 +305,19 @@ class App {
     }
 
     const rt = this.runtime;
-    const f = this.postEnterFlags;
 
     return {
       stage: this._lastPostEnterStageReturned,
       elapsedSec: this._lastDrivePostEnterElapsed,
-
-      convergenceFreeze: rt.convergenceFreeze ?? 0,
-      heroBodyWeight: rt.heroBodyWeight ?? 0,
-      returnBodyWeight: rt.returnBodyWeight ?? 0,
-      recallLateralWeight: rt.recallLateralWeight ?? 0,
-      recallVerticalWeight: rt.recallVerticalWeight ?? 0,
-      settleWeight: rt.settleWeight ?? 0,
-      settleDissolveUnlocked: rt.settleDissolveUnlocked ?? 0,
-      compressT: rt.compressT ?? 0,
-      shellClaimT: rt.shellClaimT ?? 0,
-      particleSurrenderT: rt.particleSurrenderT ?? 0,
-      coolT: rt.coolT ?? 0,
-      thinT: rt.thinT ?? 0,
-      withdrawT: rt.withdrawT ?? 0,
-      opacityT: rt.opacityT ?? 0,
-      extractionT: rt.extractionT ?? 0,
-      massDimT: rt.massDimT ?? 0,
-      backBiasT: rt.backBiasT ?? 0,
-
-      authorityLightT: rt.authorityLightT ?? 0,
-      pushInT: rt.pushInT ?? 0,
-      pageLockT: rt.pageLockT ?? 0,
-      heroT: rt.heroT ?? 0,
-
+      run: rt.run !== false,
+      gravity: rt.gravity ?? 0,
       solverLocked: !!rt.solverLocked,
-      freezeSnapshotReady: !!f.freezeSnapshotReady,
-      withdrawalDone: !!f.withdrawalDone,
-      quietLocked: !!f.quietLocked,
-      cameraArrived: !!f.cameraArrived,
-      pageLocked: !!f.pageLocked,
-      heroAllowed: !!f.heroAllowed,
+      postEnterArrestActive: !!rt.postEnterArrestActive,
+      postEnterArrestT: rt.postEnterArrestT ?? 0,
+      postEnterHoldT: rt.postEnterHoldT ?? 0,
+      postEnterFlightSec: rt.postEnterFlightSec ?? 0,
+      postEnterFlightT: rt.postEnterFlightT ?? 0,
+      postEnterRiftFlightActive: !!rt.postEnterRiftFlightActive,
     };
   }
 
@@ -587,13 +461,6 @@ class App {
     this.lights = new Lights();
     this.scene.add(this.lights.object);
     this.scene.add(this.particleRenderer.object);
-
-    this.heroVVisualShell = createHeroVVisualShell();
-    this.heroVShellAnchorRoot = this.scene;
-
-    if (this.heroVVisualShell?.group) {
-      this.scene.add(this.heroVVisualShell.group);
-    }
 
     this.createPostProcessingPipeline();
 
@@ -778,6 +645,33 @@ class App {
     this.applySourceAnchorDescriptor(sourceDescriptor);
   }
 
+  syncRiftFlightDescriptor() {
+    const runtime = this.runtime;
+    if (
+      !runtime ||
+      !this.backgroundGeometry?.getRiftFlightDescriptorWorld ||
+      !this.particleRenderer?.worldPointToSimulation
+    ) {
+      return;
+    }
+
+    const descriptor = this.backgroundGeometry.getRiftFlightDescriptorWorld();
+    if (!descriptor) return;
+
+    this.particleRenderer.worldPointToSimulation(
+      descriptor.minWorld,
+      runtime.riftTargetMin,
+    );
+    this.particleRenderer.worldPointToSimulation(
+      descriptor.maxWorld,
+      runtime.riftTargetMax,
+    );
+    this.particleRenderer.worldPointToSimulation(
+      descriptor.centerWorld,
+      runtime.riftTargetCenter,
+    );
+  }
+
   setLook(values = {}) {
     const {
       environmentIntensity,
@@ -839,10 +733,10 @@ class App {
 
     this.backgroundGeometry.update(delta);
     this.syncSourceAnchors();
+    this.syncRiftFlightDescriptor();
 
     if (this.lights?.keyLight) {
-      const lateShadowClear = !!this.runtime.solverLocked;
-      const nextCastShadow = !lateShadowClear;
+      const nextCastShadow = true;
 
       if (this.lights.keyLight.castShadow !== nextCastShadow) {
         this.lights.keyLight.castShadow = nextCastShadow;
@@ -852,26 +746,19 @@ class App {
       }
     }
 
+    this.backgroundGeometry.setForensicPostEnterIsolation?.(
+      this.postEnterDriveActive ? forensicHoldReadIsolation() : null,
+    );
+
     this.mlsMpmSim.applyRuntime(this.runtime);
     this.particleRenderer.applyRuntime(this.runtime);
 
     await this.mlsMpmSim.update(delta);
     this.particleRenderer.update();
-    this.heroVVisualShell?.update?.(this);
     await this.postProcessing.renderAsync();
   }
 
   dispose() {
-    this.clearPostEnterFreezeSnapshot();
-
-    if (this.heroVVisualShell?.group?.parent) {
-      this.heroVVisualShell.group.parent.remove(this.heroVVisualShell.group);
-    }
-
-    this.heroVVisualShell?.dispose?.();
-    this.heroVVisualShell = null;
-    this.heroVShellAnchorRoot = null;
-
     this.particleRenderer?.dispose?.();
     this.backgroundGeometry?.dispose?.();
     this.lights?.dispose?.();
@@ -895,16 +782,8 @@ class App {
     this.runtime = null;
 
     this.postEnterDriveActive = false;
-    this.postEnterFlags.solverLocked = false;
-    this.postEnterFlags.freezeSnapshotReady = false;
-    this.postEnterFlags.withdrawalDone = false;
-    this.postEnterFlags.quietLocked = false;
-    this.postEnterFlags.cameraArrived = false;
-    this.postEnterFlags.pageLocked = false;
-    this.postEnterFlags.heroAllowed = false;
 
     this.quietElapsed = 0;
-    this.lastPostEnterElapsed = 0;
     this.cameraBaselineZ = null;
     this.postEnterSolverLockTime = null;
 

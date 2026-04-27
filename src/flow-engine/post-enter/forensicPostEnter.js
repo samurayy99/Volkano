@@ -2,8 +2,8 @@
  * Dev-only forensic toggles (shot ownership). Enable in the console before Enter:
  *
  *   globalThis.__VOLKANO_FORENSIC__ = true
- *   globalThis.__VOLKANO_FORENSIC_SETTLE_OFF__ = true   // optional: sim settle spring forced 0
- *   globalThis.__VOLKANO_FORENSIC_SUPPRESS_COMPRESS_VISUAL__ = true  // optional: rod compress read off
+ *   globalThis.__VOLKANO_HOLD_READ_ISOLATE__ =
+ *     "feedstockOnly" | "particlesOnly" | "rodsOnly" | "crackOnly" | "allPostEnter"
  */
 
 /** Wall-clock post-enter span to emit throttled timeline logs (screenshot-relevant band). */
@@ -18,20 +18,19 @@ export function forensicEnabled() {
   );
 }
 
-/** When true, `runtime.settleWeight` is forced to 0 after the normal curve (MLS settle spring off). */
-export function forensicSettleOff() {
-  return (
-    typeof globalThis !== "undefined" &&
-    globalThis.__VOLKANO_FORENSIC_SETTLE_OFF__ === true
-  );
-}
+export function forensicHoldReadIsolation() {
+  if (typeof globalThis === "undefined") {
+    return null;
+  }
 
-/** When true, particle renderer uses effective compressT=0 for rod/surface compress read only. */
-export function forensicSuppressCompressVisual() {
-  return (
-    typeof globalThis !== "undefined" &&
-    globalThis.__VOLKANO_FORENSIC_SUPPRESS_COMPRESS_VISUAL__ === true
-  );
+  const mode = globalThis.__VOLKANO_HOLD_READ_ISOLATE__;
+  return mode === "feedstockOnly" ||
+    mode === "particlesOnly" ||
+    mode === "rodsOnly" ||
+    mode === "crackOnly" ||
+    mode === "allPostEnter"
+    ? mode
+    : null;
 }
 
 /**
@@ -53,11 +52,13 @@ export function maybeLogForensicPostEnter(app, elapsedSec, rt) {
 
   console.log("[forensic post-enter]", {
     elapsedSec: Number(elapsedSec.toFixed(3)),
-    recallVerticalWeight: rt.recallVerticalWeight,
-    recallLateralWeight: rt.recallLateralWeight,
-    settleWeight: rt.settleWeight,
-    compressT: rt.compressT,
+    run: rt.run !== false,
     gravity: rt.gravity,
-    convergenceFreeze: rt.convergenceFreeze,
+    solverLocked: !!rt.solverLocked,
+    postEnterArrestT: rt.postEnterArrestT ?? 0,
+    postEnterHoldT: rt.postEnterHoldT ?? 0,
+    postEnterFlightSec: rt.postEnterFlightSec ?? 0,
+    postEnterFlightT: rt.postEnterFlightT ?? 0,
+    postEnterRiftFlightActive: !!rt.postEnterRiftFlightActive,
   });
 }
