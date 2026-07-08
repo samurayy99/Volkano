@@ -14,6 +14,8 @@ import type {
   PostEnterDebugSnapshot,
   PostEnterStage,
 } from "../flow-engine/types";
+import { ShowroomPanel } from "./showroom/ShowroomPanel";
+import { useScenarioPlayer } from "./showroom/useScenarioPlayer";
 
 /** Chamber always reads as the same room; post-enter uses `data-post-enter-*` only. */
 const ROOM_PHASE = "source" as const;
@@ -37,6 +39,17 @@ export function SpatialChamber() {
   const shouldMountEngine = !reducedMotion && !engineFailed;
   const isFrontPointerActive =
     !reducedMotion && shouldMountEngine && !postEnterActive;
+
+  const {
+    playback: scenarioPlayback,
+    play: playScenario,
+    reset: resetScenario,
+    abort: abortScenario,
+  } = useScenarioPlayer(engineApiRef);
+  const scenarioActive = scenarioPlayback.playing || scenarioPlayback.done;
+  // Scenario runs live in the source view; the Enter film stays the one-time
+  // activation ritual and is hidden while a scenario owns the chamber.
+  const showShowroom = engineReady && shouldMountEngine && !postEnterActive;
   /**
    * Keep `.chamber-stage` visible after WebGPU `onReady`, when the engine is intentionally off
    * (reduced motion / failed init), and **during post-enter** so a transient `onError` (e.g.
@@ -124,9 +137,13 @@ export function SpatialChamber() {
               <FrontFace
                 engineEnabled={shouldMountEngine}
                 showEnterControl={
-                  engineReady && shouldMountEngine && !postEnterActive
+                  engineReady &&
+                  shouldMountEngine &&
+                  !postEnterActive &&
+                  !scenarioActive
                 }
                 onEnter={() => {
+                  abortScenario();
                   resetPointerParallax();
                   // First `drivePostEnter(0)` beat is always `impact`; keep ref in sync before
                   // the next paint so a same-tick engine error does not unmount the host.
@@ -170,6 +187,13 @@ export function SpatialChamber() {
           </div>
         </div>
       </div>
+      {showShowroom ? (
+        <ShowroomPanel
+          playback={scenarioPlayback}
+          onSimulate={playScenario}
+          onReset={resetScenario}
+        />
+      ) : null}
       {process.env.NODE_ENV === "development" ? (
         <DevChamberControls engineApiRef={engineApiRef} />
       ) : null}
