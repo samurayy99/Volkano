@@ -120,15 +120,15 @@ const RIFT_FLIGHT_TUNING = Object.freeze({
   targetBands: 24,
   targetJitterX: 0.32,
   targetJitterZ: 0.22,
-  role0Delay: [0.5, 1.0],
-  role1Delay: [0.95, 1.65],
-  role2Delay: [1.45, 2.35],
-  role3Delay: [2.0, 3.1],
-  role0Duration: 3.4,
-  role1Duration: 2.9,
-  role2Duration: 2.5,
-  role3Duration: 2.1,
-  stragglerRate: 0.07,
+  role0Delay: [1.1, 1.35],
+  role1Delay: [2.5, 2.7],
+  role2Delay: [2.55, 2.85],
+  role3Delay: [3.5, 4.1],
+  role0Duration: 1.1,
+  role1Duration: 1.3,
+  role2Duration: 1.5,
+  role3Duration: 0.65,
+  stragglerRate: 0.05,
 });
 /**
  * Apply X-axis slit push used for idle bilobal separation (matches `carvePopulationSlit`).
@@ -1306,13 +1306,20 @@ class mlsMpmSimulator {
         .div(durationSec)
         .clamp(0, 1)
         .toConst("riftLocalT");
-      // Two-phase: barely drifts for first ~40% of localT (slow-motion resistance),
-      // then snaps rapidly — like slow-motion switching off.
+
+      const isBreachFlight = smoothstep(float(2.2), float(2.6), delaySec)
+        .toConst("isBreachFlight");
+
       const slowDrift = localT.mul(float(0.06));
-      const rapidPull = pow(
+      const tasteRapidPull = pow(
         smoothstep(float(0.22), float(0.95), localT),
         float(2.0),
       );
+      const breachRapidPull = pow(
+        smoothstep(float(0.08), float(0.72), localT),
+        float(2.5),
+      );
+      const rapidPull = mix(tasteRapidPull, breachRapidPull, isBreachFlight);
       const moveT = slowDrift
         .max(rapidPull)
         .clamp(0, 1)
@@ -1320,32 +1327,98 @@ class mlsMpmSimulator {
       const flightActiveT = smoothstep(float(0.025), float(0.16), localT)
         .clamp(0, 1)
         .toConst("riftFlightActiveT");
-      // Final Y-snap delayed into the fast-pull phase (was 0.5).
       const absorbMoveT = smoothstep(float(0.72), float(1.0), localT).toConst(
         "riftAbsorbMoveT",
       );
       const oneMinusT = float(1).sub(moveT).toConst("riftOneMinusT");
-      // X/Z authority: barely pulls at slow-drift start, earns full collapse late in fast phase.
-      const entryXZAuthority = mix(
+
+      const tasteXZAuthority = mix(
         float(0.10),
         float(0.58),
         smoothstep(float(0.62), float(1.0), localT),
+      );
+      const breachXZAuthority = mix(
+        float(0.32),
+        float(0.90),
+        smoothstep(float(0.12), float(0.68), localT),
+      );
+      const entryXZAuthority = mix(
+        tasteXZAuthority,
+        breachXZAuthority,
+        isBreachFlight,
       ).toConst("riftEntryXZAuthority");
-      // Y: particle keeps its current layer — no upward/downward pull toward rift height.
-      // Final Y snap happens only via absorbMoveT at rift contact.
+
+      // Do not preserve the original Y sheet until the final absorb.
+      // Taste keeps most of its height; breach starts gathering into the rift throat early.
+      const tasteYGather = smoothstep(float(0.58), float(1.0), localT)
+        .mul(float(0.22))
+        .toConst("riftTasteYGather");
+      const breachYGather = mix(
+        float(0.18),
+        float(0.68),
+        smoothstep(float(0.12), float(0.74), localT),
+      ).toConst("riftBreachYGather");
+      const entryYGather = mix(
+        tasteYGather,
+        breachYGather,
+        isBreachFlight,
+      ).toConst("riftEntryYGather");
+
       const entryTarget = vec3(
         this.uniforms.riftTargetCenter.x.add(
-          absorbTarget.x.sub(this.uniforms.riftTargetCenter.x).mul(entryXZAuthority),
+          absorbTarget.x
+            .sub(this.uniforms.riftTargetCenter.x)
+            .mul(entryXZAuthority),
         ),
-        startPos.y,
+        mix(startPos.y, absorbTarget.y, entryYGather),
         this.uniforms.riftTargetCenter.z.add(
-          absorbTarget.z.sub(this.uniforms.riftTargetCenter.z).mul(entryXZAuthority),
+          absorbTarget.z
+            .sub(this.uniforms.riftTargetCenter.z)
+            .mul(entryXZAuthority),
         ),
       ).toConst("riftEntryTarget");
-      const toEntry = entryTarget.sub(startPos).toConst("riftToEntry");
       const toAbsorb = absorbTarget.sub(startPos).toConst("riftToAbsorb");
-      const control1 = startPos.add(toEntry.mul(0.16)).toConst("riftControl1");
-      const control2 = startPos.add(toEntry.mul(0.78)).toConst("riftControl2");
+
+      // Non-collinear controls — bend mass into the slit instead of a straight push.
+      const centerPullX = this.uniforms.riftTargetCenter.x
+        .sub(startPos.x)
+        .toConst("riftCenterPullX");
+      const centerPullZ = this.uniforms.riftTargetCenter.z
+        .sub(startPos.z)
+        .toConst("riftCenterPullZ");
+      const startSideX = startPos.x
+        .sub(this.uniforms.riftTargetCenter.x)
+        .toConst("riftStartSideX");
+      const startDepthZ = startPos.z
+        .sub(this.uniforms.riftTargetCenter.z)
+        .toConst("riftStartDepthZ");
+
+      const c1Pull = mix(float(0.06), float(0.16), isBreachFlight).toConst(
+        "riftControl1Pull",
+      );
+      const c1YGather = mix(float(0.02), float(0.1), isBreachFlight).toConst(
+        "riftControl1YGather",
+      );
+      const c2SideKeep = mix(float(0.08), float(0.22), isBreachFlight).toConst(
+        "riftControl2SideKeep",
+      );
+      const c2DepthKeep = mix(float(0.3), float(0.42), isBreachFlight).toConst(
+        "riftControl2DepthKeep",
+      );
+      const c2YGather = mix(float(0.08), float(0.44), isBreachFlight).toConst(
+        "riftControl2YGather",
+      );
+
+      const control1 = vec3(
+        startPos.x.add(centerPullX.mul(c1Pull)),
+        mix(startPos.y, absorbTarget.y, c1YGather),
+        startPos.z.add(centerPullZ.mul(c1Pull)),
+      ).toConst("riftControl1");
+      const control2 = vec3(
+        this.uniforms.riftTargetCenter.x.add(startSideX.mul(c2SideKeep)),
+        mix(startPos.y, absorbTarget.y, c2YGather),
+        this.uniforms.riftTargetCenter.z.add(startDepthZ.mul(c2DepthKeep)),
+      ).toConst("riftControl2");
       const omt2 = oneMinusT.mul(oneMinusT);
       const omt3 = omt2.mul(oneMinusT);
       const t2 = moveT.mul(moveT);
@@ -1356,8 +1429,9 @@ class mlsMpmSimulator {
         .add(control2.mul(float(3).mul(oneMinusT).mul(t2)))
         .add(entryTarget.mul(t3))
         .toConst("riftApproachPosition");
-      const newPosition = mix(approachPosition, absorbTarget, absorbMoveT)
-        .toConst("riftNewPosition");
+      const newPosition = mix(approachPosition, absorbTarget, absorbMoveT).toConst(
+        "riftNewPosition",
+      );
       const debugVelocity = toAbsorb
         .add(vec3(0.001, 0, 0))
         .normalize()
@@ -1378,26 +1452,25 @@ class mlsMpmSimulator {
         debugVelocity,
         this.uniforms.postEnterFlightDebugFrozen.clamp(0, 1),
       ).toConst("riftVelocity");
-      // Contact proximity from current frame position — not stale previousPosition.
+
       const riftDx = newPosition.x.sub(this.uniforms.riftTargetCenter.x);
       const riftDz = newPosition.z.sub(this.uniforms.riftTargetCenter.z);
       const riftDist = vec2(riftDx, riftDz).length().toConst("riftContactDist");
-      // Tight kill channel: particles stay opaque during flight, dissolve only near rift crack.
       const killChannelT = float(1)
-        .sub(smoothstep(float(2.0), float(6.0), riftDist))
+        .sub(smoothstep(float(1.2), float(3.5), riftDist))
         .clamp(0, 1)
         .toConst("riftKillChannelT");
 
-      // Absorption: contact-driven with localT gate (prevents early-flight instant kill) + weak time fallback for stragglers.
-      // Absorption gate delayed to 0.40 — center particles that start inside the kill
-      // channel stay opaque through the slow-drift phase, only dissolve in the fast pull.
       const contactAbsorbT = smoothstep(float(0.18), float(0.72), killChannelT)
         .mul(smoothstep(float(0.40), float(0.95), localT))
         .toConst("riftContactAbsorbT");
-      const timeFinalT = smoothstep(float(0.9), float(1.0), localT)
-        .mul(float(0.55))
-        .toConst("riftTimeFinalT");
-      const absorbT = contactAbsorbT.max(timeFinalT).clamp(0, 1).toConst("riftAbsorbT");
+      const timeFinalT = smoothstep(float(0.88), float(1.0), localT).toConst(
+        "riftTimeFinalT",
+      );
+      const absorbT = contactAbsorbT
+        .max(timeFinalT)
+        .clamp(0, 1)
+        .toConst("riftAbsorbT");
 
       particle.get("position").assign(newPosition);
       particle.get("velocity").assign(velocity);
@@ -1599,10 +1672,12 @@ class mlsMpmSimulator {
     this.uniforms.postEnterFlightSec.value =
       freezeSec === null ? (runtime.postEnterFlightSec ?? 0) : freezeSec;
     this.uniforms.postEnterFlightDebugFrozen.value = freezeSec === null ? 0 : 1;
-    this.uniforms.returnBodyWeight.value = 0;
-    this.uniforms.recallLateralWeight.value = 0;
-    this.uniforms.recallVerticalWeight.value = 0;
-    this.uniforms.settleWeight.value = 0;
+    // Conversation-layer spring weights (sourceChamberDrive); default 0 keeps
+    // plain source play and every post-enter path byte-identical.
+    this.uniforms.returnBodyWeight.value = runtime.returnBodyWeight ?? 0;
+    this.uniforms.recallLateralWeight.value = runtime.recallLateralWeight ?? 0;
+    this.uniforms.recallVerticalWeight.value = runtime.recallVerticalWeight ?? 0;
+    this.uniforms.settleWeight.value = runtime.settleWeight ?? 0;
   }
 
   markParticleBufferDirty() {

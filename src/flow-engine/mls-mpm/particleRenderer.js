@@ -333,6 +333,11 @@ const buildUnifiedParticleSurfaceNodes = ({
     .get("dissolveState")
     .y.clamp(0, 1)
     .toConst("decayProgress");
+  const absorbOpacityT = smoothstep(
+    float(0.04),
+    float(0.22),
+    decayProgress,
+  ).toConst("absorbOpacityT");
 
   // dissolveState.x stays sim-owned for absorb/contact; broad material must not follow
   // per-particle ramps (staggered delays would read as a center-out material wave).
@@ -539,7 +544,7 @@ const buildUnifiedParticleSurfaceNodes = ({
     .sub(uniforms.opacityT.clamp(0, 1))
     .mul(lateRelease.structuralSurvival)
     .mul(float(1).sub(massDimT.mul(float(0.92))))
-    .mul(float(1).sub(decayProgress))
+    .mul(float(1).sub(absorbOpacityT))
     .mul(materialSubordination.opacityMul)
     .mul(
       float(1)
@@ -610,6 +615,23 @@ const buildParticlePositionNode = ({
     const positionPostEnterFlightT = uniforms.postEnterFlightT
       .clamp(0, 1)
       .toConst("positionPostEnterFlightT");
+
+    // Per-particle flight: dissolveState.x = activation ramp; y = absorb progress.
+    const positionFlightActiveT = particle
+      .get("dissolveState")
+      .x.clamp(0, 1)
+      .toConst("positionFlightActiveT");
+    const positionAbsorbT = particle
+      .get("dissolveState")
+      .y.clamp(0, 1)
+      .toConst("positionAbsorbT");
+    const positionContactStreakT = smoothstep(
+      float(0.035),
+      float(0.16),
+      positionAbsorbT,
+    )
+      .mul(float(1).sub(smoothstep(float(0.16), float(0.28), positionAbsorbT)))
+      .toConst("positionContactStreakT");
 
     const positionRiftProximityT = float(1)
       .sub(smoothstep(float(4.5), float(18.0), simPos.x.sub(float(32.0)).abs()))
@@ -690,17 +712,48 @@ const buildParticlePositionNode = ({
       .mul(mix(float(1.0), float(1.85), needleT))
       .toConst("finalRodLengthZ");
 
+    const flightSpeedT = smoothstep(float(0.22), float(1.85), speed).toConst(
+      "flightSpeedT",
+    );
+
+    const openFlightStretchT = positionFlightActiveT
+      .mul(float(1).sub(smoothstep(float(0.035), float(0.18), positionAbsorbT)))
+      .toConst("openFlightStretchT");
+
+    const flightStretchFactor = float(1)
+      .add(
+        flightSpeedT.mul(
+          openFlightStretchT
+            .mul(float(0.22))
+            .add(positionContactStreakT.mul(float(1.05))),
+        ),
+      )
+      .toConst("flightStretchFactor");
+    const flightThinFactor = float(1)
+      .sub(
+        flightStretchFactor
+          .sub(1)
+          .mul(float(0.24))
+          .clamp(float(0), float(0.32)),
+      )
+      .toConst("flightThinFactor");
+
     const formedDir = normalize(particleDirection.xyz).toConst("formedDir");
     const shapedPos = vec3(
       localPos.x
         .mul(particleProfile.rodWidth)
         .mul(outerSilhouetteScale)
-        .mul(widthJitter),
+        .mul(widthJitter)
+        .mul(flightThinFactor),
       localPos.y
         .mul(particleProfile.rodHeight)
         .mul(outerSilhouetteScale)
-        .mul(heightJitter),
-      localPos.z.mul(outerLengthScale).mul(finalRodLengthZ),
+        .mul(heightJitter)
+        .mul(flightThinFactor),
+      localPos.z
+        .mul(outerLengthScale)
+        .mul(finalRodLengthZ)
+        .mul(flightStretchFactor),
     ).toConst("shapedPos");
 
     const lateRelease = buildLateReleaseState({ uniforms });
@@ -972,10 +1025,12 @@ class ParticleRenderer {
     this.uniforms.size.value = this.runtime.actualSize;
     this.uniforms.convergenceFreeze.value = this.runtime.convergenceFreeze;
     this.uniforms.bodyScaleMul.value = this.runtime.bodyScaleMul ?? 1;
-    this.uniforms.massDimT.value = 0;
-    this.uniforms.compressT.value = 0;
-    this.uniforms.thinT.value = 0;
-    this.uniforms.opacityT.value = 0;
+    // Conversation-layer envelope channels (sourceChamberDrive); default 0
+    // keeps idle and post-enter rendering byte-identical.
+    this.uniforms.massDimT.value = this.runtime.massDimT ?? 0;
+    this.uniforms.compressT.value = this.runtime.compressT ?? 0;
+    this.uniforms.thinT.value = this.runtime.thinT ?? 0;
+    this.uniforms.opacityT.value = this.runtime.opacityT ?? 0;
     this.uniforms.solverLockedFloat.value = this.runtime.solverLocked ? 1 : 0;
     this.uniforms.materialClaimT.value = this.runtime.materialClaimT ?? 0;
     this.uniforms.postEnterFlightT.value = this.runtime.postEnterFlightT ?? 0;

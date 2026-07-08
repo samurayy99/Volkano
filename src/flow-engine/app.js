@@ -145,6 +145,17 @@ const createRuntimeState = (width = window.innerWidth) => {
     /** 1 = MLS kernel keeps previous particle color/heat (settle/hold only); 0 = normal thermal write. */
     postEnterThermalColorLock: 0,
 
+    // Source-chamber conversation channels (V2). All 0 = exact source-play
+    // idle; only `sourceChamberDrive` raises them, only between post-enters.
+    returnBodyWeight: 0,
+    recallLateralWeight: 0,
+    recallVerticalWeight: 0,
+    settleWeight: 0,
+    compressT: 0,
+    thinT: 0,
+    opacityT: 0,
+    massDimT: 0,
+
     // Future claim runtime
     authorityLightT: 0,
     pushInT: 0,
@@ -209,6 +220,10 @@ class App {
 
   quietElapsed = 0;
   cameraBaselineZ = null;
+  cameraBaselineFov = null;
+  cameraBaselinePosition = null;
+  cameraBaselineTarget = null;
+  cameraTarget = new THREE.Vector3();
 
   pushInStartTime = null;
   pageLockStartTime = null;
@@ -250,6 +265,16 @@ class App {
     this.runtime.postEnterFlightT = 0;
     this.runtime.postEnterThermalColorLock = 0;
 
+    // Conversation channels must be silent through any post-enter cycle.
+    this.runtime.returnBodyWeight = 0;
+    this.runtime.recallLateralWeight = 0;
+    this.runtime.recallVerticalWeight = 0;
+    this.runtime.settleWeight = 0;
+    this.runtime.compressT = 0;
+    this.runtime.thinT = 0;
+    this.runtime.opacityT = 0;
+    this.runtime.massDimT = 0;
+
     // Future handoff runtime
     this.runtime.authorityLightT = 0;
     this.runtime.pushInT = 0;
@@ -262,6 +287,9 @@ class App {
 
     this.quietElapsed = 0;
     this.cameraBaselineZ = null;
+    this.cameraBaselineFov = null;
+    this.cameraBaselinePosition = null;
+    this.cameraBaselineTarget = null;
 
     this.pushInStartTime = null;
     this.pageLockStartTime = null;
@@ -281,6 +309,41 @@ class App {
 
     this.backgroundGeometry?.backPlateMaterial?.color?.setRGB?.(1, 1, 1);
     this._arrestFlashApplied = false;
+  }
+
+  /**
+   * Return from any post-enter stage to live source play. CPU-only writes;
+   * the bridge queues this to a frame boundary so no GPU pass is in flight.
+   */
+  resetToSourcePlay(width, height) {
+    if (!this.runtime) return;
+
+    this.postEnterDriveActive = false;
+    this.resetPostEnterRuntimeChannels();
+
+    this.quietElapsed = 0;
+    this.pushInStartTime = null;
+    this.pageLockStartTime = null;
+    this.heroStartTime = null;
+    this.postEnterSolverLockTime = null;
+    this._lastPostEnterStageReturned = "none";
+    this._lastDrivePostEnterElapsed = 0;
+    this._forensicPostEnterLogBucket = undefined;
+    this._postEnterRiftFlightInitScheduled = false;
+    this._arrestFlashApplied = false;
+
+    // Drop cached push-in camera baselines before re-framing from the vessel.
+    this.cameraBaselineZ = null;
+    this.cameraBaselineFov = null;
+    this.cameraBaselinePosition = null;
+    this.cameraBaselineTarget = null;
+    this.applyCameraFraming(width, height);
+    this.setLook(DEFAULT_LOOK);
+    this.backgroundGeometry?.backPlateMaterial?.color?.setRGB?.(1, 1, 1);
+
+    // Re-seed the canonical idle body; the dirty particle buffer uploads on
+    // the next sim update, while the chamber is still visually empty.
+    this.promoteIdlePopulation();
   }
 
   /**
@@ -321,20 +384,36 @@ class App {
     };
   }
 
-  updateCamera(pushInT) {
+  updateCamera(pushInT, options = {}) {
     if (!this.camera) return;
 
-    if (this.cameraBaselineZ === null) {
+    if (
+      this.cameraBaselineZ === null ||
+      this.cameraBaselinePosition === null ||
+      this.cameraBaselineTarget === null
+    ) {
       this.cameraBaselineZ = this.camera.position.z;
+      this.cameraBaselineFov = this.camera.fov;
+      this.cameraBaselinePosition = this.camera.position.clone();
+      this.cameraBaselineTarget = this.cameraTarget.clone();
     }
 
-    if (pushInT <= 0) return;
+    const t = Math.max(0, pushInT);
+    const distanceMul = options.distanceMul ?? PUSH_IN_DISTANCE;
+    const fovMul = options.fovMul ?? 0.28;
 
-    const baselineAbs = Math.abs(this.cameraBaselineZ);
-    const direction = Math.sign(-this.cameraBaselineZ) || 1;
-    const dz = pushInT * PUSH_IN_DISTANCE * baselineAbs * direction;
+    const remainingDistance = Math.max(0.08, 1 - t * distanceMul);
+    const viewOffset = this.cameraBaselinePosition
+      .clone()
+      .sub(this.cameraBaselineTarget);
 
-    this.camera.position.z = this.cameraBaselineZ + dz;
+    this.camera.position
+      .copy(this.cameraBaselineTarget)
+      .addScaledVector(viewOffset, remainingDistance);
+    this.camera.lookAt(this.cameraBaselineTarget);
+    if (this.cameraBaselineFov) {
+      this.camera.fov = this.cameraBaselineFov * (1 - t * fovMul);
+    }
     this.camera.updateProjectionMatrix();
   }
 
@@ -360,6 +439,13 @@ class App {
    * Impact-window exposure/bloom/plate bump (first ~200ms wall-clock after Enter).
    * Layered on top of setLook(); authority light remains the steady owner afterward.
    */
+  updateRiftBackplatePulse(luminance) {
+    const plate = this.backgroundGeometry?.backPlateMaterial;
+    if (!plate?.color) return;
+    const v = Math.max(1, Math.min(luminance, 1.08));
+    plate.color.setRGB(v, v, v);
+  }
+
   updateArrestFlash(elapsedSec) {
     if (elapsedSec >= ARREST_FLASH_DURATION) {
       if (this._arrestFlashApplied) {
@@ -472,11 +558,12 @@ class App {
     if (!this.camera) return;
 
     this.camera.aspect = width / height;
-    this.applyCameraFraming(width, height);
-
     if (this.postEnterDriveActive) {
-      this.cameraBaselineZ = this.camera.position.z;
+      this.camera.updateProjectionMatrix();
+      return;
     }
+
+    this.applyCameraFraming(width, height);
   }
 
   setPointer(clientX, clientY, isDown = false) {
@@ -785,6 +872,9 @@ class App {
 
     this.quietElapsed = 0;
     this.cameraBaselineZ = null;
+    this.cameraBaselineFov = null;
+    this.cameraBaselinePosition = null;
+    this.cameraBaselineTarget = null;
     this.postEnterSolverLockTime = null;
 
     this.pushInStartTime = null;
@@ -845,9 +935,10 @@ class App {
     const distance = Math.max(distanceForHeight, distanceForWidth);
     const cameraY = lookAtY + THREE.MathUtils.lerp(0.074, 0.04, tallBlend);
 
+    this.cameraTarget.set(lookAtX, lookAtY, lookAtZ);
     this.camera.fov = fov;
     this.camera.position.set(lookAtX + 0.008, cameraY, lookAtZ - distance);
-    this.camera.lookAt(lookAtX, lookAtY, lookAtZ);
+    this.camera.lookAt(this.cameraTarget);
     this.camera.updateProjectionMatrix();
   }
 }

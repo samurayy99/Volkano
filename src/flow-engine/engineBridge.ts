@@ -1,11 +1,21 @@
 import * as THREE from "three/webgpu";
 import App from "./app.js";
+import { SourceChamberDrive } from "./source-chamber/sourceChamberDrive.js";
 import type {
+  ConversationState,
   FlowEngineApi,
   FlowEngineBridgeOptions,
   PostEnterDebugSnapshot,
   PostEnterStage,
 } from "./types";
+
+const CONVERSATION_STATES: readonly ConversationState[] = [
+  "dormant",
+  "listening",
+  "processing",
+  "speaking",
+  "resolution",
+];
 
 /** MLS runtime for perpetual source-chamber play (no Enter / convergence tail). */
 function sourcePlayEngineRuntime() {
@@ -34,6 +44,10 @@ export class FlowEngineBridge implements FlowEngineApi {
   private resizeObserver: ResizeObserver | null = null;
   private postEnterActive = false;
   private postEnterElapsed = 0;
+  private resetRequested = false;
+  private conversationState: ConversationState = "dormant";
+  private chamberEnergy = 0;
+  private chamberDrive = new SourceChamberDrive();
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
@@ -127,8 +141,22 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app.clearPointer();
   }
 
+  setConversationState(state: ConversationState): void {
+    if (this.disposed || !CONVERSATION_STATES.includes(state)) return;
+    this.conversationState = state;
+  }
+
+  setChamberEnergy(level01: number): void {
+    if (this.disposed || !Number.isFinite(level01)) return;
+    this.chamberEnergy = Math.min(1, Math.max(0, level01));
+  }
+
   beginPostEnter(): void {
     if (this.disposed || !this.app || this.postEnterActive) return;
+    // Post-enter owns the runtime exclusively; conversation layer re-arms at dormant.
+    this.conversationState = "dormant";
+    this.chamberEnergy = 0;
+    this.chamberDrive.reset();
     this.postEnterActive = true;
     this.postEnterElapsed = 0;
     this.app.beginPostEnterDrive();
@@ -146,9 +174,44 @@ export class FlowEngineBridge implements FlowEngineApi {
     }
   }
 
+  resetCycle(): void {
+    if (this.disposed || !this.app) return;
+    // Conversation layer always returns to dormant (eased by the drive)...
+    this.conversationState = "dormant";
+    this.chamberEnergy = 0;
+    if (!this.postEnterActive) return;
+    // ...and a running post-enter cycle is torn down at the next frame
+    // boundary so no CPU buffer write can interleave with an in-flight
+    // `app.update()` await.
+    this.resetRequested = true;
+  }
+
+  private performReset(): void {
+    if (!this.app) return;
+
+    this.postEnterActive = false;
+    this.postEnterElapsed = 0;
+    this.postEnterDebugAccum = 0;
+
+    // Resize was gated during post-enter; re-apply the real container size
+    // before the app re-frames the camera from it.
+    const width = this.container.clientWidth || window.innerWidth;
+    const height = this.container.clientHeight || window.innerHeight;
+    this.renderer?.setSize(width, height);
+
+    this.app.resetToSourcePlay(width, height);
+    this.app.applyEngineRuntime(sourcePlayEngineRuntime());
+    this.chamberDrive.reset();
+    this.app.clearPointer();
+    this.app.setPointerInfluence(this.interactiveEnabled ? 1 : 0);
+
+    this.emitPostEnterStageIfChanged("none");
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.resetRequested = false;
 
     cancelAnimationFrame(this.rafId);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);
@@ -184,6 +247,7 @@ export class FlowEngineBridge implements FlowEngineApi {
 
   private onResize = (): void => {
     if (!this.renderer || !this.app) return;
+    if (this.postEnterActive) return;
 
     const width = this.container.clientWidth || window.innerWidth;
     const height = this.container.clientHeight || window.innerHeight;
@@ -208,6 +272,11 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.clock.getDelta();
       this.rafId = requestAnimationFrame(this.animate);
       return;
+    }
+
+    if (this.resetRequested) {
+      this.resetRequested = false;
+      this.performReset();
     }
 
     const rawDelta = this.clock.getDelta();
@@ -237,6 +306,15 @@ export class FlowEngineBridge implements FlowEngineApi {
             }
           }
         }
+      }
+
+      if (!this.postEnterActive) {
+        this.chamberDrive.update(
+          this.app,
+          delta,
+          this.conversationState,
+          this.chamberEnergy,
+        );
       }
 
       const pointerInfluence =

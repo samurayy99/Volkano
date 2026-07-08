@@ -1,8 +1,20 @@
+/** Source-chamber conversation states (V2 signal layer). */
+export type ConversationState =
+  | "dormant"
+  | "listening"
+  | "processing"
+  | "speaking"
+  | "resolution";
+
 export type PostEnterStage =
   | "none"
   | "impact"
   | "riftFlight"
-  | "riftComplete";
+  | "riftComplete"
+  | "quiet"
+  | "push_in"
+  | "page_lock"
+  | "hero";
 
 /** Dev / tooling: full post-enter channel + truth snapshot (throttled in bridge). */
 export type PostEnterDebugSnapshot = {
@@ -26,6 +38,19 @@ export interface FlowEngineApi {
   clearPointer: () => void;
   /** Start post-enter sequence (idempotent if already active). */
   beginPostEnter: () => void;
+  /**
+   * Return from any post-enter stage to live source play (queued to the next
+   * frame boundary). Emits stage "none"; a later `beginPostEnter()` runs the
+   * full sequence again. No-op while no post-enter cycle is active.
+   */
+  resetCycle: () => void;
+  /**
+   * Drive the chamber's conversation profile (eased over ~0.5s). "dormant"
+   * is byte-identical to plain source play. Ignored while post-enter runs.
+   */
+  setConversationState: (state: ConversationState) => void;
+  /** 0–1 voice/typing energy; only visible in "speaking" (pulse gain). */
+  setChamberEnergy: (level01: number) => void;
   dispose: () => void;
 }
 

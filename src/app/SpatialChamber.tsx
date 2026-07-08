@@ -9,6 +9,7 @@ import {
 } from "react";
 import { FlowEngineHost } from "../flow-engine";
 import type {
+  ConversationState,
   FlowEngineApi,
   PostEnterDebugSnapshot,
   PostEnterStage,
@@ -16,6 +17,12 @@ import type {
 
 /** Chamber always reads as the same room; post-enter uses `data-post-enter-*` only. */
 const ROOM_PHASE = "source" as const;
+const REVEAL_STAGES = new Set<PostEnterStage>([
+  "quiet",
+  "push_in",
+  "page_lock",
+  "hero",
+]);
 
 export function SpatialChamber() {
   const reducedMotion = useReducedMotionPreference();
@@ -45,16 +52,30 @@ export function SpatialChamber() {
         }
       : undefined;
 
-  const backwallAuthority = false;
+  const backwallAuthority = reducedMotion || REVEAL_STAGES.has(postEnterStage);
+  const backInterfaceReady = reducedMotion || postEnterStage === "hero";
+  const backContentHidden = !backInterfaceReady;
 
   const setPostEnterStageTracked = useCallback((stage: PostEnterStage) => {
     postEnterStageRef.current = stage;
     setPostEnterStage(stage);
   }, []);
 
+  const resetPointerParallax = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.style.setProperty("--mouse-x", "0");
+    el.style.setProperty("--mouse-y", "0");
+  }, []);
+
   useEffect(() => {
     engineApiRef.current?.setInteractiveEnabled(shouldMountEngine);
   }, [engineReady, shouldMountEngine]);
+
+  useEffect(() => {
+    if (!postEnterActive) return;
+    resetPointerParallax();
+  }, [postEnterActive, resetPointerParallax]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -82,7 +103,7 @@ export function SpatialChamber() {
       data-post-enter-stage={
         postEnterStage === "none" ? undefined : postEnterStage
       }
-      data-back-interface-ready={undefined}
+      data-back-interface-ready={backInterfaceReady ? "true" : undefined}
       data-backwall-authority={backwallAuthority ? "true" : undefined}
       data-engine-ready={engineReady ? "true" : undefined}
       data-source-shell-visible={sourceShellVisible ? "true" : undefined}
@@ -106,6 +127,7 @@ export function SpatialChamber() {
                   engineReady && shouldMountEngine && !postEnterActive
                 }
                 onEnter={() => {
+                  resetPointerParallax();
                   // First `drivePostEnter(0)` beat is always `impact`; keep ref in sync before
                   // the next paint so a same-tick engine error does not unmount the host.
                   postEnterStageRef.current = "impact";
@@ -113,6 +135,13 @@ export function SpatialChamber() {
                 }}
                 onEngineReady={(api) => {
                   engineApiRef.current = api;
+                  if (process.env.NODE_ENV === "development") {
+                    // Dev console escape hatch (same convention as __VOLKANO_FORENSIC__):
+                    // `__VOLKANO_ENGINE__.resetCycle()` re-arms the chamber after a run.
+                    (
+                      globalThis as { __VOLKANO_ENGINE__?: FlowEngineApi }
+                    ).__VOLKANO_ENGINE__ = api;
+                  }
                   api.setInteractiveEnabled(shouldMountEngine);
                   requestAnimationFrame(() => setEngineReady(true));
                 }}
@@ -132,7 +161,7 @@ export function SpatialChamber() {
                 onPostEnterDebugSnapshot={postEnterDebugHandler}
               />
 
-              <BackFace />
+              <BackFace contentHidden={backContentHidden} />
               <WallFace className="cube-face cube-face-left" />
               <WallFace className="cube-face cube-face-right" />
               <WallFace className="cube-face cube-face-top" />
@@ -141,6 +170,102 @@ export function SpatialChamber() {
           </div>
         </div>
       </div>
+      {process.env.NODE_ENV === "development" ? (
+        <DevChamberControls engineApiRef={engineApiRef} />
+      ) : null}
+    </div>
+  );
+}
+
+const DEV_STATE_KEYS: Record<string, ConversationState> = {
+  "1": "dormant",
+  "2": "listening",
+  "3": "processing",
+  "4": "speaking",
+  "5": "resolution",
+};
+
+/** Dev-only chamber signal keypad: 1–5 states, R reset, +/- energy. */
+function DevChamberControls({
+  engineApiRef,
+}: {
+  engineApiRef: React.RefObject<FlowEngineApi | null>;
+}) {
+  const [state, setState] = useState<ConversationState>("dormant");
+  const [energy, setEnergy] = useState(0);
+  const energyRef = useRef(0);
+
+  useEffect(() => {
+    const applyEnergy = (next: number) => {
+      const clamped = Math.min(1, Math.max(0, Math.round(next * 10) / 10));
+      energyRef.current = clamped;
+      setEnergy(clamped);
+      engineApiRef.current?.setChamberEnergy(clamped);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const api = engineApiRef.current;
+      if (!api) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const nextState = DEV_STATE_KEYS[event.key];
+      if (nextState) {
+        // Speaking without energy shows no pulse; give it a sensible default.
+        if (nextState === "speaking" && energyRef.current === 0) {
+          applyEnergy(0.8);
+        }
+        api.setConversationState(nextState);
+        setState(nextState);
+        return;
+      }
+
+      if (event.key === "r" || event.key === "R") {
+        api.resetCycle();
+        setState("dormant");
+        applyEnergy(0);
+        return;
+      }
+      if (event.key === "+" || event.key === "=") {
+        applyEnergy(energyRef.current + 0.1);
+        return;
+      }
+      if (event.key === "-" || event.key === "_") {
+        applyEnergy(energyRef.current - 0.1);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [engineApiRef]);
+
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "fixed",
+        left: 12,
+        bottom: 12,
+        zIndex: 9999,
+        pointerEvents: "none",
+        font: "11px/1.5 ui-monospace, monospace",
+        letterSpacing: "0.08em",
+        color: "#d8c9b8",
+        background: "rgba(0, 0, 0, 0.55)",
+        padding: "6px 10px",
+        borderRadius: 4,
+      }}
+    >
+      STATE {state.toUpperCase()} · ENERGY {energy.toFixed(1)}
+      <br />
+      <span style={{ opacity: 0.55 }}>1–5 states · R reset · +/- energy</span>
     </div>
   );
 }
@@ -198,16 +323,15 @@ function FrontFace({
   );
 }
 
-function BackFace() {
+function BackFace({ contentHidden }: { contentHidden: boolean }) {
   return (
     <section
       className="cube-face cube-face-back"
       aria-label="Hero wall"
+      aria-hidden={contentHidden ? true : undefined}
+      inert={contentHidden ? true : undefined}
     >
       <div className="back-surface">
-        <div className="back-scene-media" aria-hidden="true" />
-        <div className="back-scene-haze" aria-hidden="true" />
-
         <header className="back-chrome">
           <span className="back-brand">VOLKANO</span>
           <a
