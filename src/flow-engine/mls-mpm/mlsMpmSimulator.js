@@ -957,7 +957,13 @@ class mlsMpmSimulator {
           .toConst("settleData");
         // w = focal weight (Lenox): focal particles follow the gaze offset
         // fully, shell density stays anchored. Chamber targets author w=0.
-        const settleFocalW = settleData.w.clamp(0, 1).toConst("settleFocalW");
+        // Role bands in w: 0 shell · 0.3 aura · 0.6 lid · 1 focal.
+        // Only the focal core follows the gaze offset fully.
+        const settleFocalW = smoothstep(
+          float(0.85),
+          float(0.98),
+          settleData.w.clamp(0, 1),
+        ).toConst("settleFocalW");
         // Vertical squash toward the ocular centerline (blink/squint); 1 = identity.
         const settleSquashedY = mix(
           this.uniforms.settleSquashCenter,
@@ -967,7 +973,7 @@ class mlsMpmSimulator {
         const settleTargetPos = vec3(settleData.x, settleSquashedY, settleData.z)
           .add(
             this.uniforms.settleOffset.mul(
-              mix(float(0.12), float(1.0), settleFocalW),
+              mix(float(0.1), float(1.0), settleFocalW),
             ),
           )
           .toConst("settleTargetPos");
@@ -2180,6 +2186,121 @@ class mlsMpmSimulator {
         clamp3(x, lo, hiX),
         clamp3(y, lo, hiY),
         clamp3(z, lo, hiZ),
+        w,
+      ]);
+    }
+
+    const sb = this.settleTargetBuffer.buffer;
+    if (sb) { sb.needsUpdate = true; if (sb.value) sb.value.needsUpdate = true; }
+  }
+
+  /**
+   * Lenox Character Pass 02: layered ocular field authoring. Per eye:
+   *   shell — almond annulus around the pupil void (w=0)
+   *   lid   — denser upper arc, watchful pressure  (w=0.6)
+   *   aura  — sparse dissipating fog around/between the eyes (w=0.3)
+   *   focal — tight core in FRONT of the pupil occluder; carries gaze (w=1)
+   * CPU one-shot write (same call-site class as buildAnalyticalRecallTargets).
+   */
+  buildLenoxOcularTargets(spec) {
+    if (!this.settleTargetBuffer || !this.gridSize || !spec) return;
+
+    const cap = this.settleTargetBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) return;
+
+    const {
+      leftX,
+      rightX,
+      centerY,
+      zBase,
+      rx,
+      ry,
+      rz,
+      aperture,
+      almond,
+      auraSpread,
+      focalRadius,
+    } = spec;
+
+    const lo = GRID_CLAMP_MARGIN + 1;
+    const hiX = this.gridSize.x - GRID_CLAMP_MARGIN - 1;
+    const hiY = this.gridSize.y - GRID_CLAMP_MARGIN - 1;
+    const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
+    const GOLDEN = 2.399963229728653;
+    const clampV = (v, loV, hiV) => Math.min(hiV, Math.max(loV, v));
+    const midX = (leftX + rightX) / 2;
+
+    for (let i = 0; i < particleCount; i++) {
+      const layerRoll = hash01(i, 7.77);
+      let x;
+      let y;
+      let z;
+      let w;
+
+      if (layerRoll < 0.08) {
+        // Bridge fog: sparse connective field across the whole presence.
+        const az = i * GOLDEN + hash01(i, 61.17) * 1.3;
+        const r = Math.sqrt(hash01(i, 43.91));
+        x = midX + Math.cos(az) * r * ((rightX - leftX) / 2 + rx);
+        y = centerY + Math.sin(az) * r * ry * 1.5;
+        z = zBase + 1.2 + hash01(i, 27.53) * rz * 2.2;
+        w = 0.3;
+      } else {
+        const cx = i % 2 === 0 ? leftX : rightX;
+        const roll = hash01(i, 21.21);
+        const azimuth = i * GOLDEN + hash01(i, 12.9898) * 0.9;
+
+        if (roll < 0.4) {
+          // Shell: almond annulus outside the pupil void.
+          const r01 = Math.sqrt(
+            aperture * aperture + (1 - aperture * aperture) * hash01(i, 39.3461),
+          );
+          const r = r01 * (0.92 + hash01(i, 94.673) * 0.2);
+          const xFrac = Math.abs(Math.cos(azimuth)) * Math.min(r, 1);
+          const lidTaper = 1 - almond * Math.pow(xFrac, 1.6);
+          x = cx + Math.cos(azimuth) * r * rx;
+          y = centerY + Math.sin(azimuth) * r * ry * lidTaper;
+          z = zBase + (hash01(i, 78.233) - 0.5) * 2 * rz;
+          w = 0;
+        } else if (roll < 0.58) {
+          // Upper lid arc: denser band above the aperture.
+          const t = hash01(i, 83.313);
+          const az = Math.PI * (0.14 + 0.72 * t);
+          const r = 0.98 + hash01(i, 51.77) * 0.26;
+          const xFrac = Math.abs(Math.cos(az)) * Math.min(r, 1);
+          const lidTaper = 1 - almond * Math.pow(xFrac, 1.6);
+          x = cx + Math.cos(az) * r * rx;
+          y = centerY + Math.sin(az) * r * ry * lidTaper;
+          z = zBase + (hash01(i, 66.29) - 0.5) * 1.4 * rz;
+          w = 0.6;
+        } else if (roll < 0.86) {
+          // Aura: dissipating fog around the eye.
+          const r = 1.05 + hash01(i, 94.673) * (auraSpread - 1.05);
+          x = cx + Math.cos(azimuth) * r * rx;
+          y = centerY + Math.sin(azimuth) * r * ry * 0.72;
+          z = zBase + (hash01(i, 78.233) - 0.3) * 2 * rz * 1.9;
+          w = 0.3;
+        } else {
+          // Focal core: in front of the pupil occluder, carries the gaze.
+          const fr = focalRadius * Math.sqrt(hash01(i, 17.323));
+          const fAz = i * GOLDEN + hash01(i, 91.421) * 1.7;
+          x = cx + Math.cos(fAz) * fr * rx;
+          y = centerY + Math.sin(fAz) * fr * rx * 0.8;
+          z = zBase - 2.6 - hash01(i, 33.719) * 0.8;
+          w = 1;
+        }
+      }
+
+      this.settleTargetBuffer.set(i, "settleTarget", [
+        clampV(x, lo, hiX),
+        clampV(y, lo, hiY),
+        clampV(z, lo, hiZ),
         w,
       ]);
     }

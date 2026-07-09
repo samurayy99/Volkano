@@ -42,15 +42,62 @@ const EYE_CENTER_Y = 37;
 const GATHER_CLUSTER = [
   { center: [32, 34, 30], radii: [8, 7, 5] },
 ];
-const EYE_SPEC = {
-  leftX: 21.5,
-  rightX: 42.5,
-  radii: [6.0, 4.2, 1.5],
-  aperture: 0.5,
-  almond: 0.55,
-  focalFrac: 0.1,
-  focalRadius: 0.28,
-};
+
+/**
+ * Character Pass 02 presets. Tunables (override any via __LENOX_TUNE__):
+ * entityScale, eyeSeparation, apertureWidth (rx), apertureHeight (ry),
+ * pupilVoidSize, upperLidWeight (reserved), focalSignalStrength, auraSpread,
+ * particleOpacity, particleScale (sizeMul), gazeStrength.
+ */
+const PRESETS = Object.freeze({
+  readable: {
+    entityScale: 1,
+    eyeSeparation: 23,
+    apertureWidth: 7.4,
+    apertureHeight: 4.8,
+    pupilVoidSize: 0.44,
+    almond: 0.55,
+    focalSignalStrength: 1.2,
+    auraSpread: 2.1,
+    focalRadius: 0.2,
+    particleOpacity: 1,
+    particleScale: 0.8,
+    gazeStrength: 1,
+  },
+  subtle: {
+    entityScale: 0.88,
+    eyeSeparation: 22,
+    apertureWidth: 7.0,
+    apertureHeight: 4.4,
+    pupilVoidSize: 0.4,
+    almond: 0.6,
+    focalSignalStrength: 0.7,
+    auraSpread: 2.4,
+    focalRadius: 0.17,
+    particleOpacity: 0.88,
+    particleScale: 0.74,
+    gazeStrength: 0.85,
+  },
+  intense: {
+    entityScale: 1.12,
+    eyeSeparation: 24,
+    apertureWidth: 7.8,
+    apertureHeight: 5.2,
+    pupilVoidSize: 0.48,
+    almond: 0.5,
+    focalSignalStrength: 1.8,
+    auraSpread: 1.9,
+    focalRadius: 0.24,
+    particleOpacity: 1,
+    particleScale: 0.86,
+    gazeStrength: 1.2,
+  },
+});
+
+/** Pupil occluder size relative to the authored void (covers stray mass). */
+const PUPIL_OCCLUDER_MUL = 1.18;
+const EYE_Z = 30;
+const PUPIL_Z = 28.2;
 
 const GAZE = Object.freeze({
   rangeX: 2.2,
@@ -126,19 +173,35 @@ const PROFILES = Object.freeze({
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
-function eyeClusters() {
+/** Active preset + user overrides → resolved ocular spec. */
+function resolveOcularSpec() {
+  const presetName =
+    (typeof globalThis !== "undefined" && globalThis.__LENOX_PRESET__) ||
+    "readable";
   const tune =
     (typeof globalThis !== "undefined" && globalThis.__LENOX_TUNE__) || {};
-  const spec = { ...EYE_SPEC, ...tune };
-  const cluster = (cx) => ({
-    center: [cx, EYE_CENTER_Y, 30],
-    radii: spec.radii,
-    aperture: spec.aperture,
-    almond: spec.almond,
-    focalFrac: spec.focalFrac,
-    focalRadius: spec.focalRadius,
-  });
-  return [cluster(spec.leftX), cluster(spec.rightX)];
+  const p = { ...(PRESETS[presetName] ?? PRESETS.readable), ...tune };
+
+  const s = p.entityScale;
+  const halfSep = (p.eyeSeparation * s) / 2;
+  return {
+    presetName,
+    leftX: 32 - halfSep,
+    rightX: 32 + halfSep,
+    centerY: EYE_CENTER_Y,
+    zBase: EYE_Z,
+    rx: p.apertureWidth * s,
+    ry: p.apertureHeight * s,
+    rz: 1.4,
+    aperture: p.pupilVoidSize,
+    almond: p.almond,
+    auraSpread: p.auraSpread,
+    focalRadius: p.focalRadius,
+    focalSignalStrength: p.focalSignalStrength,
+    particleOpacity: p.particleOpacity,
+    particleScale: p.particleScale,
+    gazeStrength: p.gazeStrength,
+  };
 }
 
 export class LenoxEyesDrive {
@@ -171,6 +234,10 @@ export class LenoxEyesDrive {
     this.blinkT = 0;
     this.blinkSquash = 1;
     this.squintSquash = 1;
+
+    // Character Pass 02.
+    this.spec = null;
+    this.presence = 0; // 0..1 pupil occluder fade-in while alive
   }
 
   /** @param {"idle"|"attract"|"waking"|"alive"} state */
@@ -324,11 +391,23 @@ export class LenoxEyesDrive {
         this.authoredShape = "gather";
       }
       if (this.activeState === "alive" && this.authoredShape !== "eyes") {
-        app.mlsMpmSim?.buildLenoxClusterTargets?.(eyeClusters());
+        this.spec = resolveOcularSpec();
+        app.mlsMpmSim?.buildLenoxOcularTargets?.(this.spec);
         this.authoredShape = "eyes";
       }
       if (this.activeState === "idle" || this.activeState === "attract") {
         this.authoredShape = null;
+      }
+    }
+
+    // Preset hot-switch while alive (dev): re-author on change.
+    if (this.activeState === "alive" && this.spec) {
+      const presetName =
+        (typeof globalThis !== "undefined" && globalThis.__LENOX_PRESET__) ||
+        "readable";
+      if (presetName !== this.spec.presetName) {
+        this.spec = resolveOcularSpec();
+        app.mlsMpmSim?.buildLenoxOcularTargets?.(this.spec);
       }
     }
 
@@ -355,32 +434,53 @@ export class LenoxEyesDrive {
         ? 1 + Math.sin(this.breathePhase) * BREATHE_DEPTH
         : 1;
 
-    const tune =
-      (typeof globalThis !== "undefined" && globalThis.__LENOX_TUNE__) || {};
-    const gazeRangeX = tune.gazeRangeX ?? GAZE.rangeX;
-    const gazeRangeY = tune.gazeRangeY ?? GAZE.rangeY;
+    const spec = this.spec ?? resolveOcularSpec();
+    const gazeStrength = spec.gazeStrength;
     const gazeOn = this.activeState === "alive" ? 1 : 0;
+    const squash =
+      this.activeState === "alive"
+        ? Math.min(this.blinkSquash, this.squintSquash)
+        : 1;
+
+    // Pupil occluders fade in once alive, out otherwise.
+    const presenceTarget = this.activeState === "alive" ? 1 : 0;
+    this.presence += (presenceTarget - this.presence) * (1 - Math.exp(-dt / 0.5));
 
     rt.noise = SOURCE_PLAY_BASE.noise * cur.noiseMul;
     rt.speed = SOURCE_PLAY_BASE.speed * cur.speedMul;
     rt.dynamicViscosity = SOURCE_PLAY_BASE.dynamicViscosity * cur.viscosityMul;
     rt.gravity = SOURCE_PLAY_BASE.gravity * cur.gravityMul;
 
+    const gazeSimX =
+      (this.gazeX + this.trembleX) * 2 * GAZE.rangeX * gazeStrength * gazeOn;
+    const gazeSimY =
+      (this.gazeY + this.trembleY) * 2 * GAZE.rangeY * gazeStrength * gazeOn;
+
     rt.settleWeight = cur.settleWeight * breathe;
-    rt.settleOffset.set(
-      (this.gazeX + this.trembleX) * 2 * gazeRangeX * gazeOn,
-      (this.gazeY + this.trembleY) * 2 * gazeRangeY * gazeOn,
-      0,
-    );
-    rt.settleSquashT =
-      this.activeState === "alive"
-        ? Math.min(this.blinkSquash, this.squintSquash)
-        : 1;
+    rt.settleOffset.set(gazeSimX, gazeSimY, 0);
+    rt.settleSquashT = squash;
     rt.settleSquashCenter = EYE_CENTER_Y;
+    rt.lenoxFocalBoost = spec.focalSignalStrength;
+    rt.opacityT = 1 - spec.particleOpacity;
 
     if (this.baseActualSize !== null) {
-      rt.actualSize = this.baseActualSize * (tune.sizeMul ?? cur.sizeMul);
+      rt.actualSize =
+        this.baseActualSize *
+        (this.activeState === "alive" ? spec.particleScale : cur.sizeMul);
     }
+
+    app.setLenoxOcular?.({
+      leftX: spec.leftX,
+      rightX: spec.rightX,
+      centerY: spec.centerY,
+      z: PUPIL_Z,
+      rx: spec.rx * spec.aperture * PUPIL_OCCLUDER_MUL,
+      ry: spec.ry * spec.aperture * PUPIL_OCCLUDER_MUL * 1.15,
+      squash,
+      gazeX: gazeSimX,
+      gazeY: gazeSimY,
+      presence: this.presence,
+    });
 
     // Silence every other authored channel; Lenox owns the frame.
     rt.returnBodyWeight = 0;
@@ -393,7 +493,6 @@ export class LenoxEyesDrive {
     rt.compressT = 0;
     rt.thinT = 0;
     rt.massDimT = 0;
-    rt.opacityT = 0;
     rt.materialClaimT = 0;
 
     rt.lenoxTintT = 1;

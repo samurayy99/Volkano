@@ -280,6 +280,7 @@ const buildUnifiedParticleSurfaceNodes = ({
   vNormalView,
   vFacingThickness,
   uniforms,
+  settleW,
 }) => {
   const particleHeat = particle.get("heat");
   const particleColor = particle.get("color").toConst("particleColor");
@@ -557,23 +558,46 @@ const buildUnifiedParticleSurfaceNodes = ({
 
   // Lenox void look: silver body with cyan energy read driven by speed.
   const lenoxTintT = uniforms.lenoxTintT.clamp(0, 1).toConst("lenoxTintT");
+  // Role bands from settle target w: 0 shell · 0.3 aura · 0.6 lid · 1 focal.
+  const lenoxRoleW = settleW.clamp(0, 1).toConst("lenoxRoleW");
+  const lenoxFocalT = smoothstep(float(0.85), float(0.98), lenoxRoleW)
+    .mul(lenoxTintT)
+    .toConst("lenoxFocalT");
+  const lenoxLidT = smoothstep(float(0.5), float(0.62), lenoxRoleW)
+    .mul(float(1).sub(lenoxFocalT))
+    .mul(lenoxTintT)
+    .toConst("lenoxLidT");
+  const lenoxAuraT = smoothstep(float(0.18), float(0.3), lenoxRoleW)
+    .mul(float(1).sub(smoothstep(float(0.5), float(0.62), lenoxRoleW)))
+    .mul(lenoxTintT)
+    .toConst("lenoxAuraT");
+
   const lenoxEnergyT = smoothstep(float(0.18), float(1.7), particleSpeed)
     .mul(float(0.75))
     .add(viewThicknessT.mul(float(0.2)))
     .clamp(float(0), float(1))
     .toConst("lenoxEnergyT");
   const lenoxSilver = vec3(0.5, 0.55, 0.6);
+  const lenoxSilverLift = vec3(0.72, 0.78, 0.84);
   const lenoxCyan = vec3(0.24, 0.86, 1.0);
-  const lenoxBody = mix(lenoxSilver, lenoxCyan, lenoxEnergyT).toConst(
-    "lenoxBody",
-  );
+  const lenoxBody = mix(lenoxSilver, lenoxCyan, lenoxEnergyT)
+    .toConst("lenoxBodyBase");
+  const lenoxBodyLid = mix(lenoxBody, lenoxSilverLift, lenoxLidT.mul(0.5))
+    .toConst("lenoxBodyLid");
+  const lenoxBodyFinal = mix(lenoxBodyLid, lenoxCyan, lenoxFocalT.mul(0.85))
+    .toConst("lenoxBody");
 
-  const surfaceColor = mix(surfaceColorBase, lenoxBody, lenoxTintT).toConst(
+  const surfaceColor = mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT).toConst(
     "surfaceColor",
   );
 
   const lenoxEmissive = lenoxCyan
-    .mul(lenoxEnergyT.mul(float(0.05)).add(float(0.006)))
+    .mul(
+      lenoxEnergyT
+        .mul(float(0.05))
+        .add(float(0.006))
+        .add(lenoxFocalT.mul(uniforms.lenoxFocalBoost.mul(float(0.5)))),
+    )
     .toConst("lenoxEmissive");
   const surfaceEmissive = mix(
     surfaceEmissiveBase,
@@ -584,7 +608,12 @@ const buildUnifiedParticleSurfaceNodes = ({
   const bloomSource = yellowPinEmissive.r
     .max(hotOrangeEmissive.r.mul(float(0.34)).mul(riftAuthorityT))
     .max(deepRedEmissive.r.mul(float(0.12)).mul(riftAuthorityT))
-    .max(lenoxEnergyT.mul(float(0.09)).mul(lenoxTintT))
+    .max(
+      lenoxEnergyT
+        .mul(float(0.09))
+        .add(lenoxFocalT.mul(float(0.4)).mul(uniforms.lenoxFocalBoost))
+        .mul(lenoxTintT),
+    )
     .toConst("particleBloomSource");
 
   material.colorNode = surfaceColor;
@@ -603,7 +632,10 @@ const buildUnifiedParticleSurfaceNodes = ({
   );
   material.emissiveNode = surfaceEmissive;
   material.aoNode = surfaceAo;
-  material.opacityNode = opacityEffective;
+  // Aura fog reads sparse and dim (Lenox); chamber path unchanged (auraT=0).
+  material.opacityNode = opacityEffective.mul(
+    mix(float(1), float(0.3), lenoxAuraT),
+  );
 
   material.mrtNode = mrt({
     bloomIntensity: smoothstep(float(0.026), float(0.09), bloomSource)
@@ -621,6 +653,7 @@ const buildParticlePositionNode = ({
   sizeUniform,
   vNormalView,
   vFacingThickness,
+  settleW,
 }) =>
   Fn(() => {
     const simPos = particle.get("position").xyz.toConst("simPos");
@@ -792,12 +825,27 @@ const buildParticlePositionNode = ({
       vFacingThickness,
     });
 
+    // Lenox role scale: aura fog finer, focal glint tighter (0 in chamber).
+    const posRoleW = settleW.clamp(0, 1).toConst("posRoleW");
+    const posLenoxT = uniforms.lenoxTintT.clamp(0, 1).toConst("posLenoxT");
+    const posAuraT = smoothstep(float(0.18), float(0.3), posRoleW)
+      .mul(float(1).sub(smoothstep(float(0.5), float(0.62), posRoleW)))
+      .mul(posLenoxT)
+      .toConst("posAuraT");
+    const posFocalT = smoothstep(float(0.85), float(0.98), posRoleW)
+      .mul(posLenoxT)
+      .toConst("posFocalT");
+    const lenoxRoleScale = mix(float(1), float(0.68), posAuraT)
+      .mul(mix(float(1), float(0.78), posFocalT))
+      .toConst("lenoxRoleScale");
+
     return viewState.mat
       .mul(shapedPos.mul(structureScale))
       .mul(
         sizeUniform
           .mul(PARTICLE_PROFILE_READ.instanceScale)
-          .mul(uniforms.bodyScaleMul),
+          .mul(uniforms.bodyScaleMul)
+          .mul(lenoxRoleScale),
       )
       .mul(particleProfile.densityScale)
       .add(simPos);
@@ -975,6 +1023,8 @@ class ParticleRenderer {
     this.uniforms.postEnterFlightT = uniform(0);
     /** 1 = Lenox void look (silver/cyan, no ember read); 0 = chamber thermal look. */
     this.uniforms.lenoxTintT = uniform(0);
+    /** Focal glint emissive gain (Lenox mode). */
+    this.uniforms.lenoxFocalBoost = uniform(1);
 
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
@@ -982,6 +1032,10 @@ class ParticleRenderer {
     const vNormalView = varying(vec3(0), "vNormalView");
     const vFacingThickness = varying(0, "vFacingThickness");
     const particle = this.mlsMpmSim.particleBuffer.element(instanceIndex);
+    // Lenox role channel (settle target w); constant 0 for chamber authors.
+    const settleW = this.mlsMpmSim.settleTargetBuffer
+      .element(instanceIndex)
+      .get("settleTarget").w;
 
     this.material.positionNode = buildParticlePositionNode({
       particle,
@@ -989,6 +1043,7 @@ class ParticleRenderer {
       sizeUniform: this.uniforms.size,
       vNormalView,
       vFacingThickness,
+      settleW,
     });
 
     buildUnifiedParticleSurfaceNodes({
@@ -997,6 +1052,7 @@ class ParticleRenderer {
       vNormalView,
       vFacingThickness,
       uniforms: this.uniforms,
+      settleW,
     });
 
     /** MLS rods only — must not be the same node as `object`, so post-enter apparition can sibling-render. */
@@ -1060,6 +1116,7 @@ class ParticleRenderer {
     this.uniforms.materialClaimT.value = this.runtime.materialClaimT ?? 0;
     this.uniforms.postEnterFlightT.value = this.runtime.postEnterFlightT ?? 0;
     this.uniforms.lenoxTintT.value = this.runtime.lenoxTintT ?? 0;
+    this.uniforms.lenoxFocalBoost.value = this.runtime.lenoxFocalBoost ?? 1;
     this.material.envMapIntensity = 0.12;
 
     const lockedDissolve = false;

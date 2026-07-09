@@ -158,6 +158,7 @@ const createRuntimeState = (width = window.innerWidth) => {
 
     // Lenox void channels (V-eyes proof). 0 / zero-vector = chamber behavior.
     lenoxTintT: 0,
+    lenoxFocalBoost: 1,
     settleOffset: new THREE.Vector3(),
     settleSquashT: 1,
     settleSquashCenter: 32,
@@ -221,6 +222,9 @@ class App {
   };
 
   runtime = null;
+
+  /** Lenox identity layer (void mode): two black pupil occluder meshes. */
+  lenoxPupils = null;
 
   postEnterDriveActive = false;
 
@@ -355,6 +359,59 @@ class App {
     // Re-seed the canonical idle body; the dirty particle buffer uploads on
     // the next sim update, while the chamber is still visually empty.
     this.promoteIdlePopulation();
+  }
+
+  /**
+   * Lenox identity layer: two black almond pupil occluders in sim space
+   * (children of the particle group). Against the void they are invisible
+   * as objects — they exist only as crisp negative space carved out of the
+   * particle field. Particles author AROUND them; the focal glint floats
+   * in front.
+   */
+  initLenoxPupilOccluders() {
+    if (!this.particleRenderer?.object || this.lenoxPupils) return;
+
+    const shape = new THREE.Shape();
+    shape.moveTo(-1, 0);
+    shape.quadraticCurveTo(0, 1.45, 1, 0);
+    shape.quadraticCurveTo(0, -1.45, -1, 0);
+    const geometry = new THREE.ShapeGeometry(shape, 24);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x020304,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+
+    this.lenoxPupils = [
+      new THREE.Mesh(geometry, material),
+      new THREE.Mesh(geometry, material),
+    ];
+    for (const pupil of this.lenoxPupils) {
+      pupil.visible = false;
+      pupil.renderOrder = 2;
+      this.particleRenderer.object.add(pupil);
+    }
+  }
+
+  /**
+   * Per-frame pupil transform from the Lenox drive (sim-space coordinates).
+   * `presence` 0..1 scales the pupils in/out; gaze shifts them subtly
+   * (the focal glint carries the strong gaze read).
+   */
+  setLenoxOcular({ leftX, rightX, centerY, z, rx, ry, squash, gazeX, gazeY, presence }) {
+    if (!this.lenoxPupils) return;
+    const p = Math.max(0, Math.min(presence ?? 0, 1));
+    const centers = [leftX, rightX];
+    for (let i = 0; i < 2; i++) {
+      const pupil = this.lenoxPupils[i];
+      pupil.visible = p > 0.02;
+      pupil.position.set(
+        centers[i] + gazeX * 0.4,
+        centerY + gazeY * 0.4,
+        z,
+      );
+      pupil.scale.set(rx * p, ry * Math.max(squash, 0.02) * p, 1);
+    }
   }
 
   /**
@@ -562,6 +619,10 @@ class App {
     this.lights = new Lights();
     this.scene.add(this.lights.object);
     this.scene.add(this.particleRenderer.object);
+
+    if (this.visualMode === "void") {
+      this.initLenoxPupilOccluders();
+    }
 
     this.createPostProcessingPipeline();
 
@@ -861,6 +922,11 @@ class App {
   }
 
   dispose() {
+    if (this.lenoxPupils) {
+      this.lenoxPupils[0]?.geometry?.dispose?.();
+      this.lenoxPupils[0]?.material?.dispose?.();
+      this.lenoxPupils = null;
+    }
     this.particleRenderer?.dispose?.();
     this.backgroundGeometry?.dispose?.();
     this.lights?.dispose?.();

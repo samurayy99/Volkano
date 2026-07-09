@@ -148,6 +148,43 @@ export function LenoxProof() {
         FALLBACK {gpuPath === "fallback" ? "ACTIVE" : "no"}
       </div>
 
+      {/* Preset controls */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: 64,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 50,
+          display: "flex",
+          gap: 8,
+        }}
+      >
+        {(["subtle", "readable", "intense"] as const).map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => {
+              (globalThis as { __LENOX_PRESET__?: string }).__LENOX_PRESET__ = p;
+            }}
+            style={{
+              appearance: "none",
+              cursor: "pointer",
+              font: "10px ui-monospace, monospace",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: "1px solid rgba(180, 200, 210, 0.2)",
+              background: "rgba(0,0,0,0.45)",
+              color: "rgba(200, 214, 220, 0.6)",
+            }}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+
       {/* State controls */}
       <div
         style={{
