@@ -159,6 +159,8 @@ const createRuntimeState = (width = window.innerWidth) => {
     // Lenox void channels (V-eyes proof). 0 / zero-vector = chamber behavior.
     lenoxTintT: 0,
     settleOffset: new THREE.Vector3(),
+    settleSquashT: 1,
+    settleSquashCenter: 32,
 
     // Future claim runtime
     authorityLightT: 0,

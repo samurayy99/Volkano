@@ -586,6 +586,9 @@ class mlsMpmSimulator {
     this.uniforms.settleWeight = uniform(0);
     /** Rigid offset added to settle targets (Lenox gaze); zero = chamber behavior. */
     this.uniforms.settleOffset = uniform(new THREE.Vector3());
+    /** Vertical squash of settle targets around `settleSquashCenter` (Lenox blink/squint); 1 = identity. */
+    this.uniforms.settleSquashT = uniform(1);
+    this.uniforms.settleSquashCenter = uniform(32);
 
     this.kernels.clearGrid = Fn(() => {
       this.cellBuffer.setAtomic("x", false);
@@ -948,10 +951,25 @@ class mlsMpmSimulator {
       });
 
       If(this.uniforms.settleWeight.greaterThan(float(0.0005)), () => {
-        const settleTargetPos = this.settleTargetBuffer
+        const settleData = this.settleTargetBuffer
           .element(instanceIndex)
           .get("settleTarget")
-          .xyz.add(this.uniforms.settleOffset)
+          .toConst("settleData");
+        // w = focal weight (Lenox): focal particles follow the gaze offset
+        // fully, shell density stays anchored. Chamber targets author w=0.
+        const settleFocalW = settleData.w.clamp(0, 1).toConst("settleFocalW");
+        // Vertical squash toward the ocular centerline (blink/squint); 1 = identity.
+        const settleSquashedY = mix(
+          this.uniforms.settleSquashCenter,
+          settleData.y,
+          this.uniforms.settleSquashT.clamp(0, 1.2),
+        ).toConst("settleSquashedY");
+        const settleTargetPos = vec3(settleData.x, settleSquashedY, settleData.z)
+          .add(
+            this.uniforms.settleOffset.mul(
+              mix(float(0.12), float(1.0), settleFocalW),
+            ),
+          )
           .toConst("settleTargetPos");
         const toSettle = settleTargetPos
           .sub(particlePosition)
@@ -1686,6 +1704,8 @@ class mlsMpmSimulator {
     } else {
       this.uniforms.settleOffset.value.set(0, 0, 0);
     }
+    this.uniforms.settleSquashT.value = runtime.settleSquashT ?? 1;
+    this.uniforms.settleSquashCenter.value = runtime.settleSquashCenter ?? 32;
   }
 
   markParticleBufferDirty() {
@@ -2066,12 +2086,22 @@ class mlsMpmSimulator {
   }
 
   /**
-   * Lenox proof: author settle targets as N organic ellipsoid clusters
-   * (e.g. one gather sphere, or two eye fields). CPU one-shot write into
-   * `settleTargetBuffer` — same safe call-site class as
+   * Lenox: author settle targets as N organic clusters. CPU one-shot write
+   * into `settleTargetBuffer` — same safe call-site class as
    * `buildAnalyticalRecallTargets` (never per frame).
    *
-   * @param {{center:[number,number,number], radii:[number,number,number]}[]} clusters
+   * Cluster spec (per entry):
+   *   center, radii        — ellipsoid placement
+   *   aperture   (0..0.9)  — hollow core fraction: particles author OUTSIDE
+   *                          this radius so the pupil reads as negative space
+   *   almond     (0..1)    — vertical taper toward the outer x-corners
+   *   focalFrac  (0..0.3)  — fraction of particles authored as a small focal
+   *                          core inside the aperture; written with w=1 so
+   *                          the gaze offset moves them fully (kernel reads w)
+   *   focalRadius (0..1)   — focal core size relative to radii
+   *
+   * @param {{center:[number,number,number], radii:[number,number,number],
+   *   aperture?:number, almond?:number, focalFrac?:number, focalRadius?:number}[]} clusters
    */
   buildLenoxClusterTargets(clusters) {
     if (
@@ -2097,25 +2127,61 @@ class mlsMpmSimulator {
     const hiY = this.gridSize.y - GRID_CLAMP_MARGIN - 1;
     const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
     const GOLDEN = 2.399963229728653;
+    const clamp3 = (v, loV, hiV) => Math.min(hiV, Math.max(loV, v));
 
     for (let i = 0; i < particleCount; i++) {
       const c = clusters[i % clusters.length];
-      // Organic ellipsoid fill: golden-angle azimuth, hashed inclination,
-      // sqrt-radial density with per-particle noise so edges stay ragged.
-      const azimuth = i * GOLDEN + hash01(i, 12.9898) * 0.9;
-      const inclination = Math.acos(2 * hash01(i, 78.233) - 1);
-      const rBase = Math.sqrt(hash01(i, 39.3461));
-      const r = rBase * (0.82 + hash01(i, 94.673) * 0.36);
+      const aperture = c.aperture ?? 0;
+      const almond = c.almond ?? 0;
+      const focalFrac = c.focalFrac ?? 0;
 
-      const sx = Math.sin(inclination) * Math.cos(azimuth);
-      const sy = Math.cos(inclination);
-      const sz = Math.sin(inclination) * Math.sin(azimuth);
+      let x;
+      let y;
+      let z;
+      let w = 0;
 
-      const x = Math.min(hiX, Math.max(lo, c.center[0] + sx * r * c.radii[0]));
-      const y = Math.min(hiY, Math.max(lo, c.center[1] + sy * r * c.radii[1]));
-      const z = Math.min(hiZ, Math.max(lo, c.center[2] + sz * r * c.radii[2]));
+      if (focalFrac > 0 && hash01(i, 57.585) < focalFrac) {
+        // Focal core: sparse mass inside the aperture; follows gaze (w=1).
+        const fr = (c.focalRadius ?? 0.3) * Math.sqrt(hash01(i, 17.323));
+        const fAz = i * GOLDEN + hash01(i, 91.421) * 1.7;
+        const fInc = Math.acos(2 * hash01(i, 33.719) - 1);
+        x = c.center[0] + Math.sin(fInc) * Math.cos(fAz) * fr * c.radii[0];
+        y = c.center[1] + Math.cos(fInc) * fr * c.radii[1];
+        z = c.center[2] + Math.sin(fInc) * Math.sin(fAz) * fr * c.radii[2];
+        w = 1;
+      } else if (aperture > 0) {
+        // Ocular shell: planar annulus (hollow core = pupil void), organic
+        // radial jitter, almond taper so the outer corners close down.
+        const azimuth = i * GOLDEN + hash01(i, 12.9898) * 0.9;
+        const r01 = Math.sqrt(
+          aperture * aperture +
+            (1 - aperture * aperture) * hash01(i, 39.3461),
+        );
+        const r = r01 * (0.9 + hash01(i, 94.673) * 0.24);
+        const xFrac = Math.abs(Math.cos(azimuth)) * Math.min(r, 1);
+        const lidTaper = 1 - almond * Math.pow(xFrac, 1.6);
+        x = c.center[0] + Math.cos(azimuth) * r * c.radii[0];
+        y = c.center[1] + Math.sin(azimuth) * r * c.radii[1] * lidTaper;
+        z =
+          c.center[2] +
+          (hash01(i, 78.233) - 0.5) * 2 * c.radii[2] * (1 - r01 * 0.4);
+      } else {
+        // Solid organic ellipsoid (gather sphere).
+        const azimuth = i * GOLDEN + hash01(i, 12.9898) * 0.9;
+        const inclination = Math.acos(2 * hash01(i, 78.233) - 1);
+        const r =
+          Math.sqrt(hash01(i, 39.3461)) * (0.82 + hash01(i, 94.673) * 0.36);
+        x = c.center[0] + Math.sin(inclination) * Math.cos(azimuth) * r * c.radii[0];
+        y = c.center[1] + Math.cos(inclination) * r * c.radii[1];
+        z = c.center[2] + Math.sin(inclination) * Math.sin(azimuth) * r * c.radii[2];
+      }
 
-      this.settleTargetBuffer.set(i, "settleTarget", [x, y, z, 0]);
+      this.settleTargetBuffer.set(i, "settleTarget", [
+        clamp3(x, lo, hiX),
+        clamp3(y, lo, hiY),
+        clamp3(z, lo, hiZ),
+        w,
+      ]);
     }
 
     const sb = this.settleTargetBuffer.buffer;

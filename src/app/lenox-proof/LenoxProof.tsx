@@ -48,9 +48,8 @@ export function LenoxProof() {
       .then(() => {
         if (cancelled) return;
         setGpuPath("webgpu");
-        setParticles(
-          window.innerWidth < 768 ? 4096 : 8192 * 4,
-        );
+        // Lenox mode caps simulated count for the packed-volume regime.
+        setParticles(Math.min(window.innerWidth < 768 ? 4096 : 8192 * 4, 8192));
       })
       .catch((error) => {
         console.warn("[lenox-proof] WebGPU init failed → fallback", error);
