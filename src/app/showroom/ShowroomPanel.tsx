@@ -1,26 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import type { ScenarioPlayback } from "./useScenarioPlayer";
 import type { ShowroomScenario } from "./types";
 import { propertyEmergencyScenario } from "./scenarios/propertyEmergency";
+import { clinicConciergeScenario } from "./scenarios/clinicConcierge";
+import { privateConciergeScenario } from "./scenarios/privateConcierge";
+import { localFrontdeskScenario } from "./scenarios/localFrontdesk";
 import styles from "./ShowroomPanel.module.css";
 
-/** Patch 3 ships one live scenario; the other modes land as configs (3.1). */
-const MODES: { id: string; title: string; scenario: ShowroomScenario | null }[] =
-  [
-    {
-      id: "property-emergency",
-      title: "Property Emergency Desk",
-      scenario: propertyEmergencyScenario,
-    },
-    { id: "clinic-concierge", title: "Clinic Concierge", scenario: null },
-    {
-      id: "private-concierge",
-      title: "Private / Hospitality Concierge",
-      scenario: null,
-    },
-    { id: "local-frontdesk", title: "Local Service Frontdesk", scenario: null },
-  ];
+/** All four public modes; each is pure scenario config. */
+const MODES: ShowroomScenario[] = [
+  propertyEmergencyScenario,
+  clinicConciergeScenario,
+  privateConciergeScenario,
+  localFrontdeskScenario,
+];
 
 export function ShowroomPanel({
   playback,
@@ -31,22 +26,32 @@ export function ShowroomPanel({
   onSimulate: (scenario: ShowroomScenario) => void;
   onReset: () => void;
 }) {
-  const scenario = playback.scenario ?? propertyEmergencyScenario;
+  const [selectedId, setSelectedId] = useState(MODES[0].id);
+  const selected =
+    MODES.find((mode) => mode.id === selectedId) ?? MODES[0];
+  // While a run owns the panel, render that run's scenario, not the selector.
+  const scenario = playback.scenario ?? selected;
   const running = playback.playing || playback.done;
   const activeStep =
     playback.activatedSteps[playback.activatedSteps.length - 1] ?? null;
+
+  const selectMode = (mode: ShowroomScenario) => {
+    if (playback.playing) return;
+    if (playback.done) onReset();
+    setSelectedId(mode.id);
+  };
 
   return (
     <aside className={styles.panel} aria-label="VOLKAN OS showroom">
       <div className={styles.brandRow}>
         <span className={styles.brand}>VOLKAN OS</span>
-        <span className={styles.brand}>FROM CHAOS TO ACTION</span>
+        <span className={styles.claim}>FROM CHAOS TO ACTION</span>
       </div>
 
       <section>
         <p className={styles.sectionLabel}>DEMO MODE</p>
         <div className={styles.modeList}>
-          {MODES.map((mode) => (
+          {MODES.map((mode, index) => (
             <button
               key={mode.id}
               type="button"
@@ -55,12 +60,13 @@ export function ShowroomPanel({
                   ? `${styles.modeButton} ${styles.modeButtonActive}`
                   : styles.modeButton
               }
-              disabled={mode.scenario === null || playback.playing}
+              disabled={playback.playing}
+              onClick={() => selectMode(mode)}
             >
+              <span className={styles.modeIndex}>
+                {String(index + 1).padStart(2, "0")}
+              </span>
               {mode.title}
-              {mode.scenario === null ? (
-                <span className={styles.modeSoon}>SOON</span>
-              ) : null}
             </button>
           ))}
         </div>
