@@ -1,10 +1,12 @@
 import * as THREE from "three/webgpu";
 import App from "./app.js";
 import { SourceChamberDrive } from "./source-chamber/sourceChamberDrive.js";
+import { LenoxEyesDrive } from "./lenox/lenoxEyesDrive.js";
 import type {
   ConversationState,
   FlowEngineApi,
   FlowEngineBridgeOptions,
+  LenoxProofState,
   PostEnterDebugSnapshot,
   PostEnterStage,
 } from "./types";
@@ -48,6 +50,8 @@ export class FlowEngineBridge implements FlowEngineApi {
   private conversationState: ConversationState = "dormant";
   private chamberEnergy = 0;
   private chamberDrive = new SourceChamberDrive();
+  private lenoxDrive: LenoxEyesDrive | null = null;
+  private lastLenoxState: LenoxProofState = "idle";
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
@@ -80,9 +84,14 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.renderer = renderer;
     this.container.appendChild(renderer.domElement);
 
-    const app = new App(renderer);
+    const app = new App(renderer, {
+      visualMode: this.options.lenoxMode ? "void" : "chamber",
+    });
     this.app = app;
     await app.init(width, height);
+    if (this.options.lenoxMode) {
+      this.lenoxDrive = new LenoxEyesDrive();
+    }
 
     this.resizeObserver = new ResizeObserver(this.onResize);
     this.resizeObserver.observe(this.container);
@@ -144,6 +153,16 @@ export class FlowEngineBridge implements FlowEngineApi {
   setConversationState(state: ConversationState): void {
     if (this.disposed || !CONVERSATION_STATES.includes(state)) return;
     this.conversationState = state;
+  }
+
+  setLenoxState(state: LenoxProofState): void {
+    if (this.disposed) return;
+    this.lenoxDrive?.setState(state);
+  }
+
+  setLenoxGaze(x: number, y: number): void {
+    if (this.disposed) return;
+    this.lenoxDrive?.setGazeTarget(x, y);
   }
 
   setChamberEnergy(level01: number): void {
@@ -308,18 +327,30 @@ export class FlowEngineBridge implements FlowEngineApi {
         }
       }
 
-      if (!this.postEnterActive) {
-        this.chamberDrive.update(
+      if (this.lenoxDrive) {
+        // Lenox owns runtime + pointer influence in proof mode.
+        const state = this.lenoxDrive.update(
           this.app,
           delta,
-          this.conversationState,
-          this.chamberEnergy,
-        );
-      }
+        ) as LenoxProofState;
+        if (state !== this.lastLenoxState) {
+          this.lastLenoxState = state;
+          this.options.onLenoxStateChange?.(state);
+        }
+      } else {
+        if (!this.postEnterActive) {
+          this.chamberDrive.update(
+            this.app,
+            delta,
+            this.conversationState,
+            this.chamberEnergy,
+          );
+        }
 
-      const pointerInfluence =
-        this.interactiveEnabled && !this.postEnterActive ? 1 : 0;
-      this.app.setPointerInfluence(pointerInfluence);
+        const pointerInfluence =
+          this.interactiveEnabled && !this.postEnterActive ? 1 : 0;
+        this.app.setPointerInfluence(pointerInfluence);
+      }
       await this.app.update(delta);
     } catch (error) {
       this.options.onError?.(error);

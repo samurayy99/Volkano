@@ -1,3 +1,6 @@
+/** Lenox eyes proof states (dev route). */
+export type LenoxProofState = "idle" | "attract" | "waking" | "alive";
+
 /** Source-chamber conversation states (V2 signal layer). */
 export type ConversationState =
   | "dormant"
@@ -51,11 +54,19 @@ export interface FlowEngineApi {
   setConversationState: (state: ConversationState) => void;
   /** 0–1 voice/typing energy; only visible in "speaking" (pulse gain). */
   setChamberEnergy: (level01: number) => void;
+  /** Lenox proof (bridge in lenoxMode only; no-ops otherwise). */
+  setLenoxState: (state: LenoxProofState) => void;
+  /** Gaze target in centered NDC (-0.5..0.5, +y up). Lenox mode only. */
+  setLenoxGaze: (x: number, y: number) => void;
   dispose: () => void;
 }
 
 export interface FlowEngineBridgeOptions {
   onError?: (error: unknown) => void;
+  /** Lenox proof: void visual (no vessel), LenoxEyesDrive owns the runtime. */
+  lenoxMode?: boolean;
+  /** Fires when the effective Lenox state changes (waking auto-advances). */
+  onLenoxStateChange?: (state: LenoxProofState) => void;
   onPostEnterStageChange?: (stage: PostEnterStage) => void;
   /**
    * Dev-only: throttled (~12 Hz) while post-enter runs. Do not rely on this in production UI.

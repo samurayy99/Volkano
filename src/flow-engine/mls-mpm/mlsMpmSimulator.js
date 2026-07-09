@@ -584,6 +584,8 @@ class mlsMpmSimulator {
     this.uniforms.recallLateralWeight = uniform(0);
     this.uniforms.recallVerticalWeight = uniform(0);
     this.uniforms.settleWeight = uniform(0);
+    /** Rigid offset added to settle targets (Lenox gaze); zero = chamber behavior. */
+    this.uniforms.settleOffset = uniform(new THREE.Vector3());
 
     this.kernels.clearGrid = Fn(() => {
       this.cellBuffer.setAtomic("x", false);
@@ -949,7 +951,8 @@ class mlsMpmSimulator {
         const settleTargetPos = this.settleTargetBuffer
           .element(instanceIndex)
           .get("settleTarget")
-          .xyz.toConst("settleTargetPos");
+          .xyz.add(this.uniforms.settleOffset)
+          .toConst("settleTargetPos");
         const toSettle = settleTargetPos
           .sub(particlePosition)
           .toConst("settleToTarget");
@@ -1678,6 +1681,11 @@ class mlsMpmSimulator {
     this.uniforms.recallLateralWeight.value = runtime.recallLateralWeight ?? 0;
     this.uniforms.recallVerticalWeight.value = runtime.recallVerticalWeight ?? 0;
     this.uniforms.settleWeight.value = runtime.settleWeight ?? 0;
+    if (runtime.settleOffset) {
+      this.uniforms.settleOffset.value.copy(runtime.settleOffset);
+    } else {
+      this.uniforms.settleOffset.value.set(0, 0, 0);
+    }
   }
 
   markParticleBufferDirty() {
@@ -2049,6 +2057,63 @@ class mlsMpmSimulator {
       } else if (y > ymax) {
         y = ymax;
       }
+
+      this.settleTargetBuffer.set(i, "settleTarget", [x, y, z, 0]);
+    }
+
+    const sb = this.settleTargetBuffer.buffer;
+    if (sb) { sb.needsUpdate = true; if (sb.value) sb.value.needsUpdate = true; }
+  }
+
+  /**
+   * Lenox proof: author settle targets as N organic ellipsoid clusters
+   * (e.g. one gather sphere, or two eye fields). CPU one-shot write into
+   * `settleTargetBuffer` — same safe call-site class as
+   * `buildAnalyticalRecallTargets` (never per frame).
+   *
+   * @param {{center:[number,number,number], radii:[number,number,number]}[]} clusters
+   */
+  buildLenoxClusterTargets(clusters) {
+    if (
+      !this.settleTargetBuffer ||
+      !Array.isArray(clusters) ||
+      clusters.length === 0 ||
+      !this.gridSize
+    ) {
+      return;
+    }
+
+    const cap = this.settleTargetBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) return;
+
+    const lo = GRID_CLAMP_MARGIN + 1;
+    const hiX = this.gridSize.x - GRID_CLAMP_MARGIN - 1;
+    const hiY = this.gridSize.y - GRID_CLAMP_MARGIN - 1;
+    const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
+    const GOLDEN = 2.399963229728653;
+
+    for (let i = 0; i < particleCount; i++) {
+      const c = clusters[i % clusters.length];
+      // Organic ellipsoid fill: golden-angle azimuth, hashed inclination,
+      // sqrt-radial density with per-particle noise so edges stay ragged.
+      const azimuth = i * GOLDEN + hash01(i, 12.9898) * 0.9;
+      const inclination = Math.acos(2 * hash01(i, 78.233) - 1);
+      const rBase = Math.sqrt(hash01(i, 39.3461));
+      const r = rBase * (0.82 + hash01(i, 94.673) * 0.36);
+
+      const sx = Math.sin(inclination) * Math.cos(azimuth);
+      const sy = Math.cos(inclination);
+      const sz = Math.sin(inclination) * Math.sin(azimuth);
+
+      const x = Math.min(hiX, Math.max(lo, c.center[0] + sx * r * c.radii[0]));
+      const y = Math.min(hiY, Math.max(lo, c.center[1] + sy * r * c.radii[1]));
+      const z = Math.min(hiZ, Math.max(lo, c.center[2] + sz * r * c.radii[2]));
 
       this.settleTargetBuffer.set(i, "settleTarget", [x, y, z, 0]);
     }

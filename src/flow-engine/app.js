@@ -156,6 +156,10 @@ const createRuntimeState = (width = window.innerWidth) => {
     opacityT: 0,
     massDimT: 0,
 
+    // Lenox void channels (V-eyes proof). 0 / zero-vector = chamber behavior.
+    lenoxTintT: 0,
+    settleOffset: new THREE.Vector3(),
+
     // Future claim runtime
     authorityLightT: 0,
     pushInT: 0,
@@ -235,8 +239,13 @@ class App {
   _arrestFlashApplied = false;
   _postEnterRiftFlightInitScheduled = false;
 
-  constructor(renderer) {
+  /**
+   * @param {"chamber"|"void"} [options.visualMode] "void" keeps the vessel
+   * geometry out of the scene (Lenox proof) while anchors/seeding still work.
+   */
+  constructor(renderer, options = {}) {
     this.renderer = renderer;
+    this.visualMode = options.visualMode === "void" ? "void" : "chamber";
   }
 
   resetPostEnterRuntimeChannels() {
@@ -542,7 +551,11 @@ class App {
 
     this.backgroundGeometry = new BackgroundGeometry();
     await this.backgroundGeometry.init();
-    this.scene.add(this.backgroundGeometry.object);
+    // Void mode still constructs the vessel (source anchors, rift descriptors
+    // and seeding derive from it) but never shows it.
+    if (this.visualMode !== "void") {
+      this.scene.add(this.backgroundGeometry.object);
+    }
 
     this.lights = new Lights();
     this.scene.add(this.lights.object);

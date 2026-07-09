@@ -555,13 +555,36 @@ const buildUnifiedParticleSurfaceNodes = ({
     .clamp(0, 1)
     .toConst("opacityEffective");
 
-  const surfaceColor = surfaceColorBase.toConst("surfaceColor");
+  // Lenox void look: silver body with cyan energy read driven by speed.
+  const lenoxTintT = uniforms.lenoxTintT.clamp(0, 1).toConst("lenoxTintT");
+  const lenoxEnergyT = smoothstep(float(0.18), float(1.7), particleSpeed)
+    .mul(float(0.75))
+    .add(viewThicknessT.mul(float(0.2)))
+    .clamp(float(0), float(1))
+    .toConst("lenoxEnergyT");
+  const lenoxSilver = vec3(0.5, 0.55, 0.6);
+  const lenoxCyan = vec3(0.24, 0.86, 1.0);
+  const lenoxBody = mix(lenoxSilver, lenoxCyan, lenoxEnergyT).toConst(
+    "lenoxBody",
+  );
 
-  const surfaceEmissive = surfaceEmissiveBase.toConst("surfaceEmissive");
+  const surfaceColor = mix(surfaceColorBase, lenoxBody, lenoxTintT).toConst(
+    "surfaceColor",
+  );
+
+  const lenoxEmissive = lenoxCyan
+    .mul(lenoxEnergyT.mul(float(0.05)).add(float(0.006)))
+    .toConst("lenoxEmissive");
+  const surfaceEmissive = mix(
+    surfaceEmissiveBase,
+    lenoxEmissive,
+    lenoxTintT,
+  ).toConst("surfaceEmissive");
 
   const bloomSource = yellowPinEmissive.r
     .max(hotOrangeEmissive.r.mul(float(0.34)).mul(riftAuthorityT))
     .max(deepRedEmissive.r.mul(float(0.12)).mul(riftAuthorityT))
+    .max(lenoxEnergyT.mul(float(0.09)).mul(lenoxTintT))
     .toConst("particleBloomSource");
 
   material.colorNode = surfaceColor;
@@ -587,7 +610,7 @@ const buildUnifiedParticleSurfaceNodes = ({
       .mul(bloomSource)
       .mul(float(0.72))
       .mul(opacityEffective)
-      .mul(postEnterMaterialT)
+      .mul(postEnterMaterialT.max(lenoxTintT))
       .clamp(float(0), float(1)),
   });
 };
@@ -950,6 +973,8 @@ class ParticleRenderer {
     this.uniforms.solverLockedFloat = uniform(0);
     this.uniforms.materialClaimT = uniform(0);
     this.uniforms.postEnterFlightT = uniform(0);
+    /** 1 = Lenox void look (silver/cyan, no ember read); 0 = chamber thermal look. */
+    this.uniforms.lenoxTintT = uniform(0);
 
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
@@ -1034,6 +1059,7 @@ class ParticleRenderer {
     this.uniforms.solverLockedFloat.value = this.runtime.solverLocked ? 1 : 0;
     this.uniforms.materialClaimT.value = this.runtime.materialClaimT ?? 0;
     this.uniforms.postEnterFlightT.value = this.runtime.postEnterFlightT ?? 0;
+    this.uniforms.lenoxTintT.value = this.runtime.lenoxTintT ?? 0;
     this.material.envMapIntensity = 0.12;
 
     const lockedDissolve = false;
