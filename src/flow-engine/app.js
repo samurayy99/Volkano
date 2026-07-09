@@ -160,6 +160,7 @@ const createRuntimeState = (width = window.innerWidth) => {
     lenoxTintT: 0,
     lenoxFocalBoost: 1,
     settleOffset: new THREE.Vector3(),
+    settleBob: new THREE.Vector3(),
     settleSquashT: 1,
     settleSquashCenter: 32,
 

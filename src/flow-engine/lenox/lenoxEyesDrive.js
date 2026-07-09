@@ -1,21 +1,22 @@
 /**
- * Lenox eyes driver — Character Pass 01.
+ * Lenox presence driver — Visual Reset Pass.
  *
- * Third runtime author next to postEnterDrive / sourceChamberDrive; the
- * bridge runs exactly one per frame. States: idle / attract / waking / alive.
+ * Lenox is a living AI signal field, NOT a face. Third runtime author next
+ * to postEnterDrive / sourceChamberDrive; the bridge runs exactly one per
+ * frame. States: idle / attract / waking / alive.
  *
- * Character system (alive):
- *   – ocular fields: hollow annulus shells with negative-space pupils and a
- *     sparse focal core (w=1 targets) that carries the gaze
- *   – saccadic gaze: snap toward the pointer past a threshold, hold with
- *     micro-tremble when stationary, drift back to center when idle
- *   – blink: closing → hold → reopen-with-overshoot on `settleSquashT`
- *     (pure uniform animation, zero buffer uploads)
- *   – squint: fast pointer motion narrows the aperture
+ * Presence system (alive), taste principles from the reference: restraint,
+ * gentle float, limited-radius attention follow, calm response.
+ *   – one coherent signal cloud (envelope fog + core + one density contour)
+ *   – two asymmetric ATTENTION NODES (density knots, not eyes) that follow
+ *     the pointer within a small radius via `settleOffset` (w-weighted)
+ *   – slow float/sway on `settleBob` (whole presence, rigid, organic)
+ *   – attention pulse: soft field inhale on `settleSquashT` (no eyelids)
+ *   – cursor speed compresses the field slightly (focus, not squint)
  *
- * Dev tuning: `globalThis.__LENOX_TUNE__ = {aperture, almond, focalFrac,
- * focalRadius, gazeRangeX, gazeRangeY, sizeMul}` (applied on next state
- * enter); `globalThis.__LENOX_BLINK__ = true` forces a blink.
+ * Dev: `__LENOX_PRESET__` = "signal" | "presence" | "entity" (default
+ * presence); `__LENOX_TUNE__` overrides any preset key;
+ * `__LENOX_DEBUG_PUPILS__` re-enables the legacy occluder layer.
  */
 
 const SOURCE_PLAY_BASE = Object.freeze({
@@ -28,105 +29,92 @@ const SOURCE_PLAY_BASE = Object.freeze({
 const EASE_TAU_SEC = 0.45;
 const WAKE_DURATION_SEC = 2.4;
 
-/**
- * Fluid mass always packs to its equilibrium volume (density ≈ restDensity),
- * so authored shapes only hold if the mass fits: simulate fewer particles
- * AND raise restDensity so the packed volume matches the ocular fields
- * (incl. the negative-space pupil) instead of inflating them shut.
- */
+/** See buildLenoxPresenceTargets: packed-volume regime (mass must fit). */
 const LENOX_PARTICLE_CAP = 8192;
 const LENOX_REST_DENSITY_MUL = 12;
 
-/** Sim-space layout (64³ grid). Ocular centerline y = 37. */
-const EYE_CENTER_Y = 37;
-const GATHER_CLUSTER = [
-  { center: [32, 34, 30], radii: [8, 7, 5] },
-];
+const PRESENCE_CENTER = Object.freeze({ x: 32, y: 36.5, z: 30 });
 
 /**
- * Character Pass 02 presets. Tunables (override any via __LENOX_TUNE__):
- * entityScale, eyeSeparation, apertureWidth (rx), apertureHeight (ry),
- * pupilVoidSize, upperLidWeight (reserved), focalSignalStrength, auraSpread,
- * particleOpacity, particleScale (sizeMul), gazeStrength.
+ * Presets. Tunables (override via __LENOX_TUNE__): entityScale, nodeSpread,
+ * nodeRadius, envelope, core, contourLift, focalSignalStrength,
+ * particleOpacity, particleScale, gazeStrength, floatAmp.
  */
 const PRESETS = Object.freeze({
-  readable: {
+  signal: {
     entityScale: 1,
-    eyeSeparation: 23,
-    apertureWidth: 7.4,
-    apertureHeight: 4.8,
-    pupilVoidSize: 0.44,
-    almond: 0.55,
-    focalSignalStrength: 1.2,
-    auraSpread: 2.1,
-    focalRadius: 0.2,
-    particleOpacity: 1,
-    particleScale: 0.8,
+    envelope: [15, 8, 3.6],
+    core: [8.5, 4.6, 2.2],
+    nodeSpread: 11,
+    nodeRadius: 1.7,
+    contourLift: 1.05,
+    focalSignalStrength: 0.18,
+    particleOpacity: 0.82,
+    particleScale: 0.7,
+    gazeStrength: 0.8,
+    floatAmp: 1.1,
+  },
+  presence: {
+    entityScale: 1,
+    envelope: [13.5, 7, 3.2],
+    core: [9, 5, 2.4],
+    nodeSpread: 11.5,
+    nodeRadius: 2.0,
+    contourLift: 1.02,
+    focalSignalStrength: 0.3,
+    particleOpacity: 0.92,
+    particleScale: 0.76,
     gazeStrength: 1,
+    floatAmp: 0.9,
   },
-  subtle: {
-    entityScale: 0.88,
-    eyeSeparation: 22,
-    apertureWidth: 7.0,
-    apertureHeight: 4.4,
-    pupilVoidSize: 0.4,
-    almond: 0.6,
-    focalSignalStrength: 0.7,
-    auraSpread: 2.4,
-    focalRadius: 0.17,
-    particleOpacity: 0.88,
-    particleScale: 0.74,
-    gazeStrength: 0.85,
-  },
-  intense: {
-    entityScale: 1.12,
-    eyeSeparation: 24,
-    apertureWidth: 7.8,
-    apertureHeight: 5.2,
-    pupilVoidSize: 0.48,
-    almond: 0.5,
-    focalSignalStrength: 1.8,
-    auraSpread: 1.9,
-    focalRadius: 0.24,
+  entity: {
+    entityScale: 1.1,
+    envelope: [12.5, 6.6, 3],
+    core: [9.5, 5.4, 2.6],
+    nodeSpread: 12,
+    nodeRadius: 2.3,
+    contourLift: 1.0,
+    focalSignalStrength: 0.45,
     particleOpacity: 1,
-    particleScale: 0.86,
-    gazeStrength: 1.2,
+    particleScale: 0.82,
+    gazeStrength: 1.15,
+    floatAmp: 0.7,
   },
 });
 
-/** Pupil occluder size relative to the authored void (covers stray mass). */
-const PUPIL_OCCLUDER_MUL = 1.18;
-const EYE_Z = 30;
-const PUPIL_Z = 28.2;
-
 const GAZE = Object.freeze({
-  rangeX: 2.2,
-  rangeY: 1.5,
-  /** NDC distance that triggers a saccade snap. */
+  rangeX: 2.0,
+  rangeY: 1.3,
   saccadeThreshold: 0.055,
-  snapEase: 0.34,
+  snapEase: 0.3,
   settleEase: 0.1,
-  trembleAmp: 0.012,
+  trembleAmp: 0.01,
   trembleIntervalSec: 0.14,
   idleReturnSec: 4.0,
 });
 
-const BLINK = Object.freeze({
-  intervalMinSec: 3.2,
-  intervalMaxSec: 6.5,
-  idleIntervalMulWhenAway: 1.6,
-  closeSec: 0.09,
-  holdSec: 0.06,
-  openSec: 0.2,
-  closedSquash: 0.07,
-  overshoot: 1.08,
+/** Attention pulse: soft field inhale (abstract, no eyelid read). */
+const PULSE = Object.freeze({
+  intervalMinSec: 4.0,
+  intervalMaxSec: 7.5,
+  inhaleSec: 0.22,
+  holdSec: 0.1,
+  exhaleSec: 0.4,
+  depth: 0.86,
 });
 
-const SQUINT = Object.freeze({
-  /** Pointer NDC speed (units/sec) mapped to squash reduction. */
+/** Cursor speed gently compresses the field (focus). */
+const FOCUS = Object.freeze({
   speedForFull: 1.6,
-  maxNarrow: 0.3,
-  ease: 0.12,
+  maxCompress: 0.07,
+  ease: 0.1,
+});
+
+const FLOAT = Object.freeze({
+  yRateHz: 0.11,
+  yAmp: 0.9,
+  xRateHz: 0.047,
+  xAmp: 0.45,
 });
 
 const BREATHE_RATE_HZ = 0.22;
@@ -161,46 +149,57 @@ const PROFILES = Object.freeze({
     sizeMul: 0.92,
   },
   alive: {
-    noiseMul: 0.12,
-    speedMul: 0.78,
-    viscosityMul: 4.8,
+    noiseMul: 0.2,
+    speedMul: 0.8,
+    viscosityMul: 4.2,
     gravityMul: 0,
-    settleWeight: 1.15,
-    pointerInfluence: 0.55,
-    sizeMul: 0.8,
+    settleWeight: 1.05,
+    pointerInfluence: 0.6,
+    sizeMul: 0.78,
   },
 });
 
+const GATHER_CLUSTER = [{ center: [32, 34, 30], radii: [8, 7, 5] }];
+
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
-/** Active preset + user overrides → resolved ocular spec. */
-function resolveOcularSpec() {
+/** Active preset + user overrides → resolved presence spec. */
+function resolvePresenceSpec() {
   const presetName =
     (typeof globalThis !== "undefined" && globalThis.__LENOX_PRESET__) ||
-    "readable";
+    "presence";
   const tune =
     (typeof globalThis !== "undefined" && globalThis.__LENOX_TUNE__) || {};
-  const p = { ...(PRESETS[presetName] ?? PRESETS.readable), ...tune };
+  const p = { ...(PRESETS[presetName] ?? PRESETS.presence), ...tune };
 
   const s = p.entityScale;
-  const halfSep = (p.eyeSeparation * s) / 2;
+  const half = (p.nodeSpread * s) / 2;
   return {
     presetName,
-    leftX: 32 - halfSep,
-    rightX: 32 + halfSep,
-    centerY: EYE_CENTER_Y,
-    zBase: EYE_Z,
-    rx: p.apertureWidth * s,
-    ry: p.apertureHeight * s,
-    rz: 1.4,
-    aperture: p.pupilVoidSize,
-    almond: p.almond,
-    auraSpread: p.auraSpread,
-    focalRadius: p.focalRadius,
+    centerX: PRESENCE_CENTER.x,
+    centerY: PRESENCE_CENTER.y,
+    zBase: PRESENCE_CENTER.z,
+    envelopeR: p.envelope.map((r) => r * s),
+    coreR: p.core.map((r) => r * s),
+    // Calm asymmetry: the two attention nodes differ in height and size.
+    nodes: [
+      {
+        x: PRESENCE_CENTER.x - half,
+        y: PRESENCE_CENTER.y + 0.9,
+        r: p.nodeRadius * s,
+      },
+      {
+        x: PRESENCE_CENTER.x + half,
+        y: PRESENCE_CENTER.y + 0.3,
+        r: p.nodeRadius * 0.85 * s,
+      },
+    ],
+    contourLift: p.contourLift,
     focalSignalStrength: p.focalSignalStrength,
     particleOpacity: p.particleOpacity,
     particleScale: p.particleScale,
     gazeStrength: p.gazeStrength,
+    floatAmp: p.floatAmp,
   };
 }
 
@@ -211,10 +210,11 @@ export class LenoxEyesDrive {
     this.activeState = "idle";
     this.stateElapsed = 0;
     this.breathePhase = 0;
-    this.authoredShape = null; // "gather" | "eyes" | null
+    this.authoredShape = null; // "gather" | "presence" | null
     this.baseActualSize = null;
+    this.baseRestDensity = null;
 
-    // Gaze (all in centered NDC).
+    // Attention (centered NDC).
     this.pointerX = 0;
     this.pointerY = 0;
     this.gazeX = 0;
@@ -226,18 +226,16 @@ export class LenoxEyesDrive {
     this.pointerSpeed = 0;
     this.clock = 0;
 
-    // Blink.
-    this.blinkPhase = "none"; // none | closing | hold | opening
-    this.blinkTimer =
-      BLINK.intervalMinSec +
-      Math.random() * (BLINK.intervalMaxSec - BLINK.intervalMinSec);
-    this.blinkT = 0;
-    this.blinkSquash = 1;
-    this.squintSquash = 1;
+    // Attention pulse.
+    this.pulsePhase = "none"; // none | inhale | hold | exhale
+    this.pulseTimer =
+      PULSE.intervalMinSec +
+      Math.random() * (PULSE.intervalMaxSec - PULSE.intervalMinSec);
+    this.pulseT = 0;
+    this.pulseSquash = 1;
+    this.focusCompress = 1;
 
-    // Character Pass 02.
     this.spec = null;
-    this.presence = 0; // 0..1 pupil occluder fade-in while alive
   }
 
   /** @param {"idle"|"attract"|"waking"|"alive"} state */
@@ -254,77 +252,65 @@ export class LenoxEyesDrive {
     const dy = ny - this.pointerY;
     if (dx !== 0 || dy !== 0) {
       this.lastPointerMoveAt = this.clock;
-      // Instantaneous speed estimate; smoothed in update().
-      this.pointerSpeed = Math.min(
-        4,
-        Math.sqrt(dx * dx + dy * dy) * 60, // assume ~1 frame between events
-      );
+      this.pointerSpeed = Math.min(4, Math.sqrt(dx * dx + dy * dy) * 60);
     }
     this.pointerX = nx;
     this.pointerY = ny;
   }
 
-  updateBlink(dt) {
-    // Dev hook: force a blink.
+  updatePulse(dt) {
     if (typeof globalThis !== "undefined" && globalThis.__LENOX_BLINK__) {
       globalThis.__LENOX_BLINK__ = false;
-      if (this.blinkPhase === "none") {
-        this.blinkPhase = "closing";
-        this.blinkT = 0;
+      if (this.pulsePhase === "none") {
+        this.pulsePhase = "inhale";
+        this.pulseT = 0;
       }
     }
 
     if (this.activeState !== "alive") {
-      this.blinkSquash = 1;
+      this.pulseSquash = 1;
       return;
     }
 
-    if (this.blinkPhase === "none") {
-      this.blinkTimer -= dt;
-      if (this.blinkTimer <= 0) {
-        this.blinkPhase = "closing";
-        this.blinkT = 0;
+    if (this.pulsePhase === "none") {
+      this.pulseTimer -= dt;
+      if (this.pulseTimer <= 0) {
+        this.pulsePhase = "inhale";
+        this.pulseT = 0;
       }
-      this.blinkSquash = 1;
+      this.pulseSquash = 1;
       return;
     }
 
-    this.blinkT += dt;
-    if (this.blinkPhase === "closing") {
-      const t = clamp01(this.blinkT / BLINK.closeSec);
-      this.blinkSquash = 1 + (BLINK.closedSquash - 1) * t * t;
+    this.pulseT += dt;
+    if (this.pulsePhase === "inhale") {
+      const t = clamp01(this.pulseT / PULSE.inhaleSec);
+      this.pulseSquash = 1 + (PULSE.depth - 1) * t * t;
       if (t >= 1) {
-        this.blinkPhase = "hold";
-        this.blinkT = 0;
+        this.pulsePhase = "hold";
+        this.pulseT = 0;
       }
-    } else if (this.blinkPhase === "hold") {
-      this.blinkSquash = BLINK.closedSquash;
-      if (this.blinkT >= BLINK.holdSec) {
-        this.blinkPhase = "opening";
-        this.blinkT = 0;
+    } else if (this.pulsePhase === "hold") {
+      this.pulseSquash = PULSE.depth;
+      if (this.pulseT >= PULSE.holdSec) {
+        this.pulsePhase = "exhale";
+        this.pulseT = 0;
       }
-    } else if (this.blinkPhase === "opening") {
-      const t = clamp01(this.blinkT / BLINK.openSec);
-      // Reopen with slight overshoot, then settle to 1.
+    } else if (this.pulsePhase === "exhale") {
+      const t = clamp01(this.pulseT / PULSE.exhaleSec);
       const eased = 1 - Math.pow(1 - t, 3);
-      this.blinkSquash =
-        BLINK.closedSquash +
-        (BLINK.overshoot - BLINK.closedSquash) * eased -
-        (BLINK.overshoot - 1) * t * t;
+      this.pulseSquash = PULSE.depth + (1 - PULSE.depth) * eased;
       if (t >= 1) {
-        this.blinkPhase = "none";
-        this.blinkSquash = 1;
-        const away = this.clock - this.lastPointerMoveAt > GAZE.idleReturnSec;
-        const mul = away ? BLINK.idleIntervalMulWhenAway : 1;
-        this.blinkTimer =
-          (BLINK.intervalMinSec +
-            Math.random() * (BLINK.intervalMaxSec - BLINK.intervalMinSec)) *
-          mul;
+        this.pulsePhase = "none";
+        this.pulseSquash = 1;
+        this.pulseTimer =
+          PULSE.intervalMinSec +
+          Math.random() * (PULSE.intervalMaxSec - PULSE.intervalMinSec);
       }
     }
   }
 
-  updateGaze(dt) {
+  updateAttention(dt) {
     const pointerIdle =
       this.clock - this.lastPointerMoveAt > GAZE.idleReturnSec;
     const goalX = pointerIdle ? 0 : this.pointerX;
@@ -335,13 +321,11 @@ export class LenoxEyesDrive {
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > GAZE.saccadeThreshold) {
-      // Saccade: snap toward the goal.
       this.gazeX += dx * GAZE.snapEase;
       this.gazeY += dy * GAZE.snapEase;
       this.trembleX = 0;
       this.trembleY = 0;
     } else {
-      // Fixation: slow settle + micro-tremble.
       this.gazeX += dx * GAZE.settleEase;
       this.gazeY += dy * GAZE.settleEase;
       this.trembleTimer -= dt;
@@ -353,12 +337,12 @@ export class LenoxEyesDrive {
       }
     }
 
-    // Squint from smoothed pointer speed (decays when quiet).
-    this.pointerSpeed *= Math.pow(0.02, dt); // fast decay
-    const squintTarget =
+    // Focus compression from smoothed pointer speed.
+    this.pointerSpeed *= Math.pow(0.02, dt);
+    const compressTarget =
       1 -
-      Math.min(1, this.pointerSpeed / SQUINT.speedForFull) * SQUINT.maxNarrow;
-    this.squintSquash += (squintTarget - this.squintSquash) * SQUINT.ease;
+      Math.min(1, this.pointerSpeed / FOCUS.speedForFull) * FOCUS.maxCompress;
+    this.focusCompress += (compressTarget - this.focusCompress) * FOCUS.ease;
   }
 
   /**
@@ -375,8 +359,6 @@ export class LenoxEyesDrive {
       this.baseRestDensity = rt.restDensity;
     }
 
-    // Packed-volume regime: fewer particles at higher rest density so the
-    // equilibrium volume matches the authored ocular fields.
     rt.particles = Math.min(rt.particles, LENOX_PARTICLE_CAP);
     if (Number.isFinite(this.baseRestDensity)) {
       rt.restDensity = this.baseRestDensity * LENOX_REST_DENSITY_MUL;
@@ -390,30 +372,30 @@ export class LenoxEyesDrive {
         app.mlsMpmSim?.buildLenoxClusterTargets?.(GATHER_CLUSTER);
         this.authoredShape = "gather";
       }
-      if (this.activeState === "alive" && this.authoredShape !== "eyes") {
-        this.spec = resolveOcularSpec();
-        app.mlsMpmSim?.buildLenoxOcularTargets?.(this.spec);
-        this.authoredShape = "eyes";
+      if (this.activeState === "alive" && this.authoredShape !== "presence") {
+        this.spec = resolvePresenceSpec();
+        app.mlsMpmSim?.buildLenoxPresenceTargets?.(this.spec);
+        this.authoredShape = "presence";
       }
       if (this.activeState === "idle" || this.activeState === "attract") {
         this.authoredShape = null;
       }
     }
 
+    this.stateElapsed += Math.max(dt, 0);
+    if (this.activeState === "waking" && this.stateElapsed >= WAKE_DURATION_SEC) {
+      this.requestedState = "alive";
+    }
+
     // Preset hot-switch while alive (dev): re-author on change.
     if (this.activeState === "alive" && this.spec) {
       const presetName =
         (typeof globalThis !== "undefined" && globalThis.__LENOX_PRESET__) ||
-        "readable";
+        "presence";
       if (presetName !== this.spec.presetName) {
-        this.spec = resolveOcularSpec();
-        app.mlsMpmSim?.buildLenoxOcularTargets?.(this.spec);
+        this.spec = resolvePresenceSpec();
+        app.mlsMpmSim?.buildLenoxPresenceTargets?.(this.spec);
       }
-    }
-
-    this.stateElapsed += Math.max(dt, 0);
-    if (this.activeState === "waking" && this.stateElapsed >= WAKE_DURATION_SEC) {
-      this.requestedState = "alive";
     }
 
     // Ease channel values toward the state profile.
@@ -424,27 +406,21 @@ export class LenoxEyesDrive {
       cur[key] += (target[key] - cur[key]) * k;
     }
 
-    this.updateBlink(dt);
-    this.updateGaze(dt);
+    this.updatePulse(dt);
+    this.updateAttention(dt);
 
-    // Breathing keeps the alive shape organic.
     this.breathePhase += dt * BREATHE_RATE_HZ * Math.PI * 2;
     const breathe =
       this.activeState === "alive"
         ? 1 + Math.sin(this.breathePhase) * BREATHE_DEPTH
         : 1;
 
-    const spec = this.spec ?? resolveOcularSpec();
-    const gazeStrength = spec.gazeStrength;
+    const spec = this.spec ?? resolvePresenceSpec();
     const gazeOn = this.activeState === "alive" ? 1 : 0;
     const squash =
       this.activeState === "alive"
-        ? Math.min(this.blinkSquash, this.squintSquash)
+        ? Math.min(this.pulseSquash, this.focusCompress)
         : 1;
-
-    // Pupil occluders fade in once alive, out otherwise.
-    const presenceTarget = this.activeState === "alive" ? 1 : 0;
-    this.presence += (presenceTarget - this.presence) * (1 - Math.exp(-dt / 0.5));
 
     rt.noise = SOURCE_PLAY_BASE.noise * cur.noiseMul;
     rt.speed = SOURCE_PLAY_BASE.speed * cur.speedMul;
@@ -452,14 +428,21 @@ export class LenoxEyesDrive {
     rt.gravity = SOURCE_PLAY_BASE.gravity * cur.gravityMul;
 
     const gazeSimX =
-      (this.gazeX + this.trembleX) * 2 * GAZE.rangeX * gazeStrength * gazeOn;
+      (this.gazeX + this.trembleX) * 2 * GAZE.rangeX * spec.gazeStrength * gazeOn;
     const gazeSimY =
-      (this.gazeY + this.trembleY) * 2 * GAZE.rangeY * gazeStrength * gazeOn;
+      (this.gazeY + this.trembleY) * 2 * GAZE.rangeY * spec.gazeStrength * gazeOn;
 
     rt.settleWeight = cur.settleWeight * breathe;
     rt.settleOffset.set(gazeSimX, gazeSimY, 0);
+    // Gentle float/sway of the whole presence.
+    const floatOn = this.activeState === "alive" ? spec.floatAmp : 0;
+    rt.settleBob.set(
+      Math.sin(this.clock * FLOAT.xRateHz * Math.PI * 2) * FLOAT.xAmp * floatOn,
+      Math.sin(this.clock * FLOAT.yRateHz * Math.PI * 2) * FLOAT.yAmp * floatOn,
+      0,
+    );
     rt.settleSquashT = squash;
-    rt.settleSquashCenter = EYE_CENTER_Y;
+    rt.settleSquashCenter = PRESENCE_CENTER.y;
     rt.lenoxFocalBoost = spec.focalSignalStrength;
     rt.opacityT = 1 - spec.particleOpacity;
 
@@ -469,17 +452,20 @@ export class LenoxEyesDrive {
         (this.activeState === "alive" ? spec.particleScale : cur.sizeMul);
     }
 
+    // Legacy occluder layer stays dark unless explicitly debugged.
+    const debugPupils =
+      typeof globalThis !== "undefined" && !!globalThis.__LENOX_DEBUG_PUPILS__;
     app.setLenoxOcular?.({
-      leftX: spec.leftX,
-      rightX: spec.rightX,
+      leftX: spec.nodes[0].x,
+      rightX: spec.nodes[1].x,
       centerY: spec.centerY,
-      z: PUPIL_Z,
-      rx: spec.rx * spec.aperture * PUPIL_OCCLUDER_MUL,
-      ry: spec.ry * spec.aperture * PUPIL_OCCLUDER_MUL * 1.15,
+      z: 28.2,
+      rx: spec.nodes[0].r * 1.6,
+      ry: spec.nodes[0].r * 1.1,
       squash,
       gazeX: gazeSimX,
       gazeY: gazeSimY,
-      presence: this.presence,
+      presence: debugPupils && this.activeState === "alive" ? 1 : 0,
     });
 
     // Silence every other authored channel; Lenox owns the frame.

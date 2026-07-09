@@ -584,7 +584,8 @@ const buildUnifiedParticleSurfaceNodes = ({
     .toConst("lenoxBodyBase");
   const lenoxBodyLid = mix(lenoxBody, lenoxSilverLift, lenoxLidT.mul(0.5))
     .toConst("lenoxBodyLid");
-  const lenoxBodyFinal = mix(lenoxBodyLid, lenoxCyan, lenoxFocalT.mul(0.85))
+  // Attention nodes get only a restrained cyan cast, never a glowing blob.
+  const lenoxBodyFinal = mix(lenoxBodyLid, lenoxCyan, lenoxFocalT.mul(0.32))
     .toConst("lenoxBody");
 
   const surfaceColor = mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT).toConst(

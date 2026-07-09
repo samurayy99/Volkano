@@ -586,9 +586,11 @@ class mlsMpmSimulator {
     this.uniforms.settleWeight = uniform(0);
     /** Rigid offset added to settle targets (Lenox gaze); zero = chamber behavior. */
     this.uniforms.settleOffset = uniform(new THREE.Vector3());
-    /** Vertical squash of settle targets around `settleSquashCenter` (Lenox blink/squint); 1 = identity. */
+    /** Vertical squash of settle targets around `settleSquashCenter` (Lenox pulse); 1 = identity. */
     this.uniforms.settleSquashT = uniform(1);
     this.uniforms.settleSquashCenter = uniform(32);
+    /** Rigid drift applied to ALL settle targets (Lenox float/sway); zero = chamber behavior. */
+    this.uniforms.settleBob = uniform(new THREE.Vector3());
 
     this.kernels.clearGrid = Fn(() => {
       this.cellBuffer.setAtomic("x", false);
@@ -971,6 +973,7 @@ class mlsMpmSimulator {
           this.uniforms.settleSquashT.clamp(0, 1.2),
         ).toConst("settleSquashedY");
         const settleTargetPos = vec3(settleData.x, settleSquashedY, settleData.z)
+          .add(this.uniforms.settleBob)
           .add(
             this.uniforms.settleOffset.mul(
               mix(float(0.1), float(1.0), settleFocalW),
@@ -1712,6 +1715,11 @@ class mlsMpmSimulator {
     }
     this.uniforms.settleSquashT.value = runtime.settleSquashT ?? 1;
     this.uniforms.settleSquashCenter.value = runtime.settleSquashCenter ?? 32;
+    if (runtime.settleBob) {
+      this.uniforms.settleBob.value.copy(runtime.settleBob);
+    } else {
+      this.uniforms.settleBob.value.set(0, 0, 0);
+    }
   }
 
   markParticleBufferDirty() {
@@ -2195,14 +2203,15 @@ class mlsMpmSimulator {
   }
 
   /**
-   * Lenox Character Pass 02: layered ocular field authoring. Per eye:
-   *   shell — almond annulus around the pupil void (w=0)
-   *   lid   — denser upper arc, watchful pressure  (w=0.6)
-   *   aura  — sparse dissipating fog around/between the eyes (w=0.3)
-   *   focal — tight core in FRONT of the pupil occluder; carries gaze (w=1)
+   * Lenox Visual Reset: presence-field authoring. One coherent signal cloud,
+   * no facial geometry. Layers (role in target w):
+   *   envelope — large soft fog, ragged edges                (w=0.3, dim)
+   *   core     — inner living field                          (w=0)
+   *   contour  — single sweeping density arc for structure   (w=0.6)
+   *   nodes    — two asymmetric attention knots; follow gaze (w=1)
    * CPU one-shot write (same call-site class as buildAnalyticalRecallTargets).
    */
-  buildLenoxOcularTargets(spec) {
+  buildLenoxPresenceTargets(spec) {
     if (!this.settleTargetBuffer || !this.gridSize || !spec) return;
 
     const cap = this.settleTargetBuffer.length || 0;
@@ -2215,17 +2224,13 @@ class mlsMpmSimulator {
     if (particleCount <= 0) return;
 
     const {
-      leftX,
-      rightX,
+      centerX,
       centerY,
       zBase,
-      rx,
-      ry,
-      rz,
-      aperture,
-      almond,
-      auraSpread,
-      focalRadius,
+      envelopeR, // [rx, ry, rz]
+      coreR, // [rx, ry, rz]
+      nodes, // [{x, y, r}, {x, y, r}] — asymmetric attention knots
+      contourLift, // arc height factor above centerY
     } = spec;
 
     const lo = GRID_CLAMP_MARGIN + 1;
@@ -2234,67 +2239,53 @@ class mlsMpmSimulator {
     const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
     const GOLDEN = 2.399963229728653;
     const clampV = (v, loV, hiV) => Math.min(hiV, Math.max(loV, v));
-    const midX = (leftX + rightX) / 2;
 
     for (let i = 0; i < particleCount; i++) {
-      const layerRoll = hash01(i, 7.77);
+      const roll = hash01(i, 7.77);
+      const azimuth = i * GOLDEN + hash01(i, 12.9898) * 0.9;
       let x;
       let y;
       let z;
       let w;
 
-      if (layerRoll < 0.08) {
-        // Bridge fog: sparse connective field across the whole presence.
-        const az = i * GOLDEN + hash01(i, 61.17) * 1.3;
-        const r = Math.sqrt(hash01(i, 43.91));
-        x = midX + Math.cos(az) * r * ((rightX - leftX) / 2 + rx);
-        y = centerY + Math.sin(az) * r * ry * 1.5;
-        z = zBase + 1.2 + hash01(i, 27.53) * rz * 2.2;
+      if (roll < 0.42) {
+        // Envelope fog: ragged organic cloud, densest toward the middle.
+        const inc = Math.acos(2 * hash01(i, 78.233) - 1);
+        const r =
+          Math.pow(hash01(i, 39.3461), 0.62) *
+          (0.75 + hash01(i, 94.673) * 0.5);
+        x = centerX + Math.sin(inc) * Math.cos(azimuth) * r * envelopeR[0];
+        y = centerY + Math.cos(inc) * r * envelopeR[1];
+        z = zBase + Math.sin(inc) * Math.sin(azimuth) * r * envelopeR[2];
         w = 0.3;
+      } else if (roll < 0.72) {
+        // Core field: the living body of the presence.
+        const inc = Math.acos(2 * hash01(i, 51.77) - 1);
+        const r =
+          Math.sqrt(hash01(i, 43.91)) * (0.85 + hash01(i, 27.53) * 0.3);
+        x = centerX + Math.sin(inc) * Math.cos(azimuth) * r * coreR[0];
+        y = centerY + Math.cos(inc) * r * coreR[1];
+        z = zBase + Math.sin(inc) * Math.sin(azimuth) * r * coreR[2];
+        w = 0;
+      } else if (roll < 0.82) {
+        // Density contour: one sweeping arc across the upper presence.
+        const t = hash01(i, 83.313);
+        const az = Math.PI * (0.1 + 0.8 * t);
+        const r = 0.9 + hash01(i, 61.17) * 0.25;
+        x = centerX + Math.cos(az) * r * coreR[0] * 1.08;
+        y = centerY + Math.sin(az) * r * coreR[1] * contourLift;
+        z = zBase + (hash01(i, 66.29) - 0.5) * coreR[2];
+        w = 0.6;
       } else {
-        const cx = i % 2 === 0 ? leftX : rightX;
-        const roll = hash01(i, 21.21);
-        const azimuth = i * GOLDEN + hash01(i, 12.9898) * 0.9;
-
-        if (roll < 0.4) {
-          // Shell: almond annulus outside the pupil void.
-          const r01 = Math.sqrt(
-            aperture * aperture + (1 - aperture * aperture) * hash01(i, 39.3461),
-          );
-          const r = r01 * (0.92 + hash01(i, 94.673) * 0.2);
-          const xFrac = Math.abs(Math.cos(azimuth)) * Math.min(r, 1);
-          const lidTaper = 1 - almond * Math.pow(xFrac, 1.6);
-          x = cx + Math.cos(azimuth) * r * rx;
-          y = centerY + Math.sin(azimuth) * r * ry * lidTaper;
-          z = zBase + (hash01(i, 78.233) - 0.5) * 2 * rz;
-          w = 0;
-        } else if (roll < 0.58) {
-          // Upper lid arc: denser band above the aperture.
-          const t = hash01(i, 83.313);
-          const az = Math.PI * (0.14 + 0.72 * t);
-          const r = 0.98 + hash01(i, 51.77) * 0.26;
-          const xFrac = Math.abs(Math.cos(az)) * Math.min(r, 1);
-          const lidTaper = 1 - almond * Math.pow(xFrac, 1.6);
-          x = cx + Math.cos(az) * r * rx;
-          y = centerY + Math.sin(az) * r * ry * lidTaper;
-          z = zBase + (hash01(i, 66.29) - 0.5) * 1.4 * rz;
-          w = 0.6;
-        } else if (roll < 0.86) {
-          // Aura: dissipating fog around the eye.
-          const r = 1.05 + hash01(i, 94.673) * (auraSpread - 1.05);
-          x = cx + Math.cos(azimuth) * r * rx;
-          y = centerY + Math.sin(azimuth) * r * ry * 0.72;
-          z = zBase + (hash01(i, 78.233) - 0.3) * 2 * rz * 1.9;
-          w = 0.3;
-        } else {
-          // Focal core: in front of the pupil occluder, carries the gaze.
-          const fr = focalRadius * Math.sqrt(hash01(i, 17.323));
-          const fAz = i * GOLDEN + hash01(i, 91.421) * 1.7;
-          x = cx + Math.cos(fAz) * fr * rx;
-          y = centerY + Math.sin(fAz) * fr * rx * 0.8;
-          z = zBase - 2.6 - hash01(i, 33.719) * 0.8;
-          w = 1;
-        }
+        // Attention nodes: two calm, asymmetric density knots.
+        const node = nodes[i % nodes.length];
+        const fr = node.r * Math.sqrt(hash01(i, 17.323));
+        const fAz = i * GOLDEN + hash01(i, 91.421) * 1.7;
+        const fInc = Math.acos(2 * hash01(i, 33.719) - 1);
+        x = node.x + Math.sin(fInc) * Math.cos(fAz) * fr;
+        y = node.y + Math.cos(fInc) * fr * 0.8;
+        z = zBase - 1.2 + Math.sin(fInc) * Math.sin(fAz) * fr * 0.6;
+        w = 1;
       }
 
       this.settleTargetBuffer.set(i, "settleTarget", [

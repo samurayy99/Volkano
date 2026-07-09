@@ -160,7 +160,7 @@ export function LenoxProof() {
           gap: 8,
         }}
       >
-        {(["subtle", "readable", "intense"] as const).map((p) => (
+        {(["signal", "presence", "entity"] as const).map((p) => (
           <button
             key={p}
             type="button"
