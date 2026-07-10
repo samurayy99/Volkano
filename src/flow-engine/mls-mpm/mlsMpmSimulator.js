@@ -2315,52 +2315,6 @@ class mlsMpmSimulator {
     if (sb) { sb.needsUpdate = true; if (sb.value) sb.value.needsUpdate = true; }
   }
 
-  /**
-   * Lenox pre-wake: sparse, dark signal dust. A dedicated seeding concept —
-   * neither the chamber slit population nor a pre-formed body. The SAME
-   * per-index hash structure as the presence author, so every particle later
-   * flows deterministically from its dust position into its presence role.
-   *
-   * @param {{centerX:number, centerY:number, zBase:number,
-   *   spreadX:number, spreadY:number, spreadZ:number}} spec
-   */
-  buildLenoxDustTargets(spec) {
-    if (!this.settleTargetBuffer || !this.gridSize || !spec) return;
-
-    const cap = this.settleTargetBuffer.length || 0;
-    const particleCount = Math.min(
-      this.numParticles > 0
-        ? this.numParticles
-        : (this.runtime?.particles ?? cap),
-      cap,
-    );
-    if (particleCount <= 0) return;
-
-    const { centerX, centerY, zBase, spreadX, spreadY, spreadZ } = spec;
-    const lo = GRID_CLAMP_MARGIN + 1;
-    const hiX = this.gridSize.x - GRID_CLAMP_MARGIN - 1;
-    const hiY = this.gridSize.y - GRID_CLAMP_MARGIN - 1;
-    const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
-    const clampV = (v, loV, hiV) => Math.min(hiV, Math.max(loV, v));
-
-    for (let i = 0; i < particleCount; i++) {
-      // Independent hashes per axis → even, unclustered scatter. Slight
-      // center bias keeps the dust airy at the viewport edges.
-      const bx = hash01(i, 23.117) + hash01(i, 71.913) - 1; // -1..1, center-biased
-      const by = hash01(i, 47.339) + hash01(i, 5.531) - 1;
-      const bz = hash01(i, 89.771) * 2 - 1;
-      this.settleTargetBuffer.set(i, "settleTarget", [
-        clampV(centerX + bx * spreadX, lo, hiX),
-        clampV(centerY + by * spreadY, lo, hiY),
-        clampV(zBase + bz * spreadZ, lo, hiZ),
-        0.3, // uniform dim aura read pre-wake
-      ]);
-    }
-
-    const sb = this.settleTargetBuffer.buffer;
-    if (sb) { sb.needsUpdate = true; if (sb.value) sb.value.needsUpdate = true; }
-  }
-
   seedMatureIdlePopulation() {
     this.carvePopulationSlit({
       splitPush: IDLE_SLIT_PARAMS.splitPush,
@@ -2368,6 +2322,47 @@ class mlsMpmSimulator {
     });
     this.buildCanonicalReturnBodyTargets();
     this.buildAnalyticalRecallTargets();
+  }
+
+  /**
+   * Lenox: reseed particle POSITIONS as free signal dust (CPU one-shot,
+   * same class as carvePopulationSlit). Pre-wake there are NO settle
+   * targets at all — the dust obeys pure fluid physics (momentum, swirls,
+   * wall containment), exactly like the original source play. No springs,
+   * no bounce-back.
+   */
+  seedLenoxDustPopulation({ centerX, centerY, zBase, spreadX, spreadY, spreadZ }) {
+    if (!this.runtime || !this.particleBuffer) return;
+
+    const particleCount = this.particleBuffer.length || 0;
+    if (particleCount <= 0) return;
+
+    const lo = GRID_CLAMP_MARGIN + 1;
+    const hiX = this.gridSize.x - GRID_CLAMP_MARGIN - 1;
+    const hiY = this.gridSize.y - GRID_CLAMP_MARGIN - 1;
+    const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
+    const clampV = (v, loV, hiV) => Math.min(hiV, Math.max(loV, v));
+    const zeroVelocity = [0, 0, 0];
+    const zeroColor = [0, 0, 0];
+    const zeroMat3 = new Array(12).fill(0);
+
+    for (let i = 0; i < particleCount; i++) {
+      const bx = hash01(i, 23.117) + hash01(i, 71.913) - 1; // center-biased
+      const by = hash01(i, 47.339) + hash01(i, 5.531) - 1;
+      const bz = hash01(i, 89.771) * 2 - 1;
+      this.particleBuffer.set(i, "position", [
+        clampV(centerX + bx * spreadX, lo, hiX),
+        clampV(centerY + by * spreadY, lo, hiY),
+        clampV(zBase + bz * spreadZ, lo, hiZ),
+      ]);
+      this.particleBuffer.set(i, "velocity", zeroVelocity);
+      this.particleBuffer.set(i, "C", zeroMat3);
+      this.particleBuffer.set(i, "color", zeroColor);
+      this.particleBuffer.set(i, "heat", 0);
+      this.particleBuffer.set(i, "dissolveState", [0, 0]);
+    }
+
+    this.markParticleBufferDirty();
   }
 
   dispose() {

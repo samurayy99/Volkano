@@ -102,6 +102,18 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.onResize();
 
     this.app.promoteIdlePopulation();
+    if (this.options.lenoxMode) {
+      // Reseed positions as free signal dust: pre-wake play is pure fluid
+      // physics with zero settle targets (no springs, no bounce-back).
+      this.app.mlsMpmSim?.seedLenoxDustPopulation?.({
+        centerX: 32,
+        centerY: 36.5,
+        zBase: 30,
+        spreadX: 31,
+        spreadY: 17,
+        spreadZ: 8,
+      });
+    }
     this.app.clearPointer();
     this.app.applyEngineRuntime(sourcePlayEngineRuntime());
     document.addEventListener("visibilitychange", this.onVisibilityChange);

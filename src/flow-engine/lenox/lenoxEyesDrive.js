@@ -52,13 +52,13 @@ const FACE = Object.freeze({
   mouthY: -3.6,
 });
 
-/** Pre-wake signal dust: wide, airy, mostly negative space. */
+/**
+ * Pre-wake dust look. Positions are seeded once at boot (bridge →
+ * seedLenoxDustPopulation); physics is pure fluid with zero targets.
+ */
 const DUST = Object.freeze({
-  spreadX: 26,
-  spreadY: 13,
-  spreadZ: 7,
-  particleScale: 0.55,
-  particleOpacity: 0.5,
+  particleScale: 0.62,
+  particleOpacity: 0.62,
 });
 
 /**
@@ -67,29 +67,33 @@ const DUST = Object.freeze({
  * damping, LOCAL pointer response only (influence stays conservative).
  */
 const LIFECYCLE = Object.freeze({
+  // Pre-wake: PLAY. ZERO tethers — pure fluid physics like the original
+  // source play (momentum, swirls, wall containment). The dust positions
+  // are seeded once at boot (seedLenoxDustPopulation); the mouse pushes
+  // them freely in every direction and nothing springs back.
   dormant: {
-    noiseMul: 0.4,
-    speedMul: 0.72,
-    viscosityMul: 2.6,
+    noiseMul: 0.5,
+    speedMul: 1.0,
+    viscosityMul: 1.2,
     gravityMul: 0,
-    settleWeight: 0.09,
-    pointerInfluence: 0.7,
+    settleWeight: 0,
+    pointerInfluence: 2.2,
   },
   engaged: {
-    noiseMul: 0.45,
-    speedMul: 0.78,
-    viscosityMul: 2.4,
+    noiseMul: 0.55,
+    speedMul: 1.02,
+    viscosityMul: 1.1,
     gravityMul: 0,
-    settleWeight: 0.1,
-    pointerInfluence: 0.95,
+    settleWeight: 0,
+    pointerInfluence: 2.6,
   },
   armed: {
-    noiseMul: 0.4,
-    speedMul: 0.75,
-    viscosityMul: 2.6,
+    noiseMul: 0.5,
+    speedMul: 1.0,
+    viscosityMul: 1.2,
     gravityMul: 0,
-    settleWeight: 0.12,
-    pointerInfluence: 0.85,
+    settleWeight: 0,
+    pointerInfluence: 2.4,
   },
   awakening: {
     noiseMul: 0.28,
@@ -488,7 +492,8 @@ export class LenoxEyesDrive {
     this.spec = this.spec ?? resolvePresenceSpec();
     const spec = this.spec;
 
-    // Lifecycle transitions + shape authoring (dust ↔ presence).
+    // Lifecycle transitions. Pre-wake has NO settle targets (pure fluid);
+    // presence targets are authored once when awakening starts.
     if (this.requestedState !== this.activeState) {
       this.activeState = this.requestedState;
       this.stateElapsed = 0;
@@ -496,21 +501,13 @@ export class LenoxEyesDrive {
     const wantsShape =
       this.activeState === "awakening" || this.activeState === "present"
         ? "presence"
-        : "dust";
-    if (this.authoredShape !== wantsShape) {
-      if (wantsShape === "dust") {
-        app.mlsMpmSim?.buildLenoxDustTargets?.({
-          centerX: spec.centerX,
-          centerY: spec.centerY,
-          zBase: spec.zBase,
-          spreadX: DUST.spreadX * spec.scale,
-          spreadY: DUST.spreadY * spec.scale,
-          spreadZ: DUST.spreadZ,
-        });
-      } else {
-        app.mlsMpmSim?.buildLenoxPresenceTargets?.(spec);
-      }
-      this.authoredShape = wantsShape;
+        : null;
+    if (wantsShape === "presence" && this.authoredShape !== "presence") {
+      app.mlsMpmSim?.buildLenoxPresenceTargets?.(spec);
+      this.authoredShape = "presence";
+    }
+    if (wantsShape === null) {
+      this.authoredShape = null;
     }
     this.stateElapsed += Math.max(dt, 0);
 
