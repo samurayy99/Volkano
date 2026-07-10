@@ -1,16 +1,27 @@
 /**
- * Lenox presence driver — Expressive Character Pass.
+ * Lenox presence driver — Recovery Pass.
  *
- * Layered identity (learned across passes 01–04):
- *   readability — deterministic rig: deformable eyes, brows, mouth, head
- *   emotion     — pose grammar: shape presets lerped per frame (this file)
- *   life        — MLS-MPM particles wrapping the rig (aura, breath, wake)
+ * Lifecycle (legacy aliases accepted):
+ *   dormant/engaged — sparse, dark, calm SIGNAL DUST (dedicated dust
+ *     seeding; never the chamber slit, never a pre-formed body). Pointer
+ *     reaction is local and damped; the disturbed region settles in ~1s.
+ *   armed          — same dust, marginal focus; WAKE affordance is UI-side.
+ *   awakening      — the birth: dust flows into presence roles (~2.8s):
+ *     gather → landmarks → eyes open → gaze acquires user.
+ *   present        — expressive rig (emotions/reactions from the accepted
+ *     character pass) framed by fog; face always readable.
  *
- * States: idle / attract / waking / alive. Emotions (alive only): neutral,
- * happy, sad, angry, surprised, suspicious, thinking, listening. Temporary
- * reactions: laugh, startle, tired. Blink/saccade/gaze-clamp from the gaze
- * rig pass. NOTE: camera views the sim from -z → sim +x = screen LEFT, so
- * every screen-x intent is negated into sim space.
+ * Ownership rules:
+ *   – the rig owns blink entirely; the particle field is never squashed
+ *   – shell gaze factor is 0 in the kernel; only focal particles follow,
+ *     clamped to the same travel range as the rig anchors
+ *   – pointer force in present is near-zero: the cursor must not drag
+ *     particles through the face
+ *   – brand default cyan/silver; emotion accent colors only behind
+ *     __LENOX_TUNE__.emotionColors
+ *
+ * NOTE: the camera views the sim from -z → sim +x = screen LEFT; every
+ * screen-x intent is negated into sim space.
  */
 
 const SOURCE_PLAY_BASE = Object.freeze({
@@ -22,154 +33,149 @@ const SOURCE_PLAY_BASE = Object.freeze({
 
 const EASE_TAU_SEC = 0.45;
 const POSE_TAU_SEC = 0.22;
-const WAKE_DURATION_SEC = 2.4;
 const LENOX_PARTICLE_CAP = 8192;
 const LENOX_REST_DENSITY_MUL = 12;
 
 const PRESENCE_CENTER = Object.freeze({ x: 32, y: 36.5, z: 30 });
 const EYE_Z = 28.4;
 const DEG = Math.PI / 180;
+const BRAND_ACCENT = "#46d4ee";
 
-/** Head geometry (sim units). */
 const FACE = Object.freeze({
   eyeHalfSep: 5.9,
-  eyeY: 1.6, // above presence center
+  eyeY: 1.6,
   eyeRx: 3.3,
   eyeRy: 2.1,
   anchorR: 0.8,
   browLen: 2.6,
-  browY: 4.6, // above presence center
-  mouthY: -3.6, // below presence center
+  browY: 4.6,
+  mouthY: -3.6,
+});
+
+/** Pre-wake signal dust: wide, airy, mostly negative space. */
+const DUST = Object.freeze({
+  spreadX: 26,
+  spreadY: 13,
+  spreadZ: 7,
+  particleScale: 0.55,
+  particleOpacity: 0.5,
 });
 
 /**
- * Emotion pose grammar. Per-side arrays are [left, right] in SCREEN terms.
- * eyeRotDeg positive = outer corner up. browRotDeg positive = inner end up.
+ * Lifecycle fluid profiles. Pre-wake: tiny per-particle tethers to scattered
+ * dust targets (no coherent mass → no global oscillation), low noise, high
+ * damping, LOCAL pointer response only (influence stays conservative).
  */
-const EMOTIONS = Object.freeze({
-  neutral: {
-    eyeSy: [1, 1],
-    eyeSx: [1, 1],
-    eyeRotDeg: [0, 0],
-    browYOff: [0, 0],
-    browRotDeg: [0, 0],
-    browOn: 1,
-    mouthCurve: 0.18,
-    mouthWidth: 3.6,
-    mouthOpen: 0,
-    tiltDeg: 0,
-    accent: "#46d4ee",
-    noiseD: 0,
-    speedD: 0,
+const LIFECYCLE = Object.freeze({
+  dormant: {
+    noiseMul: 0.4,
+    speedMul: 0.72,
+    viscosityMul: 2.6,
+    gravityMul: 0,
+    settleWeight: 0.09,
+    pointerInfluence: 0.7,
   },
-  happy: {
-    eyeSy: [0.5, 0.5],
-    eyeSx: [1.02, 1.02],
-    eyeRotDeg: [12, 12],
-    browYOff: [0.7, 0.7],
-    browRotDeg: [6, 6],
-    browOn: 1,
-    mouthCurve: 1,
-    mouthWidth: 4.6,
-    mouthOpen: 0,
-    tiltDeg: 1.5,
-    accent: "#63e0c8",
-    noiseD: 0.25,
-    speedD: 0.15,
+  engaged: {
+    noiseMul: 0.45,
+    speedMul: 0.78,
+    viscosityMul: 2.4,
+    gravityMul: 0,
+    settleWeight: 0.1,
+    pointerInfluence: 0.95,
   },
-  sad: {
-    eyeSy: [0.72, 0.72],
-    eyeSx: [1, 1],
-    eyeRotDeg: [-11, -11],
-    browYOff: [-0.2, -0.2],
-    browRotDeg: [-13, -13],
-    browOn: 1,
-    mouthCurve: -0.85,
-    mouthWidth: 3.4,
-    mouthOpen: 0,
-    tiltDeg: -2,
-    accent: "#6f9bff",
-    noiseD: -0.35,
-    speedD: -0.25,
+  armed: {
+    noiseMul: 0.4,
+    speedMul: 0.75,
+    viscosityMul: 2.6,
+    gravityMul: 0,
+    settleWeight: 0.12,
+    pointerInfluence: 0.85,
   },
-  angry: {
-    eyeSy: [0.52, 0.52],
-    eyeSx: [0.98, 0.98],
-    eyeRotDeg: [-16, -16],
-    browYOff: [-1.3, -1.3],
-    browRotDeg: [-24, -24],
-    browOn: 1,
-    mouthCurve: -0.3,
-    mouthWidth: 2.9,
-    mouthOpen: 0,
-    tiltDeg: 0,
-    accent: "#ff6b5e",
-    noiseD: 0.45,
-    speedD: 0.3,
+  awakening: {
+    noiseMul: 0.28,
+    speedMul: 1.05,
+    viscosityMul: 3.4,
+    gravityMul: 0,
+    settleWeight: 0.9, // overridden by the gather ramp
+    pointerInfluence: 0.2,
   },
-  surprised: {
-    eyeSy: [1.4, 1.4],
-    eyeSx: [1.12, 1.12],
-    eyeRotDeg: [0, 0],
-    browYOff: [1.5, 1.5],
-    browRotDeg: [0, 0],
-    browOn: 1,
-    mouthCurve: 0,
-    mouthWidth: 2.2,
-    mouthOpen: 1,
-    tiltDeg: 0,
-    accent: "#d98cff",
-    noiseD: 0.2,
-    speedD: 0.1,
-  },
-  suspicious: {
-    eyeSy: [0.34, 0.9],
-    eyeSx: [1, 1],
-    eyeRotDeg: [-6, 4],
-    browYOff: [-0.9, 0.9],
-    browRotDeg: [-10, 12],
-    browOn: 1,
-    mouthCurve: 0.05,
-    mouthWidth: 3.0,
-    mouthOpen: 0,
-    tiltDeg: -1.5,
-    accent: "#8fe08a",
-    noiseD: -0.2,
-    speedD: -0.1,
-  },
-  thinking: {
-    eyeSy: [0.8, 0.8],
-    eyeSx: [1, 1],
-    eyeRotDeg: [4, 4],
-    browYOff: [0.4, 1.1],
-    browRotDeg: [4, 10],
-    browOn: 1,
-    mouthCurve: 0,
-    mouthWidth: 1.6,
-    mouthOpen: 1,
-    tiltDeg: 2,
-    accent: "#c99df2",
-    noiseD: -0.15,
-    speedD: -0.1,
-  },
-  listening: {
-    eyeSy: [1.12, 1.12],
-    eyeSx: [1.04, 1.04],
-    eyeRotDeg: [2, 2],
-    browYOff: [0.5, 0.5],
-    browRotDeg: [3, 3],
-    browOn: 1,
-    mouthCurve: 0.08,
-    mouthWidth: 2.8,
-    mouthOpen: 0,
-    tiltDeg: 0,
-    accent: "#ffffff",
-    noiseD: -0.25,
-    speedD: -0.15,
+  present: {
+    noiseMul: 0.14,
+    speedMul: 0.78,
+    viscosityMul: 4.5,
+    gravityMul: 0,
+    settleWeight: 1.05,
+    pointerInfluence: 0.1,
   },
 });
 
-/** Temporary reactions layered over the emotion pose. */
+const STATE_ALIASES = Object.freeze({
+  idle: "dormant",
+  attract: "engaged",
+  waking: "awakening",
+  alive: "present",
+});
+
+/** Awakening beats (seconds; reduced motion compresses to ~1.2s total). */
+const AWAKENING = Object.freeze({
+  gatherEnd: 1.2,
+  landmarksEnd: 1.8,
+  eyesOpenEnd: 2.4,
+  acquireEnd: 2.9,
+  reducedTotal: 1.2,
+});
+
+const EMOTIONS = Object.freeze({
+  neutral: {
+    eyeSy: [1, 1], eyeSx: [1, 1], eyeRotDeg: [0, 0],
+    browYOff: [0, 0], browRotDeg: [0, 0], browOn: 1,
+    mouthCurve: 0.18, mouthWidth: 3.6, mouthOpen: 0,
+    tiltDeg: 0, accent: BRAND_ACCENT, noiseD: 0, speedD: 0,
+  },
+  happy: {
+    eyeSy: [0.5, 0.5], eyeSx: [1.02, 1.02], eyeRotDeg: [12, 12],
+    browYOff: [0.7, 0.7], browRotDeg: [6, 6], browOn: 1,
+    mouthCurve: 1, mouthWidth: 4.6, mouthOpen: 0,
+    tiltDeg: 1.5, accent: "#63e0c8", noiseD: 0.2, speedD: 0.12,
+  },
+  sad: {
+    eyeSy: [0.72, 0.72], eyeSx: [1, 1], eyeRotDeg: [-11, -11],
+    browYOff: [-0.2, -0.2], browRotDeg: [-13, -13], browOn: 1,
+    mouthCurve: -0.85, mouthWidth: 3.4, mouthOpen: 0,
+    tiltDeg: -2, accent: "#6f9bff", noiseD: -0.3, speedD: -0.2,
+  },
+  angry: {
+    eyeSy: [0.52, 0.52], eyeSx: [0.98, 0.98], eyeRotDeg: [-16, -16],
+    browYOff: [-1.3, -1.3], browRotDeg: [-24, -24], browOn: 1,
+    mouthCurve: -0.3, mouthWidth: 2.9, mouthOpen: 0,
+    tiltDeg: 0, accent: "#ff6b5e", noiseD: 0.35, speedD: 0.2,
+  },
+  surprised: {
+    eyeSy: [1.4, 1.4], eyeSx: [1.12, 1.12], eyeRotDeg: [0, 0],
+    browYOff: [1.5, 1.5], browRotDeg: [0, 0], browOn: 1,
+    mouthCurve: 0, mouthWidth: 2.2, mouthOpen: 1,
+    tiltDeg: 0, accent: "#d98cff", noiseD: 0.15, speedD: 0.08,
+  },
+  suspicious: {
+    eyeSy: [0.34, 0.9], eyeSx: [1, 1], eyeRotDeg: [-6, 4],
+    browYOff: [-0.9, 0.9], browRotDeg: [-10, 12], browOn: 1,
+    mouthCurve: 0.05, mouthWidth: 3.0, mouthOpen: 0,
+    tiltDeg: -1.5, accent: "#8fe08a", noiseD: -0.15, speedD: -0.08,
+  },
+  thinking: {
+    eyeSy: [0.8, 0.8], eyeSx: [1, 1], eyeRotDeg: [4, 4],
+    browYOff: [0.4, 1.1], browRotDeg: [4, 10], browOn: 1,
+    mouthCurve: 0, mouthWidth: 1.6, mouthOpen: 1,
+    tiltDeg: 2, accent: "#c99df2", noiseD: -0.12, speedD: -0.08,
+  },
+  listening: {
+    eyeSy: [1.12, 1.12], eyeSx: [1.04, 1.04], eyeRotDeg: [2, 2],
+    browYOff: [0.5, 0.5], browRotDeg: [3, 3], browOn: 1,
+    mouthCurve: 0.08, mouthWidth: 2.8, mouthOpen: 0,
+    tiltDeg: 0, accent: "#ffffff", noiseD: -0.2, speedD: -0.12,
+  },
+});
+
 const REACTIONS = Object.freeze({
   laugh: { duration: 1.6 },
   startle: { duration: 0.85 },
@@ -209,51 +215,13 @@ const FLOAT = Object.freeze({
 const BREATHE_RATE_HZ = 0.22;
 const BREATHE_DEPTH = 0.05;
 
-const PROFILES = Object.freeze({
-  idle: {
-    noiseMul: 1.05,
-    speedMul: 0.95,
-    viscosityMul: 1.4,
-    gravityMul: 0.1,
-    settleWeight: 0,
-    pointerInfluence: 1,
-    sizeMul: 1,
-  },
-  attract: {
-    noiseMul: 0.75,
-    speedMul: 1.0,
-    viscosityMul: 1.6,
-    gravityMul: 0.06,
-    settleWeight: 0.05,
-    pointerInfluence: 2.4,
-    sizeMul: 1,
-  },
-  waking: {
-    noiseMul: 0.35,
-    speedMul: 1.2,
-    viscosityMul: 3.2,
-    gravityMul: 0,
-    settleWeight: 0.85,
-    pointerInfluence: 0.4,
-    sizeMul: 0.92,
-  },
-  alive: {
-    noiseMul: 0.2,
-    speedMul: 0.8,
-    viscosityMul: 4.2,
-    gravityMul: 0,
-    settleWeight: 1.05,
-    pointerInfluence: 0.6,
-    sizeMul: 0.78,
-  },
-});
-
-const GATHER_CLUSTER = [{ center: [32, 34, 30], radii: [8, 7, 5] }];
-
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const clampRange = (v, m) => Math.max(-m, Math.min(m, v));
+const smooth01 = (x) => {
+  const t = clamp01(x);
+  return t * t * (3 - 2 * t);
+};
 
-/** Particle wrap spec (envelope/core/contour/nodes around the face). */
 function resolvePresenceSpec() {
   const tune =
     (typeof globalThis !== "undefined" && globalThis.__LENOX_TUNE__) || {};
@@ -264,49 +232,46 @@ function resolvePresenceSpec() {
     zBase: PRESENCE_CENTER.z,
     envelopeR: [13.5 * s, 7 * s, 3.2 * s],
     coreR: [9 * s, 5 * s, 2.4 * s],
+    // Small backing knots BEHIND the rig anchors (one pupil signal).
     nodes: [
-      { x: PRESENCE_CENTER.x - FACE.eyeHalfSep * s, y: PRESENCE_CENTER.y + FACE.eyeY, r: 2.0 * s },
-      { x: PRESENCE_CENTER.x + FACE.eyeHalfSep * s, y: PRESENCE_CENTER.y + FACE.eyeY, r: 1.7 * s },
+      { x: PRESENCE_CENTER.x - FACE.eyeHalfSep * s, y: PRESENCE_CENTER.y + FACE.eyeY, r: 1.15 * s },
+      { x: PRESENCE_CENTER.x + FACE.eyeHalfSep * s, y: PRESENCE_CENTER.y + FACE.eyeY, r: 0.95 * s },
     ],
     contourLift: 1.02,
     scale: s,
-    particleScale: tune.particleScale ?? 0.76,
+    particleScale:
+      tune.particleScale ??
+      (typeof window !== "undefined" && window.innerWidth < 768 ? 0.52 : 0.76),
     particleOpacity: tune.particleOpacity ?? 0.92,
     gazeStrength: tune.gazeStrength ?? 1,
-    focalSignalStrength: tune.focalSignalStrength ?? 0.25,
+    focalSignalStrength: tune.focalSignalStrength ?? 0.2,
     floatAmp: tune.floatAmp ?? 0.9,
+    emotionColors: tune.emotionColors === true,
   };
 }
 
-/** Flat pose parameter vector (lerped every frame). */
 function poseFromEmotion(e) {
   return {
-    eyeSyL: e.eyeSy[0],
-    eyeSyR: e.eyeSy[1],
-    eyeSxL: e.eyeSx[0],
-    eyeSxR: e.eyeSx[1],
-    eyeRotL: e.eyeRotDeg[0] * DEG,
-    eyeRotR: e.eyeRotDeg[1] * DEG,
-    browYL: e.browYOff[0],
-    browYR: e.browYOff[1],
-    browRotL: e.browRotDeg[0] * DEG,
-    browRotR: e.browRotDeg[1] * DEG,
+    eyeSyL: e.eyeSy[0], eyeSyR: e.eyeSy[1],
+    eyeSxL: e.eyeSx[0], eyeSxR: e.eyeSx[1],
+    eyeRotL: e.eyeRotDeg[0] * DEG, eyeRotR: e.eyeRotDeg[1] * DEG,
+    browYL: e.browYOff[0], browYR: e.browYOff[1],
+    browRotL: e.browRotDeg[0] * DEG, browRotR: e.browRotDeg[1] * DEG,
     browOn: e.browOn,
-    mouthCurve: e.mouthCurve,
-    mouthWidth: e.mouthWidth,
-    mouthOpen: e.mouthOpen,
+    mouthCurve: e.mouthCurve, mouthWidth: e.mouthWidth, mouthOpen: e.mouthOpen,
     tilt: e.tiltDeg * DEG,
   };
 }
 
 export class LenoxEyesDrive {
-  constructor() {
-    this.current = { ...PROFILES.idle };
-    this.requestedState = "idle";
-    this.activeState = "idle";
+  constructor(options = {}) {
+    this.reducedMotion = !!options.reducedMotion;
+    this.requestedState = "dormant";
+    this.activeState = "dormant";
     this.stateElapsed = 0;
+    this.current = { ...LIFECYCLE.dormant };
+    this.authoredShape = null; // "dust" | "presence" | null
     this.breathePhase = 0;
-    this.authoredShape = null;
     this.baseActualSize = null;
     this.baseRestDensity = null;
     this.clock = 0;
@@ -321,7 +286,7 @@ export class LenoxEyesDrive {
     this.trembleTimer = 0;
     this.lastPointerMoveAt = 0;
 
-    // Blink.
+    // Blink (rig-owned).
     this.blinkPhase = "none";
     this.blinkTimer =
       BLINK.intervalMinSec +
@@ -329,33 +294,30 @@ export class LenoxEyesDrive {
     this.blinkT = 0;
     this.blinkScale = 1;
 
-    // Emotion + reaction.
+    // Affect + reaction.
     this.emotion = "neutral";
     this.pose = poseFromEmotion(EMOTIONS.neutral);
-    this.accent = EMOTIONS.neutral.accent;
-    this.reaction = null; // {name, t}
+    this.accent = BRAND_ACCENT;
+    this.reaction = null;
 
     this.spec = null;
     this.rigPresence = 0;
   }
 
-  /** @param {"idle"|"attract"|"waking"|"alive"} state */
   setState(state) {
-    if (!PROFILES[state] || state === this.requestedState) return;
-    this.requestedState = state;
+    const canonical = STATE_ALIASES[state] ?? state;
+    if (!LIFECYCLE[canonical] || canonical === this.requestedState) return;
+    this.requestedState = canonical;
   }
 
-  /** @param {keyof typeof EMOTIONS} emotion */
   setEmotion(emotion) {
     if (EMOTIONS[emotion]) this.emotion = emotion;
   }
 
-  /** @param {"laugh"|"startle"|"tired"} name */
   triggerReaction(name) {
     if (REACTIONS[name]) this.reaction = { name, t: 0 };
   }
 
-  /** Pointer in centered NDC (-0.5..0.5, +y up). */
   setGazeTarget(x, y) {
     const nx = Math.max(-0.5, Math.min(0.5, x));
     const ny = Math.max(-0.5, Math.min(0.5, y));
@@ -366,6 +328,17 @@ export class LenoxEyesDrive {
     this.pointerY = ny;
   }
 
+  awakeningBeats() {
+    if (!this.reducedMotion) return AWAKENING;
+    const f = AWAKENING.reducedTotal / AWAKENING.acquireEnd;
+    return {
+      gatherEnd: AWAKENING.gatherEnd * f,
+      landmarksEnd: AWAKENING.landmarksEnd * f,
+      eyesOpenEnd: AWAKENING.eyesOpenEnd * f,
+      acquireEnd: AWAKENING.reducedTotal,
+    };
+  }
+
   updateBlink(dt) {
     if (typeof globalThis !== "undefined" && globalThis.__LENOX_BLINK__) {
       globalThis.__LENOX_BLINK__ = false;
@@ -374,7 +347,7 @@ export class LenoxEyesDrive {
         this.blinkT = 0;
       }
     }
-    if (this.activeState !== "alive") {
+    if (this.activeState !== "present") {
       this.blinkScale = 1;
       return;
     }
@@ -403,7 +376,8 @@ export class LenoxEyesDrive {
       }
     } else {
       const t = clamp01(this.blinkT / BLINK.openSec);
-      this.blinkScale = BLINK.closedScale + (1 - BLINK.closedScale) * (1 - Math.pow(1 - t, 3));
+      this.blinkScale =
+        BLINK.closedScale + (1 - BLINK.closedScale) * (1 - Math.pow(1 - t, 3));
       if (t >= 1) {
         this.blinkPhase = "none";
         this.blinkScale = 1;
@@ -428,20 +402,27 @@ export class LenoxEyesDrive {
     } else {
       this.gazeX += dx * GAZE.settleEase;
       this.gazeY += dy * GAZE.settleEase;
-      this.trembleTimer -= dt;
-      if (this.trembleTimer <= 0) {
-        this.trembleTimer = GAZE.trembleIntervalSec * (0.7 + Math.random() * 0.6);
-        this.trembleX = (Math.random() - 0.5) * 2 * GAZE.trembleAmp;
-        this.trembleY = (Math.random() - 0.5) * 2 * GAZE.trembleAmp;
+      // Micro-tremor only while present (never pre-wake).
+      if (this.activeState === "present") {
+        this.trembleTimer -= dt;
+        if (this.trembleTimer <= 0) {
+          this.trembleTimer =
+            GAZE.trembleIntervalSec * (0.7 + Math.random() * 0.6);
+          this.trembleX = (Math.random() - 0.5) * 2 * GAZE.trembleAmp;
+          this.trembleY = (Math.random() - 0.5) * 2 * GAZE.trembleAmp;
+        }
+      } else {
+        this.trembleX = 0;
+        this.trembleY = 0;
       }
     }
   }
 
-  /** Reaction overlay: mutates the target pose + returns head motion. */
   applyReaction(target, dt) {
     const head = { bounceY: 0, bounceX: 0, tiltAdd: 0, squash: 1 };
-    if (!this.reaction) return head;
+    if (!this.reaction || this.activeState !== "present") return head;
     const { name, t } = this.reaction;
+    const motion = this.reducedMotion ? 0.35 : 1;
 
     if (name === "laugh") {
       target.eyeSyL = 0.38;
@@ -449,11 +430,11 @@ export class LenoxEyesDrive {
       target.eyeRotL = 14 * DEG;
       target.eyeRotR = 14 * DEG;
       target.mouthCurve = 1;
-      target.mouthWidth = 5.0 + Math.sin(t * 18) * 0.5;
+      target.mouthWidth = 5.0 + Math.sin(t * 18) * 0.5 * motion;
       target.mouthOpen = 0;
-      head.bounceY = Math.abs(Math.sin(t * 10)) * 0.8;
-      head.tiltAdd = Math.sin(t * 5) * 2.5 * DEG;
-      head.squash = 1 - Math.abs(Math.sin(t * 10)) * 0.06;
+      head.bounceY = Math.abs(Math.sin(t * 10)) * 0.8 * motion;
+      head.tiltAdd = Math.sin(t * 5) * 2.5 * DEG * motion;
+      head.squash = 1 - Math.abs(Math.sin(t * 10)) * 0.06 * motion;
     } else if (name === "startle") {
       const k = Math.exp(-t * 4);
       target.eyeSyL = 1.5;
@@ -464,8 +445,8 @@ export class LenoxEyesDrive {
       target.browYR = 1.8;
       target.mouthOpen = 1;
       target.mouthWidth = 2.0;
-      head.bounceY = k * 1.4;
-      head.squash = 1 + k * 0.08;
+      head.bounceY = k * 1.4 * motion;
+      head.squash = 1 + k * 0.08 * motion;
     } else if (name === "tired") {
       const cyc = t / REACTIONS.tired.duration;
       if (cyc < 0.75) {
@@ -476,13 +457,12 @@ export class LenoxEyesDrive {
         target.browYR = -droop * 0.8;
         target.mouthCurve = 0.05;
         target.mouthWidth = 2.6;
-        head.bounceY = -droop * 1.3;
-        head.tiltAdd = droop * 4 * DEG;
+        head.bounceY = -droop * 1.3 * motion;
+        head.tiltAdd = droop * 4 * DEG * motion;
       } else {
-        // Snap awake.
         target.eyeSyL = 1.3;
         target.eyeSyR = 1.3;
-        head.bounceY = 0.5;
+        head.bounceY = 0.5 * motion;
       }
     }
 
@@ -505,30 +485,42 @@ export class LenoxEyesDrive {
       rt.restDensity = this.baseRestDensity * LENOX_REST_DENSITY_MUL;
     }
 
-    // State one-shots.
+    this.spec = this.spec ?? resolvePresenceSpec();
+    const spec = this.spec;
+
+    // Lifecycle transitions + shape authoring (dust ↔ presence).
     if (this.requestedState !== this.activeState) {
       this.activeState = this.requestedState;
       this.stateElapsed = 0;
-      if (this.activeState === "waking" && this.authoredShape !== "gather") {
-        app.mlsMpmSim?.buildLenoxClusterTargets?.(GATHER_CLUSTER);
-        this.authoredShape = "gather";
+    }
+    const wantsShape =
+      this.activeState === "awakening" || this.activeState === "present"
+        ? "presence"
+        : "dust";
+    if (this.authoredShape !== wantsShape) {
+      if (wantsShape === "dust") {
+        app.mlsMpmSim?.buildLenoxDustTargets?.({
+          centerX: spec.centerX,
+          centerY: spec.centerY,
+          zBase: spec.zBase,
+          spreadX: DUST.spreadX * spec.scale,
+          spreadY: DUST.spreadY * spec.scale,
+          spreadZ: DUST.spreadZ,
+        });
+      } else {
+        app.mlsMpmSim?.buildLenoxPresenceTargets?.(spec);
       }
-      if (this.activeState === "alive" && this.authoredShape !== "presence") {
-        this.spec = resolvePresenceSpec();
-        app.mlsMpmSim?.buildLenoxPresenceTargets?.(this.spec);
-        this.authoredShape = "presence";
-      }
-      if (this.activeState === "idle" || this.activeState === "attract") {
-        this.authoredShape = null;
-      }
+      this.authoredShape = wantsShape;
     }
     this.stateElapsed += Math.max(dt, 0);
-    if (this.activeState === "waking" && this.stateElapsed >= WAKE_DURATION_SEC) {
-      this.requestedState = "alive";
+
+    const beats = this.awakeningBeats();
+    if (this.activeState === "awakening" && this.stateElapsed >= beats.acquireEnd) {
+      this.requestedState = "present";
     }
 
     // Fluid profile ease.
-    const profile = PROFILES[this.activeState];
+    const profile = LIFECYCLE[this.activeState];
     const k = 1 - Math.exp(-Math.max(dt, 0) / EASE_TAU_SEC);
     const cur = this.current;
     for (const key of Object.keys(cur)) {
@@ -538,79 +530,133 @@ export class LenoxEyesDrive {
     this.updateBlink(dt);
     this.updateGaze(dt);
 
-    // Emotion pose target (+ reaction overlay), lerped.
-    const emotionDef = EMOTIONS[this.emotion] ?? EMOTIONS.neutral;
+    // Affect pose (present only).
+    const emotionDef =
+      this.activeState === "present"
+        ? (EMOTIONS[this.emotion] ?? EMOTIONS.neutral)
+        : EMOTIONS.neutral;
     const target = poseFromEmotion(emotionDef);
     const head = this.applyReaction(target, dt);
     const pk = 1 - Math.exp(-Math.max(dt, 0) / POSE_TAU_SEC);
     for (const key of Object.keys(this.pose)) {
       this.pose[key] += (target[key] - this.pose[key]) * pk;
     }
-    this.accent = this.reaction ? this.accent : emotionDef.accent;
+    this.accent = spec.emotionColors ? emotionDef.accent : BRAND_ACCENT;
 
+    const motionScale = this.reducedMotion ? 0.4 : 1;
     this.breathePhase += dt * BREATHE_RATE_HZ * Math.PI * 2;
     const breathe =
-      this.activeState === "alive"
-        ? 1 + Math.sin(this.breathePhase) * BREATHE_DEPTH
+      this.activeState === "present"
+        ? 1 + Math.sin(this.breathePhase) * BREATHE_DEPTH * motionScale
         : 1;
 
-    const spec = this.spec ?? resolvePresenceSpec();
-    const s = spec.scale;
-    const gazeOn = this.activeState === "alive" ? 1 : 0;
+    // Awakening timeline envelopes.
+    let awakeningRig = 0;
+    let awakeEyeScale = 1;
+    let acquireT = 1;
+    if (this.activeState === "awakening") {
+      const t = this.stateElapsed;
+      awakeningRig = smooth01(
+        (t - beats.gatherEnd) / Math.max(beats.landmarksEnd - beats.gatherEnd, 0.01),
+      );
+      if (t < beats.landmarksEnd) {
+        awakeEyeScale = 0.06;
+      } else if (t < beats.eyesOpenEnd) {
+        const ot = smooth01(
+          (t - beats.landmarksEnd) / Math.max(beats.eyesOpenEnd - beats.landmarksEnd, 0.01),
+        );
+        awakeEyeScale = 0.06 + (1.12 - 0.06) * ot - 0.12 * ot * ot;
+      } else {
+        awakeEyeScale = 1;
+      }
+      acquireT = smooth01(
+        (t - beats.eyesOpenEnd) / Math.max(beats.acquireEnd - beats.eyesOpenEnd, 0.01),
+      );
+    }
 
-    // Fluid runtime (emotion modulates energy).
-    rt.noise = SOURCE_PLAY_BASE.noise * cur.noiseMul * (1 + emotionDef.noiseD * gazeOn);
+    const gazeOn =
+      this.activeState === "present" ? 1 : this.activeState === "awakening" ? acquireT : 0;
+
+    // Fluid runtime.
+    rt.noise =
+      SOURCE_PLAY_BASE.noise * cur.noiseMul * (1 + emotionDef.noiseD * gazeOn * motionScale);
     rt.speed = SOURCE_PLAY_BASE.speed * cur.speedMul * (1 + emotionDef.speedD * gazeOn);
     rt.dynamicViscosity = SOURCE_PLAY_BASE.dynamicViscosity * cur.viscosityMul;
     rt.gravity = SOURCE_PLAY_BASE.gravity * cur.gravityMul;
 
     const pointerNowX = this.gazeX + this.trembleX;
     const pointerNowY = this.gazeY + this.trembleY;
-    // Screen-x → sim-x is mirrored.
-    const gazeScreenX = pointerNowX * 2 * 2.0 * spec.gazeStrength * gazeOn;
-    const gazeSimY = pointerNowY * 2 * 1.3 * spec.gazeStrength * gazeOn;
+    // Focal particles obey the same travel clamp as the rig anchors.
+    const nodeMaxTx = FACE.eyeRx * GAZE.travelFracX * spec.scale * 0.95;
+    const nodeMaxTy = FACE.eyeRy * GAZE.travelFracY * spec.scale * 0.95;
+    const gazeScreenX =
+      clampRange(pointerNowX * 2 * 2.0 * spec.gazeStrength, nodeMaxTx) * gazeOn;
+    const gazeSimY =
+      clampRange(pointerNowY * 2 * 1.3 * spec.gazeStrength, nodeMaxTy) * gazeOn;
 
     rt.settleWeight = cur.settleWeight * breathe;
+    if (this.activeState === "awakening") {
+      rt.settleWeight =
+        0.12 + (1.0 - 0.12) * smooth01(this.stateElapsed / Math.max(beats.gatherEnd, 0.01));
+    }
     rt.settleOffset.set(-gazeScreenX, gazeSimY, 0);
-    const floatOn = this.activeState === "alive" ? spec.floatAmp : 0;
+
+    const floatOn =
+      (this.activeState === "present" ? spec.floatAmp : 0) * motionScale;
     const bobX = Math.sin(this.clock * FLOAT.xRateHz * Math.PI * 2) * FLOAT.xAmp * floatOn;
     const bobY =
       Math.sin(this.clock * FLOAT.yRateHz * Math.PI * 2) * FLOAT.yAmp * floatOn +
       head.bounceY;
     rt.settleBob.set(bobX, bobY, 0);
-    rt.settleSquashT = this.activeState === "alive" ? Math.min(this.blinkScale * 2.5, 1) * head.squash : 1;
+    // The rig owns blink; the particle field is never squashed.
+    rt.settleSquashT = 1;
     rt.settleSquashCenter = PRESENCE_CENTER.y;
     rt.lenoxFocalBoost = spec.focalSignalStrength;
-    rt.opacityT = 1 - spec.particleOpacity;
+
+    const preWake =
+      this.activeState === "dormant" ||
+      this.activeState === "engaged" ||
+      this.activeState === "armed";
+    rt.opacityT = preWake ? 1 - DUST.particleOpacity : 1 - spec.particleOpacity;
     if (this.baseActualSize !== null) {
       rt.actualSize =
-        this.baseActualSize *
-        (this.activeState === "alive" ? spec.particleScale : cur.sizeMul);
+        this.baseActualSize * (preWake ? DUST.particleScale : spec.particleScale);
     }
 
-    // ---- Build the expressive pose (sim space; screen-x negated). ----
-    const presenceTarget = this.activeState === "alive" ? 1 : 0;
-    this.rigPresence += (presenceTarget - this.rigPresence) * (1 - Math.exp(-dt / 0.45));
+    // Lifecycle composition: 0 = wide airy dust framing, 1 = present focus.
+    const compositionTarget =
+      this.activeState === "present"
+        ? 1
+        : this.activeState === "awakening"
+          ? smooth01(this.stateElapsed / beats.acquireEnd)
+          : this.activeState === "armed"
+            ? 0.12
+            : 0;
+    app.setLenoxComposition?.(compositionTarget);
+
+    // Expressive rig pose.
+    const rigTarget =
+      this.activeState === "present" ? 1 : this.activeState === "awakening" ? awakeningRig : 0;
+    this.rigPresence += (rigTarget - this.rigPresence) * (1 - Math.exp(-dt / 0.35));
 
     const p = this.pose;
+    const s = spec.scale;
     const cx = spec.centerX;
     const cy = spec.centerY;
     const eyeYBase = cy + FACE.eyeY * s;
-    // Screen-left eye = sim +x side.
     const sideSim = [FACE.eyeHalfSep * s, -FACE.eyeHalfSep * s];
-    const sideSign = [1, -1]; // sim-x sign per screen side (L, R)
-
+    const sideSign = [1, -1];
     const eyes = [];
     const anchors = [];
     const brows = [];
     const maxTx = FACE.eyeRx * GAZE.travelFracX * s;
     const maxTy = FACE.eyeRy * GAZE.travelFracY * s;
+    const eyeOpen = this.activeState === "awakening" ? awakeEyeScale : this.blinkScale;
 
     for (let i = 0; i < 2; i++) {
       const eyeSimX = cx + sideSim[i];
-      const eyeSy = (i === 0 ? p.eyeSyL : p.eyeSyR) * this.blinkScale;
+      const eyeSy = (i === 0 ? p.eyeSyL : p.eyeSyR) * eyeOpen;
       const eyeSx = i === 0 ? p.eyeSxL : p.eyeSxR;
-      // Outer-corner-up in screen terms → mirror rotation into sim.
       const rot = (i === 0 ? p.eyeRotL : p.eyeRotR) * sideSign[i] * -1;
 
       eyes.push({

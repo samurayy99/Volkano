@@ -226,6 +226,9 @@ class App {
 
   /** Lenox gaze rig (void mode): stable sockets + clamped focal anchors. */
   lenoxRig = null;
+  /** Lenox lifecycle camera framing (void mode). */
+  lenoxFramings = null;
+  lenoxFrame = null;
 
   postEnterDriveActive = false;
 
@@ -702,6 +705,8 @@ class App {
 
     if (this.visualMode === "void") {
       this.initLenoxGazeRig();
+      this.computeLenoxFramings(width, height);
+      this.updateLenoxCamera(0);
     }
 
     this.createPostProcessingPipeline();
@@ -719,7 +724,87 @@ class App {
       return;
     }
 
+    if (this.visualMode === "void") {
+      this.computeLenoxFramings(width, height);
+      this.updateLenoxCamera(0);
+      return;
+    }
+
     this.applyCameraFraming(width, height);
+  }
+
+  /**
+   * Lenox lifecycle framing (void mode). Two authored compositions:
+   *   wide    (t=0) — airy dust field, lots of negative space
+   *   present (t=1) — the entity at ~50% desktop width / upper-third portrait
+   * The drive sets the target t per lifecycle; the camera eases between.
+   */
+  computeLenoxFramings(width = window.innerWidth, height = window.innerHeight) {
+    if (!this.camera || !this.particleRenderer?.object) return;
+
+    const aspect = width / Math.max(height, 1);
+    const portrait = aspect < 0.85;
+    const fov = 42;
+    const fovRad = THREE.MathUtils.degToRad(fov);
+
+    this.particleRenderer.object.updateWorldMatrix(true, false);
+    const center = this.particleRenderer.object.localToWorld(
+      new THREE.Vector3(32, 36.5, 30),
+    );
+    const edgePresence = this.particleRenderer.object.localToWorld(
+      new THREE.Vector3(32 + 14.5, 36.5, 30),
+    );
+    const edgeDust = this.particleRenderer.object.localToWorld(
+      new THREE.Vector3(32 + 27, 36.5, 30),
+    );
+    const presenceHalf = Math.abs(edgePresence.x - center.x);
+    const dustHalf = Math.abs(edgeDust.x - center.x);
+
+    const frameFor = (halfWidth, fraction, targetYShiftFrac) => {
+      const visibleWidth = (halfWidth * 2) / fraction;
+      const distance = visibleWidth / (2 * Math.tan(fovRad / 2) * aspect);
+      const visibleHeight = 2 * distance * Math.tan(fovRad / 2);
+      return {
+        distance,
+        targetY: center.y - targetYShiftFrac * visibleHeight,
+      };
+    };
+
+    this.lenoxFramings = {
+      center,
+      fov,
+      wide: frameFor(dustHalf, portrait ? 0.98 : 0.86, 0),
+      present: frameFor(
+        presenceHalf,
+        portrait ? 0.78 : 0.52,
+        portrait ? 0.16 : 0,
+      ),
+    };
+    if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0 };
+  }
+
+  /** Drive → target composition t (0 wide … 1 present). */
+  setLenoxComposition(target) {
+    if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0 };
+    this.lenoxFrame.target = Math.max(0, Math.min(target ?? 0, 1));
+  }
+
+  updateLenoxCamera(dt) {
+    if (!this.camera || !this.lenoxFramings) return;
+    const frame = this.lenoxFrame ?? (this.lenoxFrame = { t: 0, target: 0 });
+    const k = dt > 0 ? 1 - Math.exp(-dt / 0.8) : 1;
+    frame.t += (frame.target - frame.t) * k;
+
+    const { center, fov, wide, present } = this.lenoxFramings;
+    const t = THREE.MathUtils.smootherstep(frame.t, 0, 1);
+    const distance = THREE.MathUtils.lerp(wide.distance, present.distance, t);
+    const targetY = THREE.MathUtils.lerp(wide.targetY, present.targetY, t);
+
+    this.cameraTarget.set(center.x, targetY, center.z);
+    this.camera.fov = fov;
+    this.camera.position.set(center.x, targetY, center.z - distance);
+    this.camera.lookAt(this.cameraTarget);
+    this.camera.updateProjectionMatrix();
   }
 
   setPointer(clientX, clientY, isDown = false) {
@@ -995,6 +1080,10 @@ class App {
 
     this.mlsMpmSim.applyRuntime(this.runtime);
     this.particleRenderer.applyRuntime(this.runtime);
+
+    if (this.visualMode === "void") {
+      this.updateLenoxCamera(delta);
+    }
 
     await this.mlsMpmSim.update(delta);
     this.particleRenderer.update();

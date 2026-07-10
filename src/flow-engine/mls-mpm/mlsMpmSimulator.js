@@ -975,8 +975,10 @@ class mlsMpmSimulator {
         const settleTargetPos = vec3(settleData.x, settleSquashedY, settleData.z)
           .add(this.uniforms.settleBob)
           .add(
+            // Gaze hierarchy: focal particles follow, the shell stays
+            // spatially anchored so looking around never destabilizes it.
             this.uniforms.settleOffset.mul(
-              mix(float(0.1), float(1.0), settleFocalW),
+              mix(float(0.0), float(1.0), settleFocalW),
             ),
           )
           .toConst("settleTargetPos");
@@ -2277,15 +2279,28 @@ class mlsMpmSimulator {
         z = zBase + (hash01(i, 66.29) - 0.5) * coreR[2];
         w = 0.6;
       } else {
-        // Attention nodes: two calm, asymmetric density knots.
+        // Attention nodes: two calm, asymmetric density knots. Positioned
+        // AT face depth (never in front of the rig) so they read as backing
+        // glow behind the rig anchors — one pupil signal, not two.
         const node = nodes[i % nodes.length];
         const fr = node.r * Math.sqrt(hash01(i, 17.323));
         const fAz = i * GOLDEN + hash01(i, 91.421) * 1.7;
         const fInc = Math.acos(2 * hash01(i, 33.719) - 1);
         x = node.x + Math.sin(fInc) * Math.cos(fAz) * fr;
         y = node.y + Math.cos(fInc) * fr * 0.8;
-        z = zBase - 1.2 + Math.sin(fInc) * Math.sin(fAz) * fr * 0.6;
+        z = zBase + 0.4 + Math.sin(fInc) * Math.sin(fAz) * fr * 0.6;
         w = 1;
+      }
+
+      // Face exclusion: fog FRAMES the face, never paints over it. Non-focal
+      // targets inside the facial oval retreat well behind the face plane
+      // (camera looks from -z; larger z = deeper).
+      if (w < 0.85) {
+        const fdx = (x - centerX) / 11;
+        const fdy = (y - (centerY + 0.6)) / 7.4;
+        if (fdx * fdx + fdy * fdy < 1 && z < zBase + 2.2) {
+          z = zBase + 2.2 + hash01(i, 13.57) * 2.4;
+        }
       }
 
       this.settleTargetBuffer.set(i, "settleTarget", [
@@ -2293,6 +2308,52 @@ class mlsMpmSimulator {
         clampV(y, lo, hiY),
         clampV(z, lo, hiZ),
         w,
+      ]);
+    }
+
+    const sb = this.settleTargetBuffer.buffer;
+    if (sb) { sb.needsUpdate = true; if (sb.value) sb.value.needsUpdate = true; }
+  }
+
+  /**
+   * Lenox pre-wake: sparse, dark signal dust. A dedicated seeding concept —
+   * neither the chamber slit population nor a pre-formed body. The SAME
+   * per-index hash structure as the presence author, so every particle later
+   * flows deterministically from its dust position into its presence role.
+   *
+   * @param {{centerX:number, centerY:number, zBase:number,
+   *   spreadX:number, spreadY:number, spreadZ:number}} spec
+   */
+  buildLenoxDustTargets(spec) {
+    if (!this.settleTargetBuffer || !this.gridSize || !spec) return;
+
+    const cap = this.settleTargetBuffer.length || 0;
+    const particleCount = Math.min(
+      this.numParticles > 0
+        ? this.numParticles
+        : (this.runtime?.particles ?? cap),
+      cap,
+    );
+    if (particleCount <= 0) return;
+
+    const { centerX, centerY, zBase, spreadX, spreadY, spreadZ } = spec;
+    const lo = GRID_CLAMP_MARGIN + 1;
+    const hiX = this.gridSize.x - GRID_CLAMP_MARGIN - 1;
+    const hiY = this.gridSize.y - GRID_CLAMP_MARGIN - 1;
+    const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
+    const clampV = (v, loV, hiV) => Math.min(hiV, Math.max(loV, v));
+
+    for (let i = 0; i < particleCount; i++) {
+      // Independent hashes per axis → even, unclustered scatter. Slight
+      // center bias keeps the dust airy at the viewport edges.
+      const bx = hash01(i, 23.117) + hash01(i, 71.913) - 1; // -1..1, center-biased
+      const by = hash01(i, 47.339) + hash01(i, 5.531) - 1;
+      const bz = hash01(i, 89.771) * 2 - 1;
+      this.settleTargetBuffer.set(i, "settleTarget", [
+        clampV(centerX + bx * spreadX, lo, hiX),
+        clampV(centerY + by * spreadY, lo, hiY),
+        clampV(zBase + bz * spreadZ, lo, hiZ),
+        0.3, // uniform dim aura read pre-wake
       ]);
     }
 

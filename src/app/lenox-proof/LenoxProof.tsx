@@ -59,8 +59,9 @@ export function LenoxProof() {
   // WebGPU detection + engine boot.
   useEffect(() => {
     if (!navigator.gpu) {
-      setGpuPath("fallback");
-      return;
+      // Async so the fallback switch is not a render-blocking effect write.
+      const t = window.setTimeout(() => setGpuPath("fallback"), 0);
+      return () => window.clearTimeout(t);
     }
     const host = hostRef.current;
     if (!host) return;

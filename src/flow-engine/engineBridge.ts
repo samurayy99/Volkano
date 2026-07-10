@@ -92,7 +92,9 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app = app;
     await app.init(width, height);
     if (this.options.lenoxMode) {
-      this.lenoxDrive = new LenoxEyesDrive();
+      this.lenoxDrive = new LenoxEyesDrive({
+        reducedMotion: this.options.lenoxReducedMotion,
+      });
     }
 
     this.resizeObserver = new ResizeObserver(this.onResize);
