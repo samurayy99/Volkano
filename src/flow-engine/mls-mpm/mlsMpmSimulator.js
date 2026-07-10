@@ -975,8 +975,11 @@ class mlsMpmSimulator {
         const settleTargetPos = vec3(settleData.x, settleSquashedY, settleData.z)
           .add(this.uniforms.settleBob)
           .add(
+            // Gaze hierarchy: focal/attention particles carry the gaze;
+            // the shell stays spatially anchored (0) so the presence never
+            // destabilizes when looking around.
             this.uniforms.settleOffset.mul(
-              mix(float(0.1), float(1.0), settleFocalW),
+              mix(float(0.0), float(1.0), settleFocalW),
             ),
           )
           .toConst("settleTargetPos");
@@ -2210,9 +2213,17 @@ class mlsMpmSimulator {
    *   contour  — single sweeping density arc for structure   (w=0.6)
    *   nodes    — two asymmetric attention knots; follow gaze (w=1)
    * CPU one-shot write (same call-site class as buildAnalyticalRecallTargets).
+   *
+   * `opts.spread` (>= 1) loosens every position away from the presence
+   * center while KEEPING the per-index role assignment — the same particle
+   * flows deterministically from its latent (loose) spot to its present
+   * (tight) spot across lifecycle phases: one entity being born, never a
+   * sequence of unrelated objects.
    */
-  buildLenoxPresenceTargets(spec) {
+  buildLenoxPresenceTargets(spec, opts = {}) {
     if (!this.settleTargetBuffer || !this.gridSize || !spec) return;
+    const spread = Math.max(opts.spread ?? 1, 1);
+    const looseJitter = (spread - 1) * 1.6;
 
     const cap = this.settleTargetBuffer.length || 0;
     const particleCount = Math.min(
@@ -2286,6 +2297,25 @@ class mlsMpmSimulator {
         y = node.y + Math.cos(fInc) * fr * 0.8;
         z = zBase - 1.2 + Math.sin(fInc) * Math.sin(fAz) * fr * 0.6;
         w = 1;
+      }
+
+      // Lifecycle spread: loosen away from the presence center, add organic
+      // jitter, keep roles fixed per index.
+      if (spread > 1) {
+        x = centerX + (x - centerX) * spread + (hash01(i, 3.31) - 0.5) * looseJitter;
+        y = centerY + (y - centerY) * spread + (hash01(i, 5.73) - 0.5) * looseJitter;
+        z = zBase + (z - zBase) * spread + (hash01(i, 9.19) - 0.5) * looseJitter;
+      }
+
+      // Face exclusion zone (tight shapes only): fog must FRAME the face,
+      // never paint over it — non-focal targets inside the facial oval are
+      // pushed behind the face plane (camera looks from -z).
+      if (spread <= 1.05 && w < 0.85) {
+        const fdx = (x - centerX) / 11;
+        const fdy = (y - (centerY + 0.6)) / 7.4;
+        if (fdx * fdx + fdy * fdy < 1 && z < zBase + 1.0) {
+          z = zBase + 1.0 + hash01(i, 13.57) * 1.8;
+        }
       }
 
       this.settleTargetBuffer.set(i, "settleTarget", [

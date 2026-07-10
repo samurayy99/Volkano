@@ -1,5 +1,10 @@
-/** Lenox eyes proof states (dev route). */
-export type LenoxProofState = "idle" | "attract" | "waking" | "alive";
+/** Lenox lifecycle: where the entity is in its journey. */
+export type LenoxProofState =
+  | "dormant"
+  | "engaged"
+  | "armed"
+  | "awakening"
+  | "present";
 
 /** Lenox expressive emotions (alive state). */
 export type LenoxEmotion =
@@ -83,6 +88,8 @@ export interface FlowEngineBridgeOptions {
   onError?: (error: unknown) => void;
   /** Lenox proof: void visual (no vessel), LenoxEyesDrive owns the runtime. */
   lenoxMode?: boolean;
+  /** Compresses the awakening timeline and calms all motion. */
+  lenoxReducedMotion?: boolean;
   /** Fires when the effective Lenox state changes (waking auto-advances). */
   onLenoxStateChange?: (state: LenoxProofState) => void;
   onPostEnterStageChange?: (stage: PostEnterStage) => void;

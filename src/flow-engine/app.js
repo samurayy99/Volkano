@@ -668,7 +668,9 @@ class App {
     this.runtime = createRuntimeState(width);
 
     this.camera = new THREE.PerspectiveCamera(47, width / height, 0.01, 7.5);
-    this.applyCameraFraming(width, height);
+    if (this.visualMode !== "void") {
+      this.applyCameraFraming(width, height);
+    }
 
     this.scene = new THREE.Scene();
     this.scene.add(this.camera);
@@ -702,6 +704,7 @@ class App {
 
     if (this.visualMode === "void") {
       this.initLenoxGazeRig();
+      this.applyLenoxCameraFraming(width, height);
     }
 
     this.createPostProcessingPipeline();
@@ -719,7 +722,54 @@ class App {
       return;
     }
 
+    if (this.visualMode === "void") {
+      this.applyLenoxCameraFraming(width, height);
+      return;
+    }
+
     this.applyCameraFraming(width, height);
+  }
+
+  /**
+   * Lenox composition (void mode) — independent of the chamber vessel.
+   * Desktop: the whole presence/aura spans ~50% of the viewport width,
+   * vertically centered. Portrait: presence spans ~86% width and sits in
+   * the upper third so journey UI can live below it.
+   */
+  applyLenoxCameraFraming(width = window.innerWidth, height = window.innerHeight) {
+    if (!this.camera || !this.particleRenderer?.object) return;
+
+    const aspect = width / Math.max(height, 1);
+    const portrait = aspect < 0.85;
+    const fov = 42;
+    const fovRad = THREE.MathUtils.degToRad(fov);
+
+    // Presence bounds in world space (sim center ≈ (32, 36.5, 30), aura
+    // half-width ≈ 14.5 sim units).
+    this.particleRenderer.object.updateWorldMatrix(true, false);
+    const center = this.particleRenderer.object.localToWorld(
+      new THREE.Vector3(32, 36.5, 30),
+    );
+    const edge = this.particleRenderer.object.localToWorld(
+      new THREE.Vector3(32 + 14.5, 36.5, 30),
+    );
+    const presenceHalfWidth = Math.abs(edge.x - center.x);
+
+    const widthFraction = portrait ? 0.86 : 0.5;
+    const visibleWidth = (presenceHalfWidth * 2) / widthFraction;
+    const distance = visibleWidth / (2 * Math.tan(fovRad / 2) * aspect);
+    const visibleHeight = 2 * distance * Math.tan(fovRad / 2);
+
+    // Portrait: shift the look-at down so the presence renders in the
+    // upper third of the screen.
+    const targetY = center.y - (portrait ? visibleHeight * 0.16 : 0);
+
+    this.cameraTarget.set(center.x, targetY, center.z);
+    this.camera.fov = fov;
+    this.camera.aspect = aspect;
+    this.camera.position.set(center.x, targetY, center.z - distance);
+    this.camera.lookAt(this.cameraTarget);
+    this.camera.updateProjectionMatrix();
   }
 
   setPointer(clientX, clientY, isDown = false) {

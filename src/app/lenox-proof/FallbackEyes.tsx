@@ -13,7 +13,10 @@ const N = 900;
 export function FallbackEyes({ state }: { state: LenoxProofState }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef(state);
-  stateRef.current = state;
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,8 +64,9 @@ export function FallbackEyes({ state }: { state: LenoxProofState }) {
       gazeX += (targetGazeX - gazeX) * 0.08;
       gazeY += (targetGazeY - gazeY) * 0.08;
 
-      const eyes = stateRef.current === "alive" || stateRef.current === "waking";
-      const gatherT = stateRef.current === "waking" ? 0.55 : 1;
+      const eyes =
+        stateRef.current === "present" || stateRef.current === "awakening";
+      const gatherT = stateRef.current === "awakening" ? 0.55 : 1;
 
       for (let i = 0; i < N; i++) {
         const p = particles[i];

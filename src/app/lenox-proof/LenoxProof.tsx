@@ -9,7 +9,13 @@ import type {
 } from "../../flow-engine/types";
 import { FallbackEyes } from "./FallbackEyes";
 
-const STATES: LenoxProofState[] = ["idle", "attract", "waking", "alive"];
+const STATES: LenoxProofState[] = [
+  "dormant",
+  "engaged",
+  "armed",
+  "awakening",
+  "present",
+];
 const EMOTIONS: LenoxEmotion[] = [
   "neutral",
   "happy",
@@ -50,7 +56,7 @@ export function LenoxProof() {
   const [gpuPath, setGpuPath] = useState<"webgpu" | "fallback" | "probing">(
     "probing",
   );
-  const [state, setState] = useState<LenoxProofState>("idle");
+  const [state, setState] = useState<LenoxProofState>("dormant");
   const [fps, setFps] = useState(0);
   const [particles, setParticles] = useState(0);
   const [particlesOn, setParticlesOn] = useState(true);
@@ -59,8 +65,9 @@ export function LenoxProof() {
   // WebGPU detection + engine boot.
   useEffect(() => {
     if (!navigator.gpu) {
-      setGpuPath("fallback");
-      return;
+      // Async so the fallback switch is not a render-blocking effect write.
+      const t = window.setTimeout(() => setGpuPath("fallback"), 0);
+      return () => window.clearTimeout(t);
     }
     const host = hostRef.current;
     if (!host) return;
@@ -235,10 +242,9 @@ export function LenoxProof() {
         <button
           type="button"
           onClick={() => {
-            setParticlesOn((v) => {
-              bridgeRef.current?.setLenoxParticlesVisible(!v);
-              return !v;
-            });
+            const next = !particlesOn;
+            bridgeRef.current?.setLenoxParticlesVisible(next);
+            setParticlesOn(next);
           }}
           style={{
             appearance: "none",
