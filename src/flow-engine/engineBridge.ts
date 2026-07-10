@@ -6,7 +6,9 @@ import type {
   ConversationState,
   FlowEngineApi,
   FlowEngineBridgeOptions,
+  LenoxEmotion,
   LenoxProofState,
+  LenoxReaction,
   PostEnterDebugSnapshot,
   PostEnterStage,
 } from "./types";
@@ -163,6 +165,16 @@ export class FlowEngineBridge implements FlowEngineApi {
   setLenoxGaze(x: number, y: number): void {
     if (this.disposed) return;
     this.lenoxDrive?.setGazeTarget(x, y);
+  }
+
+  setLenoxEmotion(emotion: LenoxEmotion): void {
+    if (this.disposed) return;
+    this.lenoxDrive?.setEmotion(emotion);
+  }
+
+  setLenoxReaction(reaction: LenoxReaction): void {
+    if (this.disposed) return;
+    this.lenoxDrive?.triggerReaction(reaction);
   }
 
   /** Dev (lenox proof): hide particles to verify the gaze rig on its own. */

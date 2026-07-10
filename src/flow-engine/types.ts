@@ -1,6 +1,20 @@
 /** Lenox eyes proof states (dev route). */
 export type LenoxProofState = "idle" | "attract" | "waking" | "alive";
 
+/** Lenox expressive emotions (alive state). */
+export type LenoxEmotion =
+  | "neutral"
+  | "happy"
+  | "sad"
+  | "angry"
+  | "surprised"
+  | "suspicious"
+  | "thinking"
+  | "listening";
+
+/** Lenox temporary reactions layered over the emotion. */
+export type LenoxReaction = "laugh" | "startle" | "tired";
+
 /** Source-chamber conversation states (V2 signal layer). */
 export type ConversationState =
   | "dormant"
@@ -58,6 +72,10 @@ export interface FlowEngineApi {
   setLenoxState: (state: LenoxProofState) => void;
   /** Gaze target in centered NDC (-0.5..0.5, +y up). Lenox mode only. */
   setLenoxGaze: (x: number, y: number) => void;
+  /** Expressive emotion preset (Lenox mode, alive state). */
+  setLenoxEmotion: (emotion: LenoxEmotion) => void;
+  /** Temporary reaction (laugh/startle/tired). Lenox mode only. */
+  setLenoxReaction: (reaction: LenoxReaction) => void;
   dispose: () => void;
 }
 

@@ -2,10 +2,40 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlowEngineBridge } from "../../flow-engine/engineBridge";
-import type { LenoxProofState } from "../../flow-engine/types";
+import type {
+  LenoxEmotion,
+  LenoxProofState,
+  LenoxReaction,
+} from "../../flow-engine/types";
 import { FallbackEyes } from "./FallbackEyes";
 
 const STATES: LenoxProofState[] = ["idle", "attract", "waking", "alive"];
+const EMOTIONS: LenoxEmotion[] = [
+  "neutral",
+  "happy",
+  "sad",
+  "angry",
+  "surprised",
+  "suspicious",
+  "thinking",
+  "listening",
+];
+const REACTIONS: LenoxReaction[] = ["laugh", "startle", "tired"];
+
+const chipStyle = (active: boolean): React.CSSProperties => ({
+  appearance: "none",
+  cursor: "pointer",
+  font: "10px ui-monospace, monospace",
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  padding: "6px 12px",
+  borderRadius: 999,
+  border: active
+    ? "1px solid rgba(77, 240, 255, 0.7)"
+    : "1px solid rgba(180, 200, 210, 0.2)",
+  background: "rgba(0,0,0,0.45)",
+  color: active ? "#9feaf7" : "rgba(200, 214, 220, 0.6)",
+});
 
 /**
  * Lenox Eyes Proof — dev harness for the WebGPU fluid engine in void mode.
@@ -24,6 +54,7 @@ export function LenoxProof() {
   const [fps, setFps] = useState(0);
   const [particles, setParticles] = useState(0);
   const [particlesOn, setParticlesOn] = useState(true);
+  const [emotion, setEmotion] = useState<LenoxEmotion>("neutral");
 
   // WebGPU detection + engine boot.
   useEffect(() => {
@@ -149,6 +180,46 @@ export function LenoxProof() {
         FALLBACK {gpuPath === "fallback" ? "ACTIVE" : "no"}
       </div>
 
+      {/* Emotion + reaction controls */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: 110,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 50,
+          display: "flex",
+          gap: 6,
+          flexWrap: "wrap",
+          justifyContent: "center",
+          maxWidth: "90vw",
+        }}
+      >
+        {EMOTIONS.map((e) => (
+          <button
+            key={e}
+            type="button"
+            style={chipStyle(e === emotion)}
+            onClick={() => {
+              bridgeRef.current?.setLenoxEmotion(e);
+              setEmotion(e);
+            }}
+          >
+            {e}
+          </button>
+        ))}
+        {REACTIONS.map((r) => (
+          <button
+            key={r}
+            type="button"
+            style={{ ...chipStyle(false), color: "rgba(232, 200, 140, 0.8)", border: "1px solid rgba(224, 170, 90, 0.35)" }}
+            onClick={() => bridgeRef.current?.setLenoxReaction(r)}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+
       {/* Preset controls */}
       <div
         style={{
@@ -188,29 +259,6 @@ export function LenoxProof() {
         >
           particles {particlesOn ? "on" : "off"}
         </button>
-        {(["signal", "presence", "entity"] as const).map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => {
-              (globalThis as { __LENOX_PRESET__?: string }).__LENOX_PRESET__ = p;
-            }}
-            style={{
-              appearance: "none",
-              cursor: "pointer",
-              font: "10px ui-monospace, monospace",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              padding: "6px 12px",
-              borderRadius: 999,
-              border: "1px solid rgba(180, 200, 210, 0.2)",
-              background: "rgba(0,0,0,0.45)",
-              color: "rgba(200, 214, 220, 0.6)",
-            }}
-          >
-            {p}
-          </button>
-        ))}
       </div>
 
       {/* State controls */}

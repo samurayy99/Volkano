@@ -1,22 +1,16 @@
 /**
- * Lenox presence driver — Visual Reset Pass.
+ * Lenox presence driver — Expressive Character Pass.
  *
- * Lenox is a living AI signal field, NOT a face. Third runtime author next
- * to postEnterDrive / sourceChamberDrive; the bridge runs exactly one per
- * frame. States: idle / attract / waking / alive.
+ * Layered identity (learned across passes 01–04):
+ *   readability — deterministic rig: deformable eyes, brows, mouth, head
+ *   emotion     — pose grammar: shape presets lerped per frame (this file)
+ *   life        — MLS-MPM particles wrapping the rig (aura, breath, wake)
  *
- * Presence system (alive), taste principles from the reference: restraint,
- * gentle float, limited-radius attention follow, calm response.
- *   – one coherent signal cloud (envelope fog + core + one density contour)
- *   – two asymmetric ATTENTION NODES (density knots, not eyes) that follow
- *     the pointer within a small radius via `settleOffset` (w-weighted)
- *   – slow float/sway on `settleBob` (whole presence, rigid, organic)
- *   – attention pulse: soft field inhale on `settleSquashT` (no eyelids)
- *   – cursor speed compresses the field slightly (focus, not squint)
- *
- * Dev: `__LENOX_PRESET__` = "signal" | "presence" | "entity" (default
- * presence); `__LENOX_TUNE__` overrides any preset key;
- * `__LENOX_DEBUG_PUPILS__` re-enables the legacy occluder layer.
+ * States: idle / attract / waking / alive. Emotions (alive only): neutral,
+ * happy, sad, angry, surprised, suspicious, thinking, listening. Temporary
+ * reactions: laugh, startle, tired. Blink/saccade/gaze-clamp from the gaze
+ * rig pass. NOTE: camera views the sim from -z → sim +x = screen LEFT, so
+ * every screen-x intent is negated into sim space.
  */
 
 const SOURCE_PLAY_BASE = Object.freeze({
@@ -27,118 +21,193 @@ const SOURCE_PLAY_BASE = Object.freeze({
 });
 
 const EASE_TAU_SEC = 0.45;
+const POSE_TAU_SEC = 0.22;
 const WAKE_DURATION_SEC = 2.4;
-
-/** See buildLenoxPresenceTargets: packed-volume regime (mass must fit). */
 const LENOX_PARTICLE_CAP = 8192;
 const LENOX_REST_DENSITY_MUL = 12;
 
 const PRESENCE_CENTER = Object.freeze({ x: 32, y: 36.5, z: 30 });
+const EYE_Z = 28.4;
+const DEG = Math.PI / 180;
+
+/** Head geometry (sim units). */
+const FACE = Object.freeze({
+  eyeHalfSep: 5.9,
+  eyeY: 1.6, // above presence center
+  eyeRx: 3.3,
+  eyeRy: 2.1,
+  anchorR: 0.8,
+  browLen: 2.6,
+  browY: 4.6, // above presence center
+  mouthY: -3.6, // below presence center
+});
 
 /**
- * Presets. Tunables (override via __LENOX_TUNE__): entityScale, nodeSpread,
- * nodeRadius, envelope, core, contourLift, focalSignalStrength,
- * particleOpacity, particleScale, gazeStrength, floatAmp.
+ * Emotion pose grammar. Per-side arrays are [left, right] in SCREEN terms.
+ * eyeRotDeg positive = outer corner up. browRotDeg positive = inner end up.
  */
-const PRESETS = Object.freeze({
-  signal: {
-    entityScale: 1,
-    envelope: [15, 8, 3.6],
-    core: [8.5, 4.6, 2.2],
-    nodeSpread: 11,
-    nodeRadius: 1.7,
-    contourLift: 1.05,
-    focalSignalStrength: 0.18,
-    particleOpacity: 0.82,
-    particleScale: 0.7,
-    gazeStrength: 0.8,
-    floatAmp: 1.1,
+const EMOTIONS = Object.freeze({
+  neutral: {
+    eyeSy: [1, 1],
+    eyeSx: [1, 1],
+    eyeRotDeg: [0, 0],
+    browYOff: [0, 0],
+    browRotDeg: [0, 0],
+    browOn: 1,
+    mouthCurve: 0.18,
+    mouthWidth: 3.6,
+    mouthOpen: 0,
+    tiltDeg: 0,
+    accent: "#46d4ee",
+    noiseD: 0,
+    speedD: 0,
   },
-  presence: {
-    entityScale: 1,
-    envelope: [13.5, 7, 3.2],
-    core: [9, 5, 2.4],
-    nodeSpread: 11.5,
-    nodeRadius: 2.0,
-    contourLift: 1.02,
-    focalSignalStrength: 0.3,
-    particleOpacity: 0.92,
-    particleScale: 0.76,
-    gazeStrength: 1,
-    floatAmp: 0.9,
+  happy: {
+    eyeSy: [0.5, 0.5],
+    eyeSx: [1.02, 1.02],
+    eyeRotDeg: [12, 12],
+    browYOff: [0.7, 0.7],
+    browRotDeg: [6, 6],
+    browOn: 1,
+    mouthCurve: 1,
+    mouthWidth: 4.6,
+    mouthOpen: 0,
+    tiltDeg: 1.5,
+    accent: "#63e0c8",
+    noiseD: 0.25,
+    speedD: 0.15,
   },
-  entity: {
-    entityScale: 1.1,
-    envelope: [12.5, 6.6, 3],
-    core: [9.5, 5.4, 2.6],
-    nodeSpread: 12,
-    nodeRadius: 2.3,
-    contourLift: 1.0,
-    focalSignalStrength: 0.45,
-    particleOpacity: 1,
-    particleScale: 0.82,
-    gazeStrength: 1.15,
-    floatAmp: 0.7,
+  sad: {
+    eyeSy: [0.72, 0.72],
+    eyeSx: [1, 1],
+    eyeRotDeg: [-11, -11],
+    browYOff: [-0.2, -0.2],
+    browRotDeg: [-13, -13],
+    browOn: 1,
+    mouthCurve: -0.85,
+    mouthWidth: 3.4,
+    mouthOpen: 0,
+    tiltDeg: -2,
+    accent: "#6f9bff",
+    noiseD: -0.35,
+    speedD: -0.25,
+  },
+  angry: {
+    eyeSy: [0.52, 0.52],
+    eyeSx: [0.98, 0.98],
+    eyeRotDeg: [-16, -16],
+    browYOff: [-1.3, -1.3],
+    browRotDeg: [-24, -24],
+    browOn: 1,
+    mouthCurve: -0.3,
+    mouthWidth: 2.9,
+    mouthOpen: 0,
+    tiltDeg: 0,
+    accent: "#ff6b5e",
+    noiseD: 0.45,
+    speedD: 0.3,
+  },
+  surprised: {
+    eyeSy: [1.4, 1.4],
+    eyeSx: [1.12, 1.12],
+    eyeRotDeg: [0, 0],
+    browYOff: [1.5, 1.5],
+    browRotDeg: [0, 0],
+    browOn: 1,
+    mouthCurve: 0,
+    mouthWidth: 2.2,
+    mouthOpen: 1,
+    tiltDeg: 0,
+    accent: "#d98cff",
+    noiseD: 0.2,
+    speedD: 0.1,
+  },
+  suspicious: {
+    eyeSy: [0.34, 0.9],
+    eyeSx: [1, 1],
+    eyeRotDeg: [-6, 4],
+    browYOff: [-0.9, 0.9],
+    browRotDeg: [-10, 12],
+    browOn: 1,
+    mouthCurve: 0.05,
+    mouthWidth: 3.0,
+    mouthOpen: 0,
+    tiltDeg: -1.5,
+    accent: "#8fe08a",
+    noiseD: -0.2,
+    speedD: -0.1,
+  },
+  thinking: {
+    eyeSy: [0.8, 0.8],
+    eyeSx: [1, 1],
+    eyeRotDeg: [4, 4],
+    browYOff: [0.4, 1.1],
+    browRotDeg: [4, 10],
+    browOn: 1,
+    mouthCurve: 0,
+    mouthWidth: 1.6,
+    mouthOpen: 1,
+    tiltDeg: 2,
+    accent: "#c99df2",
+    noiseD: -0.15,
+    speedD: -0.1,
+  },
+  listening: {
+    eyeSy: [1.12, 1.12],
+    eyeSx: [1.04, 1.04],
+    eyeRotDeg: [2, 2],
+    browYOff: [0.5, 0.5],
+    browRotDeg: [3, 3],
+    browOn: 1,
+    mouthCurve: 0.08,
+    mouthWidth: 2.8,
+    mouthOpen: 0,
+    tiltDeg: 0,
+    accent: "#ffffff",
+    noiseD: -0.25,
+    speedD: -0.15,
   },
 });
 
+/** Temporary reactions layered over the emotion pose. */
+const REACTIONS = Object.freeze({
+  laugh: { duration: 1.6 },
+  startle: { duration: 0.85 },
+  tired: { duration: 5.5 },
+});
+
 const GAZE = Object.freeze({
-  rangeX: 2.0,
-  rangeY: 1.3,
   saccadeThreshold: 0.055,
   snapEase: 0.3,
   settleEase: 0.1,
   trembleAmp: 0.01,
   trembleIntervalSec: 0.14,
   idleReturnSec: 4.0,
-});
-
-/**
- * Deterministic gaze rig (CodePen-2 architecture): stable sockets, per-eye
- * cursor vectors, clamped anchor travel inside the aperture. All in sim
- * units unless noted. Works with particles disabled.
- */
-const RIG = Object.freeze({
-  socketRx: 4.4,
-  socketRy: 2.7,
-  anchorR: 0.85,
-  /** Anchor travel clamp as fraction of socket radii. */
   travelFracX: 0.42,
   travelFracY: 0.36,
-  /** NDC→travel gain: how fast the anchor reaches its clamp. */
   gain: 3.2,
-  /** Approximate sim-x → NDC-x factor for per-eye vectors. */
   simToNdc: 0.009,
-  /** Right anchor trails slightly (calm asymmetry). */
   rightLag: 0.9,
 });
 
-/** Attention pulse: soft field inhale (abstract, no eyelid read). */
-const PULSE = Object.freeze({
-  intervalMinSec: 4.0,
-  intervalMaxSec: 7.5,
-  inhaleSec: 0.22,
-  holdSec: 0.1,
-  exhaleSec: 0.4,
-  depth: 0.86,
-});
-
-/** Cursor speed gently compresses the field (focus). */
-const FOCUS = Object.freeze({
-  speedForFull: 1.6,
-  maxCompress: 0.07,
-  ease: 0.1,
+const BLINK = Object.freeze({
+  intervalMinSec: 3.4,
+  intervalMaxSec: 6.8,
+  closeSec: 0.09,
+  holdSec: 0.05,
+  openSec: 0.18,
+  closedScale: 0.06,
 });
 
 const FLOAT = Object.freeze({
   yRateHz: 0.11,
-  yAmp: 0.9,
+  yAmp: 0.7,
   xRateHz: 0.047,
-  xAmp: 0.45,
+  xAmp: 0.35,
 });
 
 const BREATHE_RATE_HZ = 0.22;
-const BREATHE_DEPTH = 0.06;
+const BREATHE_DEPTH = 0.05;
 
 const PROFILES = Object.freeze({
   idle: {
@@ -182,45 +251,51 @@ const PROFILES = Object.freeze({
 const GATHER_CLUSTER = [{ center: [32, 34, 30], radii: [8, 7, 5] }];
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const clampRange = (v, m) => Math.max(-m, Math.min(m, v));
 
-/** Active preset + user overrides → resolved presence spec. */
+/** Particle wrap spec (envelope/core/contour/nodes around the face). */
 function resolvePresenceSpec() {
-  const presetName =
-    (typeof globalThis !== "undefined" && globalThis.__LENOX_PRESET__) ||
-    "presence";
   const tune =
     (typeof globalThis !== "undefined" && globalThis.__LENOX_TUNE__) || {};
-  const p = { ...(PRESETS[presetName] ?? PRESETS.presence), ...tune };
-
-  const s = p.entityScale;
-  const half = (p.nodeSpread * s) / 2;
+  const s = tune.entityScale ?? 1;
   return {
-    presetName,
     centerX: PRESENCE_CENTER.x,
     centerY: PRESENCE_CENTER.y,
     zBase: PRESENCE_CENTER.z,
-    envelopeR: p.envelope.map((r) => r * s),
-    coreR: p.core.map((r) => r * s),
-    // Calm asymmetry: the two attention nodes differ in height and size.
+    envelopeR: [13.5 * s, 7 * s, 3.2 * s],
+    coreR: [9 * s, 5 * s, 2.4 * s],
     nodes: [
-      {
-        x: PRESENCE_CENTER.x - half,
-        y: PRESENCE_CENTER.y + 0.9,
-        r: p.nodeRadius * s,
-      },
-      {
-        x: PRESENCE_CENTER.x + half,
-        y: PRESENCE_CENTER.y + 0.3,
-        r: p.nodeRadius * 0.85 * s,
-      },
+      { x: PRESENCE_CENTER.x - FACE.eyeHalfSep * s, y: PRESENCE_CENTER.y + FACE.eyeY, r: 2.0 * s },
+      { x: PRESENCE_CENTER.x + FACE.eyeHalfSep * s, y: PRESENCE_CENTER.y + FACE.eyeY, r: 1.7 * s },
     ],
-    contourLift: p.contourLift,
-    entityScaleResolved: s,
-    focalSignalStrength: p.focalSignalStrength,
-    particleOpacity: p.particleOpacity,
-    particleScale: p.particleScale,
-    gazeStrength: p.gazeStrength,
-    floatAmp: p.floatAmp,
+    contourLift: 1.02,
+    scale: s,
+    particleScale: tune.particleScale ?? 0.76,
+    particleOpacity: tune.particleOpacity ?? 0.92,
+    gazeStrength: tune.gazeStrength ?? 1,
+    focalSignalStrength: tune.focalSignalStrength ?? 0.25,
+    floatAmp: tune.floatAmp ?? 0.9,
+  };
+}
+
+/** Flat pose parameter vector (lerped every frame). */
+function poseFromEmotion(e) {
+  return {
+    eyeSyL: e.eyeSy[0],
+    eyeSyR: e.eyeSy[1],
+    eyeSxL: e.eyeSx[0],
+    eyeSxR: e.eyeSx[1],
+    eyeRotL: e.eyeRotDeg[0] * DEG,
+    eyeRotR: e.eyeRotDeg[1] * DEG,
+    browYL: e.browYOff[0],
+    browYR: e.browYOff[1],
+    browRotL: e.browRotDeg[0] * DEG,
+    browRotR: e.browRotDeg[1] * DEG,
+    browOn: e.browOn,
+    mouthCurve: e.mouthCurve,
+    mouthWidth: e.mouthWidth,
+    mouthOpen: e.mouthOpen,
+    tilt: e.tiltDeg * DEG,
   };
 }
 
@@ -231,11 +306,12 @@ export class LenoxEyesDrive {
     this.activeState = "idle";
     this.stateElapsed = 0;
     this.breathePhase = 0;
-    this.authoredShape = null; // "gather" | "presence" | null
+    this.authoredShape = null;
     this.baseActualSize = null;
     this.baseRestDensity = null;
+    this.clock = 0;
 
-    // Attention (centered NDC).
+    // Gaze.
     this.pointerX = 0;
     this.pointerY = 0;
     this.gazeX = 0;
@@ -244,17 +320,20 @@ export class LenoxEyesDrive {
     this.trembleY = 0;
     this.trembleTimer = 0;
     this.lastPointerMoveAt = 0;
-    this.pointerSpeed = 0;
-    this.clock = 0;
 
-    // Attention pulse.
-    this.pulsePhase = "none"; // none | inhale | hold | exhale
-    this.pulseTimer =
-      PULSE.intervalMinSec +
-      Math.random() * (PULSE.intervalMaxSec - PULSE.intervalMinSec);
-    this.pulseT = 0;
-    this.pulseSquash = 1;
-    this.focusCompress = 1;
+    // Blink.
+    this.blinkPhase = "none";
+    this.blinkTimer =
+      BLINK.intervalMinSec +
+      Math.random() * (BLINK.intervalMaxSec - BLINK.intervalMinSec);
+    this.blinkT = 0;
+    this.blinkScale = 1;
+
+    // Emotion + reaction.
+    this.emotion = "neutral";
+    this.pose = poseFromEmotion(EMOTIONS.neutral);
+    this.accent = EMOTIONS.neutral.accent;
+    this.reaction = null; // {name, t}
 
     this.spec = null;
     this.rigPresence = 0;
@@ -266,83 +345,82 @@ export class LenoxEyesDrive {
     this.requestedState = state;
   }
 
+  /** @param {keyof typeof EMOTIONS} emotion */
+  setEmotion(emotion) {
+    if (EMOTIONS[emotion]) this.emotion = emotion;
+  }
+
+  /** @param {"laugh"|"startle"|"tired"} name */
+  triggerReaction(name) {
+    if (REACTIONS[name]) this.reaction = { name, t: 0 };
+  }
+
   /** Pointer in centered NDC (-0.5..0.5, +y up). */
   setGazeTarget(x, y) {
     const nx = Math.max(-0.5, Math.min(0.5, x));
     const ny = Math.max(-0.5, Math.min(0.5, y));
-    const dx = nx - this.pointerX;
-    const dy = ny - this.pointerY;
-    if (dx !== 0 || dy !== 0) {
+    if (nx !== this.pointerX || ny !== this.pointerY) {
       this.lastPointerMoveAt = this.clock;
-      this.pointerSpeed = Math.min(4, Math.sqrt(dx * dx + dy * dy) * 60);
     }
     this.pointerX = nx;
     this.pointerY = ny;
   }
 
-  updatePulse(dt) {
+  updateBlink(dt) {
     if (typeof globalThis !== "undefined" && globalThis.__LENOX_BLINK__) {
       globalThis.__LENOX_BLINK__ = false;
-      if (this.pulsePhase === "none") {
-        this.pulsePhase = "inhale";
-        this.pulseT = 0;
+      if (this.blinkPhase === "none") {
+        this.blinkPhase = "closing";
+        this.blinkT = 0;
       }
     }
-
     if (this.activeState !== "alive") {
-      this.pulseSquash = 1;
+      this.blinkScale = 1;
       return;
     }
-
-    if (this.pulsePhase === "none") {
-      this.pulseTimer -= dt;
-      if (this.pulseTimer <= 0) {
-        this.pulsePhase = "inhale";
-        this.pulseT = 0;
+    if (this.blinkPhase === "none") {
+      this.blinkTimer -= dt;
+      if (this.blinkTimer <= 0) {
+        this.blinkPhase = "closing";
+        this.blinkT = 0;
       }
-      this.pulseSquash = 1;
+      this.blinkScale = 1;
       return;
     }
-
-    this.pulseT += dt;
-    if (this.pulsePhase === "inhale") {
-      const t = clamp01(this.pulseT / PULSE.inhaleSec);
-      this.pulseSquash = 1 + (PULSE.depth - 1) * t * t;
+    this.blinkT += dt;
+    if (this.blinkPhase === "closing") {
+      const t = clamp01(this.blinkT / BLINK.closeSec);
+      this.blinkScale = 1 + (BLINK.closedScale - 1) * t * t;
       if (t >= 1) {
-        this.pulsePhase = "hold";
-        this.pulseT = 0;
+        this.blinkPhase = "hold";
+        this.blinkT = 0;
       }
-    } else if (this.pulsePhase === "hold") {
-      this.pulseSquash = PULSE.depth;
-      if (this.pulseT >= PULSE.holdSec) {
-        this.pulsePhase = "exhale";
-        this.pulseT = 0;
+    } else if (this.blinkPhase === "hold") {
+      this.blinkScale = BLINK.closedScale;
+      if (this.blinkT >= BLINK.holdSec) {
+        this.blinkPhase = "opening";
+        this.blinkT = 0;
       }
-    } else if (this.pulsePhase === "exhale") {
-      const t = clamp01(this.pulseT / PULSE.exhaleSec);
-      const eased = 1 - Math.pow(1 - t, 3);
-      this.pulseSquash = PULSE.depth + (1 - PULSE.depth) * eased;
+    } else {
+      const t = clamp01(this.blinkT / BLINK.openSec);
+      this.blinkScale = BLINK.closedScale + (1 - BLINK.closedScale) * (1 - Math.pow(1 - t, 3));
       if (t >= 1) {
-        this.pulsePhase = "none";
-        this.pulseSquash = 1;
-        this.pulseTimer =
-          PULSE.intervalMinSec +
-          Math.random() * (PULSE.intervalMaxSec - PULSE.intervalMinSec);
+        this.blinkPhase = "none";
+        this.blinkScale = 1;
+        this.blinkTimer =
+          BLINK.intervalMinSec +
+          Math.random() * (BLINK.intervalMaxSec - BLINK.intervalMinSec);
       }
     }
   }
 
-  updateAttention(dt) {
-    const pointerIdle =
-      this.clock - this.lastPointerMoveAt > GAZE.idleReturnSec;
+  updateGaze(dt) {
+    const pointerIdle = this.clock - this.lastPointerMoveAt > GAZE.idleReturnSec;
     const goalX = pointerIdle ? 0 : this.pointerX;
     const goalY = pointerIdle ? 0 : this.pointerY;
-
     const dx = goalX - this.gazeX;
     const dy = goalY - this.gazeY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > GAZE.saccadeThreshold) {
+    if (Math.sqrt(dx * dx + dy * dy) > GAZE.saccadeThreshold) {
       this.gazeX += dx * GAZE.snapEase;
       this.gazeY += dy * GAZE.snapEase;
       this.trembleX = 0;
@@ -352,25 +430,67 @@ export class LenoxEyesDrive {
       this.gazeY += dy * GAZE.settleEase;
       this.trembleTimer -= dt;
       if (this.trembleTimer <= 0) {
-        this.trembleTimer =
-          GAZE.trembleIntervalSec * (0.7 + Math.random() * 0.6);
+        this.trembleTimer = GAZE.trembleIntervalSec * (0.7 + Math.random() * 0.6);
         this.trembleX = (Math.random() - 0.5) * 2 * GAZE.trembleAmp;
         this.trembleY = (Math.random() - 0.5) * 2 * GAZE.trembleAmp;
       }
     }
-
-    // Focus compression from smoothed pointer speed.
-    this.pointerSpeed *= Math.pow(0.02, dt);
-    const compressTarget =
-      1 -
-      Math.min(1, this.pointerSpeed / FOCUS.speedForFull) * FOCUS.maxCompress;
-    this.focusCompress += (compressTarget - this.focusCompress) * FOCUS.ease;
   }
 
-  /**
-   * Author runtime for this frame. Returns the effective state so the bridge
-   * can emit changes (waking auto-advances to alive).
-   */
+  /** Reaction overlay: mutates the target pose + returns head motion. */
+  applyReaction(target, dt) {
+    const head = { bounceY: 0, bounceX: 0, tiltAdd: 0, squash: 1 };
+    if (!this.reaction) return head;
+    const { name, t } = this.reaction;
+
+    if (name === "laugh") {
+      target.eyeSyL = 0.38;
+      target.eyeSyR = 0.38;
+      target.eyeRotL = 14 * DEG;
+      target.eyeRotR = 14 * DEG;
+      target.mouthCurve = 1;
+      target.mouthWidth = 5.0 + Math.sin(t * 18) * 0.5;
+      target.mouthOpen = 0;
+      head.bounceY = Math.abs(Math.sin(t * 10)) * 0.8;
+      head.tiltAdd = Math.sin(t * 5) * 2.5 * DEG;
+      head.squash = 1 - Math.abs(Math.sin(t * 10)) * 0.06;
+    } else if (name === "startle") {
+      const k = Math.exp(-t * 4);
+      target.eyeSyL = 1.5;
+      target.eyeSyR = 1.5;
+      target.eyeSxL = 1.15;
+      target.eyeSxR = 1.15;
+      target.browYL = 1.8;
+      target.browYR = 1.8;
+      target.mouthOpen = 1;
+      target.mouthWidth = 2.0;
+      head.bounceY = k * 1.4;
+      head.squash = 1 + k * 0.08;
+    } else if (name === "tired") {
+      const cyc = t / REACTIONS.tired.duration;
+      if (cyc < 0.75) {
+        const droop = clamp01(cyc / 0.75);
+        target.eyeSyL = 1 - droop * 0.78;
+        target.eyeSyR = 1 - droop * 0.78;
+        target.browYL = -droop * 0.8;
+        target.browYR = -droop * 0.8;
+        target.mouthCurve = 0.05;
+        target.mouthWidth = 2.6;
+        head.bounceY = -droop * 1.3;
+        head.tiltAdd = droop * 4 * DEG;
+      } else {
+        // Snap awake.
+        target.eyeSyL = 1.3;
+        target.eyeSyR = 1.3;
+        head.bounceY = 0.5;
+      }
+    }
+
+    this.reaction.t += Math.max(dt, 0);
+    if (this.reaction.t >= REACTIONS[name].duration) this.reaction = null;
+    return head;
+  }
+
   update(app, dt) {
     const rt = app?.runtime;
     if (!rt) return this.activeState;
@@ -380,13 +500,12 @@ export class LenoxEyesDrive {
       this.baseActualSize = rt.actualSize;
       this.baseRestDensity = rt.restDensity;
     }
-
     rt.particles = Math.min(rt.particles, LENOX_PARTICLE_CAP);
     if (Number.isFinite(this.baseRestDensity)) {
       rt.restDensity = this.baseRestDensity * LENOX_REST_DENSITY_MUL;
     }
 
-    // Enter-state one-shots.
+    // State one-shots.
     if (this.requestedState !== this.activeState) {
       this.activeState = this.requestedState;
       this.stateElapsed = 0;
@@ -403,42 +522,31 @@ export class LenoxEyesDrive {
         this.authoredShape = null;
       }
     }
-
     this.stateElapsed += Math.max(dt, 0);
     if (this.activeState === "waking" && this.stateElapsed >= WAKE_DURATION_SEC) {
       this.requestedState = "alive";
     }
 
-    // Preset hot-switch while alive (dev): re-author on change.
-    if (this.activeState === "alive" && this.spec) {
-      const presetName =
-        (typeof globalThis !== "undefined" && globalThis.__LENOX_PRESET__) ||
-        "presence";
-      if (presetName !== this.spec.presetName) {
-        this.spec = resolvePresenceSpec();
-        app.mlsMpmSim?.buildLenoxPresenceTargets?.(this.spec);
-      }
-    }
-
-    // Ease channel values toward the state profile.
-    const target = PROFILES[this.activeState];
+    // Fluid profile ease.
+    const profile = PROFILES[this.activeState];
     const k = 1 - Math.exp(-Math.max(dt, 0) / EASE_TAU_SEC);
     const cur = this.current;
     for (const key of Object.keys(cur)) {
-      cur[key] += (target[key] - cur[key]) * k;
+      cur[key] += (profile[key] - cur[key]) * k;
     }
 
-    this.updatePulse(dt);
-    this.updateAttention(dt);
-    if (typeof globalThis !== "undefined") {
-      globalThis.__LENOX_DBG__ = {
-        px: this.pointerX,
-        py: this.pointerY,
-        gx: this.gazeX,
-        gy: this.gazeY,
-        state: this.activeState,
-      };
+    this.updateBlink(dt);
+    this.updateGaze(dt);
+
+    // Emotion pose target (+ reaction overlay), lerped.
+    const emotionDef = EMOTIONS[this.emotion] ?? EMOTIONS.neutral;
+    const target = poseFromEmotion(emotionDef);
+    const head = this.applyReaction(target, dt);
+    const pk = 1 - Math.exp(-Math.max(dt, 0) / POSE_TAU_SEC);
+    for (const key of Object.keys(this.pose)) {
+      this.pose[key] += (target[key] - this.pose[key]) * pk;
     }
+    this.accent = this.reaction ? this.accent : emotionDef.accent;
 
     this.breathePhase += dt * BREATHE_RATE_HZ * Math.PI * 2;
     const breathe =
@@ -447,87 +555,119 @@ export class LenoxEyesDrive {
         : 1;
 
     const spec = this.spec ?? resolvePresenceSpec();
+    const s = spec.scale;
     const gazeOn = this.activeState === "alive" ? 1 : 0;
-    const squash =
-      this.activeState === "alive"
-        ? Math.min(this.pulseSquash, this.focusCompress)
-        : 1;
 
-    rt.noise = SOURCE_PLAY_BASE.noise * cur.noiseMul;
-    rt.speed = SOURCE_PLAY_BASE.speed * cur.speedMul;
+    // Fluid runtime (emotion modulates energy).
+    rt.noise = SOURCE_PLAY_BASE.noise * cur.noiseMul * (1 + emotionDef.noiseD * gazeOn);
+    rt.speed = SOURCE_PLAY_BASE.speed * cur.speedMul * (1 + emotionDef.speedD * gazeOn);
     rt.dynamicViscosity = SOURCE_PLAY_BASE.dynamicViscosity * cur.viscosityMul;
     rt.gravity = SOURCE_PLAY_BASE.gravity * cur.gravityMul;
 
-    // Screen-intent gaze. NOTE: the camera views the sim from -z, so
-    // sim +x renders as screen LEFT — every screen-x must be negated
-    // when written into sim space.
-    const gazeScreenX =
-      (this.gazeX + this.trembleX) * 2 * GAZE.rangeX * spec.gazeStrength * gazeOn;
-    const gazeSimY =
-      (this.gazeY + this.trembleY) * 2 * GAZE.rangeY * spec.gazeStrength * gazeOn;
+    const pointerNowX = this.gazeX + this.trembleX;
+    const pointerNowY = this.gazeY + this.trembleY;
+    // Screen-x → sim-x is mirrored.
+    const gazeScreenX = pointerNowX * 2 * 2.0 * spec.gazeStrength * gazeOn;
+    const gazeSimY = pointerNowY * 2 * 1.3 * spec.gazeStrength * gazeOn;
 
     rt.settleWeight = cur.settleWeight * breathe;
     rt.settleOffset.set(-gazeScreenX, gazeSimY, 0);
-    // Gentle float/sway of the whole presence.
     const floatOn = this.activeState === "alive" ? spec.floatAmp : 0;
-    rt.settleBob.set(
-      Math.sin(this.clock * FLOAT.xRateHz * Math.PI * 2) * FLOAT.xAmp * floatOn,
-      Math.sin(this.clock * FLOAT.yRateHz * Math.PI * 2) * FLOAT.yAmp * floatOn,
-      0,
-    );
-    rt.settleSquashT = squash;
+    const bobX = Math.sin(this.clock * FLOAT.xRateHz * Math.PI * 2) * FLOAT.xAmp * floatOn;
+    const bobY =
+      Math.sin(this.clock * FLOAT.yRateHz * Math.PI * 2) * FLOAT.yAmp * floatOn +
+      head.bounceY;
+    rt.settleBob.set(bobX, bobY, 0);
+    rt.settleSquashT = this.activeState === "alive" ? Math.min(this.blinkScale * 2.5, 1) * head.squash : 1;
     rt.settleSquashCenter = PRESENCE_CENTER.y;
     rt.lenoxFocalBoost = spec.focalSignalStrength;
     rt.opacityT = 1 - spec.particleOpacity;
-
     if (this.baseActualSize !== null) {
       rt.actualSize =
         this.baseActualSize *
         (this.activeState === "alive" ? spec.particleScale : cur.sizeMul);
     }
 
-    // Gaze rig: stable sockets at the node positions, per-eye clamped
-    // anchor travel (deterministic; reads with particles disabled).
+    // ---- Build the expressive pose (sim space; screen-x negated). ----
     const presenceTarget = this.activeState === "alive" ? 1 : 0;
-    this.rigPresence +=
-      (presenceTarget - this.rigPresence) * (1 - Math.exp(-dt / 0.45));
+    this.rigPresence += (presenceTarget - this.rigPresence) * (1 - Math.exp(-dt / 0.45));
 
-    const bobX = rt.settleBob.x;
-    const bobY = rt.settleBob.y;
-    const pointerNow = { x: this.gazeX + this.trembleX, y: this.gazeY + this.trembleY };
+    const p = this.pose;
+    const cx = spec.centerX;
+    const cy = spec.centerY;
+    const eyeYBase = cy + FACE.eyeY * s;
+    // Screen-left eye = sim +x side.
+    const sideSim = [FACE.eyeHalfSep * s, -FACE.eyeHalfSep * s];
+    const sideSign = [1, -1]; // sim-x sign per screen side (L, R)
+
     const eyes = [];
     const anchors = [];
-    for (let i = 0; i < 2; i++) {
-      const node = spec.nodes[i];
-      const eyeX = node.x + bobX;
-      const eyeY = node.y + bobY;
-      eyes.push({ x: eyeX, y: eyeY, z: spec.zBase - 1.6 });
+    const brows = [];
+    const maxTx = FACE.eyeRx * GAZE.travelFracX * s;
+    const maxTy = FACE.eyeRy * GAZE.travelFracY * s;
 
-      // Per-eye vector in SCREEN NDC (sim +x = screen left → negate x
-      // both when locating the eye on screen and when applying travel).
-      const eyeScreenNdcX = -(node.x - spec.centerX) * RIG.simToNdc;
-      const vx = (pointerNow.x - eyeScreenNdcX) * RIG.gain * spec.gazeStrength;
-      const vy = pointerNow.y * RIG.gain * spec.gazeStrength;
-      const maxTx = RIG.socketRx * RIG.travelFracX;
-      const maxTy = RIG.socketRy * RIG.travelFracY;
-      const lag = i === 1 ? RIG.rightLag : 1;
+    for (let i = 0; i < 2; i++) {
+      const eyeSimX = cx + sideSim[i];
+      const eyeSy = (i === 0 ? p.eyeSyL : p.eyeSyR) * this.blinkScale;
+      const eyeSx = i === 0 ? p.eyeSxL : p.eyeSxR;
+      // Outer-corner-up in screen terms → mirror rotation into sim.
+      const rot = (i === 0 ? p.eyeRotL : p.eyeRotR) * sideSign[i] * -1;
+
+      eyes.push({
+        x: eyeSimX,
+        y: eyeYBase,
+        z: EYE_Z,
+        rot,
+        scaleX: FACE.eyeRx * s * eyeSx,
+        scaleY: FACE.eyeRy * s * eyeSy,
+        baseScaleY: FACE.eyeRy * s,
+      });
+
+      const eyeScreenNdcX = -sideSim[i] * GAZE.simToNdc;
+      const vx = (pointerNowX - eyeScreenNdcX) * GAZE.gain * spec.gazeStrength;
+      const vy = pointerNowY * GAZE.gain * spec.gazeStrength;
+      const lag = i === 1 ? GAZE.rightLag : 1;
       anchors.push({
-        x: eyeX - Math.max(-maxTx, Math.min(maxTx, vx * maxTx)) * lag * gazeOn,
-        y: eyeY + Math.max(-maxTy, Math.min(maxTy, vy * maxTy)) * lag * gazeOn,
+        x: eyeSimX - clampRange(vx * maxTx, maxTx) * lag * gazeOn,
+        y: eyeYBase + clampRange(vy * maxTy, maxTy) * lag * gazeOn,
+        r: FACE.anchorR * s,
+      });
+
+      const browY = i === 0 ? p.browYL : p.browYR;
+      const browRot = (i === 0 ? p.browRotL : p.browRotR) * sideSign[i] * -1;
+      brows.push({
+        x: eyeSimX,
+        y: cy + (FACE.browY + browY) * s,
+        rot: browRot,
+        len: FACE.browLen * s,
+        visible: p.browOn > 0.5,
       });
     }
 
     app.setLenoxRig?.({
+      presence: this.rigPresence,
+      accentColor: this.accent,
+      head: {
+        x: bobX + head.bounceX,
+        y: bobY,
+        tilt: p.tilt + head.tiltAdd,
+        scaleX: 1,
+        scaleY: head.squash,
+      },
       eyes,
       anchors,
-      socketRx: RIG.socketRx * spec.entityScaleResolved,
-      socketRy: RIG.socketRy * spec.entityScaleResolved,
-      anchorR: RIG.anchorR * spec.entityScaleResolved,
-      squash,
-      presence: this.rigPresence,
+      brows,
+      mouth: {
+        x: cx,
+        y: cy + FACE.mouthY * s,
+        curve: p.mouthCurve,
+        width: p.mouthWidth * s,
+        open: p.mouthOpen,
+        visible: true,
+      },
     });
 
-    // Silence every other authored channel; Lenox owns the frame.
+    // Silence other authored channels.
     rt.returnBodyWeight = 0;
     rt.recallLateralWeight = 0;
     rt.recallVerticalWeight = 0;
@@ -539,11 +679,9 @@ export class LenoxEyesDrive {
     rt.thinT = 0;
     rt.massDimT = 0;
     rt.materialClaimT = 0;
-
     rt.lenoxTintT = 1;
 
     app.setPointerInfluence(cur.pointerInfluence);
-
     return this.activeState;
   }
 }

@@ -374,59 +374,117 @@ class App {
   initLenoxGazeRig() {
     if (!this.particleRenderer?.object || this.lenoxRig) return;
 
-    const socketShape = new THREE.Shape();
-    socketShape.moveTo(-1, 0);
-    socketShape.quadraticCurveTo(0, 1.35, 1, 0);
-    socketShape.quadraticCurveTo(0, -1.35, -1, 0);
-    const socketGeometry = new THREE.ShapeGeometry(socketShape, 24);
-    const socketMaterial = new THREE.MeshBasicMaterial({
-      color: 0x0c0f13,
+    // Rig root: head tilt / squash / bounce apply to every part at once.
+    const root = new THREE.Group();
+    this.particleRenderer.object.add(root);
+
+    const eyeShape = new THREE.Shape();
+    eyeShape.moveTo(-1, 0);
+    eyeShape.quadraticCurveTo(0, 1.35, 1, 0);
+    eyeShape.quadraticCurveTo(0, -1.35, -1, 0);
+    const eyeGeometry = new THREE.ShapeGeometry(eyeShape, 24);
+    const eyeMaterial = new THREE.MeshBasicMaterial({
+      color: 0x122530,
       side: THREE.DoubleSide,
       toneMapped: false,
     });
 
     const anchorGeometry = new THREE.CircleGeometry(1, 24);
-    const anchorMaterial = new THREE.MeshBasicMaterial({
-      color: 0x2fa8c9,
+    const accentMaterial = new THREE.MeshBasicMaterial({
+      color: 0x46d4ee,
       side: THREE.DoubleSide,
       toneMapped: false,
     });
+
+    // Brow: thin rounded bar (energy field, not hair).
+    const browShape = new THREE.Shape();
+    browShape.moveTo(-1, -0.14);
+    browShape.quadraticCurveTo(-1.06, 0, -1, 0.14);
+    browShape.lineTo(1, 0.14);
+    browShape.quadraticCurveTo(1.06, 0, 1, -0.14);
+    browShape.lineTo(-1, -0.14);
+    const browGeometry = new THREE.ShapeGeometry(browShape, 8);
+
+    // Mouth: parametric ring sector (bottom arc). curve via rotation/scale,
+    // "open" swaps to the full ring.
+    const arcGeometry = new THREE.RingGeometry(0.78, 1, 32, 1, Math.PI * 1.15, Math.PI * 0.7);
+    const ringGeometry = new THREE.RingGeometry(0.66, 1, 32);
 
     const make = (geometry, material, renderOrder) => {
       const mesh = new THREE.Mesh(geometry, material);
       mesh.visible = false;
       mesh.renderOrder = renderOrder;
-      this.particleRenderer.object.add(mesh);
+      root.add(mesh);
       return mesh;
     };
 
     this.lenoxRig = {
-      sockets: [make(socketGeometry, socketMaterial, 2), make(socketGeometry, socketMaterial, 2)],
-      anchors: [make(anchorGeometry, anchorMaterial, 3), make(anchorGeometry, anchorMaterial, 3)],
-      geometries: [socketGeometry, anchorGeometry],
-      materials: [socketMaterial, anchorMaterial],
+      root,
+      eyes: [make(eyeGeometry, eyeMaterial, 2), make(eyeGeometry, eyeMaterial, 2)],
+      anchors: [make(anchorGeometry, accentMaterial, 3), make(anchorGeometry, accentMaterial, 3)],
+      brows: [make(browGeometry, accentMaterial, 3), make(browGeometry, accentMaterial, 3)],
+      mouthArc: make(arcGeometry, accentMaterial, 3),
+      mouthRing: make(ringGeometry, accentMaterial, 3),
+      accentMaterial,
+      eyeMaterial,
+      geometries: [eyeGeometry, anchorGeometry, browGeometry, arcGeometry, ringGeometry],
+      materials: [eyeMaterial, accentMaterial],
+      accentColor: new THREE.Color(0x46d4ee),
     };
   }
 
   /**
-   * Per-frame rig transform from the Lenox drive (sim-space coordinates).
-   * `eyes` are stable socket centers; `anchors` are the clamped per-eye
-   * focal positions. `presence` 0..1 fades the rig in/out.
+   * Per-frame expressive pose from the Lenox drive (sim-space coordinates).
+   * The drive owns all emotion math; this just applies transforms.
    */
-  setLenoxRig({ eyes, anchors, socketRx, socketRy, anchorR, squash, presence }) {
-    if (!this.lenoxRig) return;
-    const p = Math.max(0, Math.min(presence ?? 0, 1));
-    const sq = Math.max(squash ?? 1, 0.02);
+  setLenoxRig(pose) {
+    if (!this.lenoxRig || !pose) return;
+    const r = this.lenoxRig;
+    const p = Math.max(0, Math.min(pose.presence ?? 0, 1));
+    const on = p > 0.02;
+
+    r.root.position.set(pose.head.x, pose.head.y, 0);
+    r.root.rotation.z = pose.head.tilt;
+    r.root.scale.set(pose.head.scaleX, pose.head.scaleY, 1);
+
+    r.accentColor.set(pose.accentColor);
+    r.accentMaterial.color.lerp(r.accentColor, 0.12);
+
     for (let i = 0; i < 2; i++) {
-      const socket = this.lenoxRig.sockets[i];
-      const anchor = this.lenoxRig.anchors[i];
-      socket.visible = p > 0.02;
-      anchor.visible = p > 0.02;
-      socket.position.set(eyes[i].x, eyes[i].y, eyes[i].z);
-      socket.scale.set(socketRx * p, socketRy * sq * p, 1);
-      anchor.position.set(anchors[i].x, anchors[i].y, eyes[i].z - 0.6);
-      anchor.scale.set(anchorR * p, anchorR * sq * p, 1);
+      const eye = r.eyes[i];
+      const anchor = r.anchors[i];
+      const brow = r.brows[i];
+      const e = pose.eyes[i];
+      eye.visible = on;
+      eye.position.set(e.x, e.y, e.z);
+      eye.rotation.z = e.rot;
+      eye.scale.set(e.scaleX * p, Math.max(e.scaleY, 0.02) * p, 1);
+
+      const a = pose.anchors[i];
+      anchor.visible = on;
+      anchor.position.set(a.x, a.y, e.z - 0.6);
+      anchor.scale.set(a.r * p, a.r * Math.max(Math.min(e.scaleY / e.baseScaleY, 1), 0.05) * p, 1);
+
+      const b = pose.brows[i];
+      brow.visible = on && b.visible;
+      brow.position.set(b.x, b.y, e.z - 0.4);
+      brow.rotation.z = b.rot;
+      brow.scale.set(b.len * p, p, 1);
     }
+
+    const m = pose.mouth;
+    r.mouthArc.visible = on && m.visible && m.open < 0.5;
+    r.mouthRing.visible = on && m.visible && m.open >= 0.5;
+    for (const mesh of [r.mouthArc, r.mouthRing]) {
+      mesh.position.set(m.x, m.y, pose.eyes[0].z - 0.4);
+      mesh.rotation.z = m.curve >= 0 ? 0 : Math.PI;
+      mesh.scale.set(
+        m.width * p,
+        Math.max(Math.abs(m.curve), 0.12) * m.width * 0.8 * p,
+        1,
+      );
+    }
+    r.mouthRing.scale.set(m.width * 0.5 * p, m.width * 0.55 * p, 1);
   }
 
   /** Dev: hide/show the particle body (rig must read on its own). */
