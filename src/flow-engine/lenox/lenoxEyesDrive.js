@@ -93,6 +93,26 @@ const GAZE = Object.freeze({
   idleReturnSec: 4.0,
 });
 
+/**
+ * Deterministic gaze rig (CodePen-2 architecture): stable sockets, per-eye
+ * cursor vectors, clamped anchor travel inside the aperture. All in sim
+ * units unless noted. Works with particles disabled.
+ */
+const RIG = Object.freeze({
+  socketRx: 4.4,
+  socketRy: 2.7,
+  anchorR: 0.85,
+  /** Anchor travel clamp as fraction of socket radii. */
+  travelFracX: 0.42,
+  travelFracY: 0.36,
+  /** NDC→travel gain: how fast the anchor reaches its clamp. */
+  gain: 3.2,
+  /** Approximate sim-x → NDC-x factor for per-eye vectors. */
+  simToNdc: 0.009,
+  /** Right anchor trails slightly (calm asymmetry). */
+  rightLag: 0.9,
+});
+
 /** Attention pulse: soft field inhale (abstract, no eyelid read). */
 const PULSE = Object.freeze({
   intervalMinSec: 4.0,
@@ -195,6 +215,7 @@ function resolvePresenceSpec() {
       },
     ],
     contourLift: p.contourLift,
+    entityScaleResolved: s,
     focalSignalStrength: p.focalSignalStrength,
     particleOpacity: p.particleOpacity,
     particleScale: p.particleScale,
@@ -236,6 +257,7 @@ export class LenoxEyesDrive {
     this.focusCompress = 1;
 
     this.spec = null;
+    this.rigPresence = 0;
   }
 
   /** @param {"idle"|"attract"|"waking"|"alive"} state */
@@ -408,6 +430,15 @@ export class LenoxEyesDrive {
 
     this.updatePulse(dt);
     this.updateAttention(dt);
+    if (typeof globalThis !== "undefined") {
+      globalThis.__LENOX_DBG__ = {
+        px: this.pointerX,
+        py: this.pointerY,
+        gx: this.gazeX,
+        gy: this.gazeY,
+        state: this.activeState,
+      };
+    }
 
     this.breathePhase += dt * BREATHE_RATE_HZ * Math.PI * 2;
     const breathe =
@@ -427,13 +458,16 @@ export class LenoxEyesDrive {
     rt.dynamicViscosity = SOURCE_PLAY_BASE.dynamicViscosity * cur.viscosityMul;
     rt.gravity = SOURCE_PLAY_BASE.gravity * cur.gravityMul;
 
-    const gazeSimX =
+    // Screen-intent gaze. NOTE: the camera views the sim from -z, so
+    // sim +x renders as screen LEFT — every screen-x must be negated
+    // when written into sim space.
+    const gazeScreenX =
       (this.gazeX + this.trembleX) * 2 * GAZE.rangeX * spec.gazeStrength * gazeOn;
     const gazeSimY =
       (this.gazeY + this.trembleY) * 2 * GAZE.rangeY * spec.gazeStrength * gazeOn;
 
     rt.settleWeight = cur.settleWeight * breathe;
-    rt.settleOffset.set(gazeSimX, gazeSimY, 0);
+    rt.settleOffset.set(-gazeScreenX, gazeSimY, 0);
     // Gentle float/sway of the whole presence.
     const floatOn = this.activeState === "alive" ? spec.floatAmp : 0;
     rt.settleBob.set(
@@ -452,20 +486,45 @@ export class LenoxEyesDrive {
         (this.activeState === "alive" ? spec.particleScale : cur.sizeMul);
     }
 
-    // Legacy occluder layer stays dark unless explicitly debugged.
-    const debugPupils =
-      typeof globalThis !== "undefined" && !!globalThis.__LENOX_DEBUG_PUPILS__;
-    app.setLenoxOcular?.({
-      leftX: spec.nodes[0].x,
-      rightX: spec.nodes[1].x,
-      centerY: spec.centerY,
-      z: 28.2,
-      rx: spec.nodes[0].r * 1.6,
-      ry: spec.nodes[0].r * 1.1,
+    // Gaze rig: stable sockets at the node positions, per-eye clamped
+    // anchor travel (deterministic; reads with particles disabled).
+    const presenceTarget = this.activeState === "alive" ? 1 : 0;
+    this.rigPresence +=
+      (presenceTarget - this.rigPresence) * (1 - Math.exp(-dt / 0.45));
+
+    const bobX = rt.settleBob.x;
+    const bobY = rt.settleBob.y;
+    const pointerNow = { x: this.gazeX + this.trembleX, y: this.gazeY + this.trembleY };
+    const eyes = [];
+    const anchors = [];
+    for (let i = 0; i < 2; i++) {
+      const node = spec.nodes[i];
+      const eyeX = node.x + bobX;
+      const eyeY = node.y + bobY;
+      eyes.push({ x: eyeX, y: eyeY, z: spec.zBase - 1.6 });
+
+      // Per-eye vector in SCREEN NDC (sim +x = screen left → negate x
+      // both when locating the eye on screen and when applying travel).
+      const eyeScreenNdcX = -(node.x - spec.centerX) * RIG.simToNdc;
+      const vx = (pointerNow.x - eyeScreenNdcX) * RIG.gain * spec.gazeStrength;
+      const vy = pointerNow.y * RIG.gain * spec.gazeStrength;
+      const maxTx = RIG.socketRx * RIG.travelFracX;
+      const maxTy = RIG.socketRy * RIG.travelFracY;
+      const lag = i === 1 ? RIG.rightLag : 1;
+      anchors.push({
+        x: eyeX - Math.max(-maxTx, Math.min(maxTx, vx * maxTx)) * lag * gazeOn,
+        y: eyeY + Math.max(-maxTy, Math.min(maxTy, vy * maxTy)) * lag * gazeOn,
+      });
+    }
+
+    app.setLenoxRig?.({
+      eyes,
+      anchors,
+      socketRx: RIG.socketRx * spec.entityScaleResolved,
+      socketRy: RIG.socketRy * spec.entityScaleResolved,
+      anchorR: RIG.anchorR * spec.entityScaleResolved,
       squash,
-      gazeX: gazeSimX,
-      gazeY: gazeSimY,
-      presence: debugPupils && this.activeState === "alive" ? 1 : 0,
+      presence: this.rigPresence,
     });
 
     // Silence every other authored channel; Lenox owns the frame.

@@ -224,8 +224,8 @@ class App {
 
   runtime = null;
 
-  /** Lenox identity layer (void mode): two black pupil occluder meshes. */
-  lenoxPupils = null;
+  /** Lenox gaze rig (void mode): stable sockets + clamped focal anchors. */
+  lenoxRig = null;
 
   postEnterDriveActive = false;
 
@@ -363,55 +363,76 @@ class App {
   }
 
   /**
-   * Lenox identity layer: two black almond pupil occluders in sim space
-   * (children of the particle group). Against the void they are invisible
-   * as objects — they exist only as crisp negative space carved out of the
-   * particle field. Particles author AROUND them; the focal glint floats
-   * in front.
+   * Lenox gaze rig — the deterministic identity layer (works with particles
+   * disabled). Per eye, in sim space (children of the particle group):
+   *   socket — stable dark almond aperture plate (barely above void, never
+   *            white, never a cutout hole)
+   *   anchor — small restrained cyan focal disc; travel is clamped inside
+   *            the socket, per-eye vector (CodePen-2 architecture)
+   * Particles wrap around this rig; they do not define it.
    */
-  initLenoxPupilOccluders() {
-    if (!this.particleRenderer?.object || this.lenoxPupils) return;
+  initLenoxGazeRig() {
+    if (!this.particleRenderer?.object || this.lenoxRig) return;
 
-    const shape = new THREE.Shape();
-    shape.moveTo(-1, 0);
-    shape.quadraticCurveTo(0, 1.45, 1, 0);
-    shape.quadraticCurveTo(0, -1.45, -1, 0);
-    const geometry = new THREE.ShapeGeometry(shape, 24);
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x020304,
+    const socketShape = new THREE.Shape();
+    socketShape.moveTo(-1, 0);
+    socketShape.quadraticCurveTo(0, 1.35, 1, 0);
+    socketShape.quadraticCurveTo(0, -1.35, -1, 0);
+    const socketGeometry = new THREE.ShapeGeometry(socketShape, 24);
+    const socketMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0c0f13,
       side: THREE.DoubleSide,
       toneMapped: false,
     });
 
-    this.lenoxPupils = [
-      new THREE.Mesh(geometry, material),
-      new THREE.Mesh(geometry, material),
-    ];
-    for (const pupil of this.lenoxPupils) {
-      pupil.visible = false;
-      pupil.renderOrder = 2;
-      this.particleRenderer.object.add(pupil);
-    }
+    const anchorGeometry = new THREE.CircleGeometry(1, 24);
+    const anchorMaterial = new THREE.MeshBasicMaterial({
+      color: 0x2fa8c9,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+
+    const make = (geometry, material, renderOrder) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.visible = false;
+      mesh.renderOrder = renderOrder;
+      this.particleRenderer.object.add(mesh);
+      return mesh;
+    };
+
+    this.lenoxRig = {
+      sockets: [make(socketGeometry, socketMaterial, 2), make(socketGeometry, socketMaterial, 2)],
+      anchors: [make(anchorGeometry, anchorMaterial, 3), make(anchorGeometry, anchorMaterial, 3)],
+      geometries: [socketGeometry, anchorGeometry],
+      materials: [socketMaterial, anchorMaterial],
+    };
   }
 
   /**
-   * Per-frame pupil transform from the Lenox drive (sim-space coordinates).
-   * `presence` 0..1 scales the pupils in/out; gaze shifts them subtly
-   * (the focal glint carries the strong gaze read).
+   * Per-frame rig transform from the Lenox drive (sim-space coordinates).
+   * `eyes` are stable socket centers; `anchors` are the clamped per-eye
+   * focal positions. `presence` 0..1 fades the rig in/out.
    */
-  setLenoxOcular({ leftX, rightX, centerY, z, rx, ry, squash, gazeX, gazeY, presence }) {
-    if (!this.lenoxPupils) return;
+  setLenoxRig({ eyes, anchors, socketRx, socketRy, anchorR, squash, presence }) {
+    if (!this.lenoxRig) return;
     const p = Math.max(0, Math.min(presence ?? 0, 1));
-    const centers = [leftX, rightX];
+    const sq = Math.max(squash ?? 1, 0.02);
     for (let i = 0; i < 2; i++) {
-      const pupil = this.lenoxPupils[i];
-      pupil.visible = p > 0.02;
-      pupil.position.set(
-        centers[i] + gazeX * 0.4,
-        centerY + gazeY * 0.4,
-        z,
-      );
-      pupil.scale.set(rx * p, ry * Math.max(squash, 0.02) * p, 1);
+      const socket = this.lenoxRig.sockets[i];
+      const anchor = this.lenoxRig.anchors[i];
+      socket.visible = p > 0.02;
+      anchor.visible = p > 0.02;
+      socket.position.set(eyes[i].x, eyes[i].y, eyes[i].z);
+      socket.scale.set(socketRx * p, socketRy * sq * p, 1);
+      anchor.position.set(anchors[i].x, anchors[i].y, eyes[i].z - 0.6);
+      anchor.scale.set(anchorR * p, anchorR * sq * p, 1);
+    }
+  }
+
+  /** Dev: hide/show the particle body (rig must read on its own). */
+  setParticlesVisible(visible) {
+    if (this.particleRenderer) {
+      this.particleRenderer.forceHidden = !visible;
     }
   }
 
@@ -622,7 +643,7 @@ class App {
     this.scene.add(this.particleRenderer.object);
 
     if (this.visualMode === "void") {
-      this.initLenoxPupilOccluders();
+      this.initLenoxGazeRig();
     }
 
     this.createPostProcessingPipeline();
@@ -923,10 +944,10 @@ class App {
   }
 
   dispose() {
-    if (this.lenoxPupils) {
-      this.lenoxPupils[0]?.geometry?.dispose?.();
-      this.lenoxPupils[0]?.material?.dispose?.();
-      this.lenoxPupils = null;
+    if (this.lenoxRig) {
+      for (const g of this.lenoxRig.geometries) g?.dispose?.();
+      for (const m of this.lenoxRig.materials) m?.dispose?.();
+      this.lenoxRig = null;
     }
     this.particleRenderer?.dispose?.();
     this.backgroundGeometry?.dispose?.();

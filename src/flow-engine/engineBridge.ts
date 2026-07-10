@@ -165,6 +165,12 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.lenoxDrive?.setGazeTarget(x, y);
   }
 
+  /** Dev (lenox proof): hide particles to verify the gaze rig on its own. */
+  setLenoxParticlesVisible(visible: boolean): void {
+    if (this.disposed || !this.lenoxDrive) return;
+    this.app?.setParticlesVisible?.(visible);
+  }
+
   setChamberEnergy(level01: number): void {
     if (this.disposed || !Number.isFinite(level01)) return;
     this.chamberEnergy = Math.min(1, Math.max(0, level01));

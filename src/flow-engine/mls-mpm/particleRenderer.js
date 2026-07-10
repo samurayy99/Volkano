@@ -987,6 +987,8 @@ class ParticleRenderer {
   geometry = null;
   material = null;
   uniforms = {};
+  /** Dev (lenox proof): hide the particle body regardless of runtime state. */
+  forceHidden = false;
 
   runtime = {
     particles: 8192 * 4,
@@ -1130,7 +1132,7 @@ class ParticleRenderer {
 
     if (this._particleBodyMesh) {
       this._particleBodyMesh.castShadow = !lockedDissolve;
-      this._particleBodyMesh.visible = !hideRods;
+      this._particleBodyMesh.visible = !hideRods && !this.forceHidden;
     }
   }
 

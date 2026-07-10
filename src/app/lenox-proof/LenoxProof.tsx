@@ -23,6 +23,7 @@ export function LenoxProof() {
   const [state, setState] = useState<LenoxProofState>("idle");
   const [fps, setFps] = useState(0);
   const [particles, setParticles] = useState(0);
+  const [particlesOn, setParticlesOn] = useState(true);
 
   // WebGPU detection + engine boot.
   useEffect(() => {
@@ -160,6 +161,33 @@ export function LenoxProof() {
           gap: 8,
         }}
       >
+        <button
+          type="button"
+          onClick={() => {
+            setParticlesOn((v) => {
+              bridgeRef.current?.setLenoxParticlesVisible(!v);
+              return !v;
+            });
+          }}
+          style={{
+            appearance: "none",
+            cursor: "pointer",
+            font: "10px ui-monospace, monospace",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            padding: "6px 12px",
+            borderRadius: 999,
+            border: particlesOn
+              ? "1px solid rgba(180, 200, 210, 0.2)"
+              : "1px solid rgba(224, 139, 60, 0.6)",
+            background: "rgba(0,0,0,0.45)",
+            color: particlesOn
+              ? "rgba(200, 214, 220, 0.6)"
+              : "rgba(232, 180, 120, 0.9)",
+          }}
+        >
+          particles {particlesOn ? "on" : "off"}
+        </button>
         {(["signal", "presence", "entity"] as const).map((p) => (
           <button
             key={p}
