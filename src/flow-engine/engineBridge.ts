@@ -53,7 +53,7 @@ export class FlowEngineBridge implements FlowEngineApi {
   private chamberEnergy = 0;
   private chamberDrive = new SourceChamberDrive();
   private lenoxDrive: LenoxEyesDrive | null = null;
-  private lastLenoxState: LenoxProofState = "dormant";
+  private lastLenoxState: LenoxProofState = "idle";
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
@@ -92,9 +92,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app = app;
     await app.init(width, height);
     if (this.options.lenoxMode) {
-      this.lenoxDrive = new LenoxEyesDrive({
-        reducedMotion: this.options.lenoxReducedMotion,
-      });
+      this.lenoxDrive = new LenoxEyesDrive();
     }
 
     this.resizeObserver = new ResizeObserver(this.onResize);
