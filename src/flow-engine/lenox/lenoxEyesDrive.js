@@ -20,6 +20,11 @@
  *   – brand default cyan/silver; emotion accent colors only behind
  *     __LENOX_TUNE__.emotionColors
  *
+ * Silver-material knobs (Session 1, live-tunable via __LENOX_TUNE__):
+ *   metalness (0.85) · roughness (0.3) · envIntensity (1.35) ·
+ *   silverGain (1) · keyIntensity (2.4) · hemiIntensity (0.3) ·
+ *   keyX/keyY/keyZ (1.35 / 0.62 / -0.35; world +x = screen LEFT)
+ *
  * NOTE: the camera views the sim from -z → sim +x = screen LEFT; every
  * screen-x intent is negated into sim space.
  */
@@ -251,6 +256,17 @@ function resolvePresenceSpec() {
     focalSignalStrength: tune.focalSignalStrength ?? 0.2,
     floatAmp: tune.floatAmp ?? 0.9,
     emotionColors: tune.emotionColors === true,
+    // Silver-material channel (Session 1) — start hypotheses, tuned visually.
+    metalness: tune.metalness ?? 0.85,
+    roughness: tune.roughness ?? 0.3,
+    envIntensity: tune.envIntensity ?? 1.35,
+    silverGain: tune.silverGain ?? 1,
+    keyIntensity: tune.keyIntensity ?? 2.4,
+    hemiIntensity: tune.hemiIntensity ?? 0.3,
+    // World +x = screen LEFT (camera looks from -z toward +z).
+    keyX: tune.keyX ?? 1.35,
+    keyY: tune.keyY ?? 0.62,
+    keyZ: tune.keyZ ?? -0.35,
   };
 }
 
@@ -727,6 +743,20 @@ export class LenoxEyesDrive {
     rt.massDimT = 0;
     rt.materialClaimT = 0;
     rt.lenoxTintT = 1;
+
+    // Silver-material channel: same liquid metal across every lifecycle
+    // state — dust, play mass and the present face are one material.
+    rt.lenoxMetalness = spec.metalness;
+    rt.lenoxRoughness = spec.roughness;
+    rt.lenoxEnvIntensity = spec.envIntensity;
+    rt.lenoxSilverGain = spec.silverGain;
+    app.setLenoxLightRig?.({
+      keyIntensity: spec.keyIntensity,
+      hemiIntensity: spec.hemiIntensity,
+      keyX: spec.keyX,
+      keyY: spec.keyY,
+      keyZ: spec.keyZ,
+    });
 
     app.setPointerInfluence(cur.pointerInfluence);
     return this.activeState;

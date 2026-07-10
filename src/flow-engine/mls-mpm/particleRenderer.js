@@ -577,8 +577,15 @@ const buildUnifiedParticleSurfaceNodes = ({
     .add(viewThicknessT.mul(float(0.2)))
     .clamp(float(0), float(1))
     .toConst("lenoxEnergyT");
-  const lenoxSilver = vec3(0.5, 0.55, 0.6);
-  const lenoxSilverLift = vec3(0.72, 0.78, 0.84);
+  // Metal albedo IS the reflection tint (F0), so silver must sit bright;
+  // the old 0.5-band read as fog once metalness went up.
+  const lenoxSilverGain = uniforms.lenoxSilverGain.toConst("lenoxSilverGain");
+  const lenoxSilver = vec3(0.74, 0.78, 0.83)
+    .mul(lenoxSilverGain)
+    .clamp(vec3(0), vec3(1));
+  const lenoxSilverLift = vec3(0.88, 0.91, 0.95)
+    .mul(lenoxSilverGain)
+    .clamp(vec3(0), vec3(1));
   const lenoxCyan = vec3(0.24, 0.86, 1.0);
   const lenoxBody = mix(lenoxSilver, lenoxCyan, lenoxEnergyT)
     .toConst("lenoxBodyBase");
@@ -617,9 +624,15 @@ const buildUnifiedParticleSurfaceNodes = ({
     )
     .toConst("particleBloomSource");
 
-  material.colorNode = surfaceColor;
-  material.roughnessNode = surfaceRoughness;
-  material.metalnessNode = mix(
+  // Liquid-silver micro-surface: per-particle noise breaks up the sheen,
+  // kinetic particles read slightly wetter (glossier) than the resting mass.
+  const lenoxSurfaceRoughness = uniforms.lenoxRoughness
+    .add(roughNoise.mul(float(0.12)))
+    .sub(lenoxEnergyT.mul(float(0.1)))
+    .clamp(float(0.05), float(0.92))
+    .toConst("lenoxSurfaceRoughness");
+
+  const chamberMetalness = mix(
     float(0.02),
     mix(
       float(0.06),
@@ -630,6 +643,18 @@ const buildUnifiedParticleSurfaceNodes = ({
         .clamp(float(0), float(1)),
     ),
     postEnterMaterialT,
+  ).toConst("chamberMetalness");
+
+  material.colorNode = surfaceColor;
+  material.roughnessNode = mix(
+    surfaceRoughness,
+    lenoxSurfaceRoughness,
+    lenoxTintT,
+  );
+  material.metalnessNode = mix(
+    chamberMetalness,
+    uniforms.lenoxMetalness,
+    lenoxTintT,
   );
   material.emissiveNode = surfaceEmissive;
   material.aoNode = surfaceAo;
@@ -1028,6 +1053,11 @@ class ParticleRenderer {
     this.uniforms.lenoxTintT = uniform(0);
     /** Focal glint emissive gain (Lenox mode). */
     this.uniforms.lenoxFocalBoost = uniform(1);
+    // Lenox silver-material channel — only blended in where lenoxTintT
+    // masks it, so the chamber/post-enter material path stays byte-identical.
+    this.uniforms.lenoxMetalness = uniform(0.85);
+    this.uniforms.lenoxRoughness = uniform(0.3);
+    this.uniforms.lenoxSilverGain = uniform(1);
 
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
@@ -1120,7 +1150,14 @@ class ParticleRenderer {
     this.uniforms.postEnterFlightT.value = this.runtime.postEnterFlightT ?? 0;
     this.uniforms.lenoxTintT.value = this.runtime.lenoxTintT ?? 0;
     this.uniforms.lenoxFocalBoost.value = this.runtime.lenoxFocalBoost ?? 1;
-    this.material.envMapIntensity = 0.12;
+    this.uniforms.lenoxMetalness.value = this.runtime.lenoxMetalness ?? 0.85;
+    this.uniforms.lenoxRoughness.value = this.runtime.lenoxRoughness ?? 0.3;
+    this.uniforms.lenoxSilverGain.value = this.runtime.lenoxSilverGain ?? 1;
+    // Chamber stays at exactly 0.12; the silver mass needs the HDRI to have
+    // something to mirror, so Lenox lerps the env up with lenoxTintT.
+    const envLenoxT = Math.min(1, Math.max(0, this.runtime.lenoxTintT ?? 0));
+    const envLenox = this.runtime.lenoxEnvIntensity ?? 1.35;
+    this.material.envMapIntensity = 0.12 + (envLenox - 0.12) * envLenoxT;
 
     const lockedDissolve = false;
     const holdIsolationMode = this.runtime.postEnterActive

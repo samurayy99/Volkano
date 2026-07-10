@@ -159,6 +159,12 @@ const createRuntimeState = (width = window.innerWidth) => {
     // Lenox void channels (V-eyes proof). 0 / zero-vector = chamber behavior.
     lenoxTintT: 0,
     lenoxFocalBoost: 1,
+    // Lenox silver-material channel (Session 1). Only read where lenoxTintT
+    // masks it, so chamber/post-enter rendering stays byte-identical.
+    lenoxMetalness: 0.85,
+    lenoxRoughness: 0.3,
+    lenoxEnvIntensity: 1.35,
+    lenoxSilverGain: 1,
     settleOffset: new THREE.Vector3(),
     settleBob: new THREE.Vector3(),
     settleSquashT: 1,
@@ -791,6 +797,25 @@ class App {
   setLenoxComposition(target) {
     if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0 };
     this.lenoxFrame.target = Math.max(0, Math.min(target ?? 0, 1));
+  }
+
+  /**
+   * Lenox side-key rig: one dominant key sculpts a light flank and a shadow
+   * flank on the silver mass. Only the Lenox drive calls this — the chamber
+   * keeps the Lights constructor values untouched.
+   * Camera sits at -z looking toward +z, so world +x is screen LEFT.
+   */
+  setLenoxLightRig(spec = {}) {
+    const key = this.lights?.keyLight;
+    if (!key) return;
+    key.position.set(spec.keyX ?? 1.35, spec.keyY ?? 0.62, spec.keyZ ?? -0.35);
+    key.intensity = spec.keyIntensity ?? 2.4;
+    key.angle = Math.PI * 0.42;
+    key.penumbra = 1;
+    key.color.setHex(0xf4efe6);
+    if (this.lights.hemi) {
+      this.lights.hemi.intensity = spec.hemiIntensity ?? 0.3;
+    }
   }
 
   updateLenoxCamera(dt) {
