@@ -608,6 +608,10 @@ export class LenoxEyesDrive {
     // The rig owns blink; the particle field is never squashed.
     rt.settleSquashT = 1;
     rt.settleSquashCenter = PRESENCE_CENTER.y;
+    // Screen-edge ricochet: lively while playing, gentle once the face
+    // exists (bounds themselves come from the camera → any viewport).
+    rt.wallRestitution =
+      this.activeState === "present" ? 0.15 : this.activeState === "awakening" ? 0.25 : 0.65;
     rt.lenoxFocalBoost = spec.focalSignalStrength;
 
     const preWake =

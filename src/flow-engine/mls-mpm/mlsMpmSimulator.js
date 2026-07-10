@@ -591,6 +591,15 @@ class mlsMpmSimulator {
     this.uniforms.settleSquashCenter = uniform(32);
     /** Rigid drift applied to ALL settle targets (Lenox float/sway); zero = chamber behavior. */
     this.uniforms.settleBob = uniform(new THREE.Vector3());
+    /**
+     * Soft-wall bounds (Lenox: the visible viewport projected into sim
+     * space, so particles ricochet off the actual screen edges on any
+     * device). Defaults = grid walls → chamber behavior unchanged.
+     */
+    this.uniforms.simBoundsMin = uniform(new THREE.Vector3(GRID_WALL_MARGIN, GRID_WALL_MARGIN, GRID_WALL_MARGIN));
+    this.uniforms.simBoundsMax = uniform(new THREE.Vector3(64 - GRID_WALL_MARGIN, 64 - GRID_WALL_MARGIN, 64 - GRID_WALL_MARGIN));
+    /** 0 = soft push only (chamber); >0 = reflective bounce with this restitution. */
+    this.uniforms.wallRestitution = uniform(0);
 
     this.kernels.clearGrid = Fn(() => {
       this.cellBuffer.setAtomic("x", false);
@@ -1027,10 +1036,32 @@ class mlsMpmSimulator {
             .mul(WALL_RESPONSE.predictionScale),
         )
         .toConst("xN");
-      const wallMin = vec3(GRID_WALL_MARGIN).toConst("wallMin");
-      const wallMax = vec3(this.uniforms.gridSize)
-        .sub(GRID_WALL_MARGIN)
-        .toConst("wallMax");
+      const wallMin = this.uniforms.simBoundsMin.toConst("wallMin");
+      const wallMax = this.uniforms.simBoundsMax.toConst("wallMax");
+
+      // Reflective bounce (Lenox screen edges). restitution 0 = disabled.
+      const rest = this.uniforms.wallRestitution.toConst("wallRest");
+      If(rest.greaterThan(float(0.01)), () => {
+        If(xN.x.lessThan(wallMin.x).and(particleVelocity.x.lessThan(0)), () => {
+          particleVelocity.x.assign(particleVelocity.x.negate().mul(rest));
+        });
+        If(xN.x.greaterThan(wallMax.x).and(particleVelocity.x.greaterThan(0)), () => {
+          particleVelocity.x.assign(particleVelocity.x.negate().mul(rest));
+        });
+        If(xN.y.lessThan(wallMin.y).and(particleVelocity.y.lessThan(0)), () => {
+          particleVelocity.y.assign(particleVelocity.y.negate().mul(rest));
+        });
+        If(xN.y.greaterThan(wallMax.y).and(particleVelocity.y.greaterThan(0)), () => {
+          particleVelocity.y.assign(particleVelocity.y.negate().mul(rest));
+        });
+        If(xN.z.lessThan(wallMin.z).and(particleVelocity.z.lessThan(0)), () => {
+          particleVelocity.z.assign(particleVelocity.z.negate().mul(rest));
+        });
+        If(xN.z.greaterThan(wallMax.z).and(particleVelocity.z.greaterThan(0)), () => {
+          particleVelocity.z.assign(particleVelocity.z.negate().mul(rest));
+        });
+      });
+
       applyWallResponse(particleVelocity.x, xN.x, wallMin.x, wallMax.x);
       applyWallResponse(particleVelocity.y, xN.y, wallMin.y, wallMax.y);
       applyWallResponse(particleVelocity.z, xN.z, wallMin.z, wallMax.z);
@@ -1722,6 +1753,19 @@ class mlsMpmSimulator {
     } else {
       this.uniforms.settleBob.value.set(0, 0, 0);
     }
+    const wallLo = GRID_WALL_MARGIN;
+    if (runtime.simBoundsMin) {
+      this.uniforms.simBoundsMin.value.copy(runtime.simBoundsMin);
+      this.uniforms.simBoundsMax.value.copy(runtime.simBoundsMax);
+    } else {
+      this.uniforms.simBoundsMin.value.set(wallLo, wallLo, wallLo);
+      this.uniforms.simBoundsMax.value.set(
+        this.gridSize.x - wallLo,
+        this.gridSize.y - wallLo,
+        this.gridSize.z - wallLo,
+      );
+    }
+    this.uniforms.wallRestitution.value = runtime.wallRestitution ?? 0;
   }
 
   markParticleBufferDirty() {

@@ -163,6 +163,10 @@ const createRuntimeState = (width = window.innerWidth) => {
     settleBob: new THREE.Vector3(),
     settleSquashT: 1,
     settleSquashCenter: 32,
+    /** Viewport-projected sim bounds (Lenox); null = grid walls (chamber). */
+    simBoundsMin: null,
+    simBoundsMax: null,
+    wallRestitution: 0,
 
     // Future claim runtime
     authorityLightT: 0,
@@ -805,6 +809,56 @@ class App {
     this.camera.position.set(center.x, targetY, center.z - distance);
     this.camera.lookAt(this.cameraTarget);
     this.camera.updateProjectionMatrix();
+
+    this.updateLenoxScreenBounds(distance, targetY);
+  }
+
+  /**
+   * Project the visible viewport edges (at the particle plane) into sim
+   * space so the fluid ricochets off the ACTUAL screen edges on any device
+   * and any lifecycle framing. Clamped to the grid's safe interior.
+   */
+  updateLenoxScreenBounds(distance, targetYWorld) {
+    if (!this.runtime || !this.camera || !this.particleRenderer) return;
+
+    const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+    const halfH = Math.tan(fovRad / 2) * distance;
+    const halfW = halfH * this.camera.aspect;
+    const center = this.lenoxFramings.center;
+
+    if (!this.runtime.simBoundsMin) {
+      this.runtime.simBoundsMin = new THREE.Vector3();
+      this.runtime.simBoundsMax = new THREE.Vector3();
+    }
+    const minV = this.runtime.simBoundsMin;
+    const maxV = this.runtime.simBoundsMax;
+
+    this._lenoxBoundsScratch ??= new THREE.Vector3();
+    const corner = this._lenoxBoundsScratch;
+
+    this.particleRenderer.worldPointToSimulation(
+      corner.set(center.x - halfW, targetYWorld - halfH, center.z),
+      minV,
+    );
+    this.particleRenderer.worldPointToSimulation(
+      corner.set(center.x + halfW, targetYWorld + halfH, center.z),
+      maxV,
+    );
+
+    // Sim +x renders screen-left → the projected x pair may be swapped.
+    if (minV.x > maxV.x) {
+      const tmp = minV.x;
+      minV.x = maxV.x;
+      maxV.x = tmp;
+    }
+
+    // Clamp to the grid's safe interior; z stays at the grid walls.
+    minV.x = Math.max(3, Math.min(minV.x, 61));
+    maxV.x = Math.max(3, Math.min(maxV.x, 61));
+    minV.y = Math.max(3, Math.min(minV.y, 61));
+    maxV.y = Math.max(3, Math.min(maxV.y, 61));
+    minV.z = 3;
+    maxV.z = 61;
   }
 
   setPointer(clientX, clientY, isDown = false) {
