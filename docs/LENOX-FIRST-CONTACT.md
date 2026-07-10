@@ -1,8 +1,13 @@
 # FIRST CONTACT — Kanonisches Konzept (Regiebuch + Abnahmevertrag)
 
 **Status:** Eingefroren am 2026-07-10 nach Team-Abstimmung (3:3 → Merge-Beschluss).
+**Amendment 2026-07-10:** kanonische UX-Korrekturen eingearbeitet — WAKE ungated
+ab erstem stabilen Frame, Explore als Default (kein Auto-Open, kein Timer),
+Beats statt Stoppuhr, Material-Werte als Start-Hypothese.
 **Quellen:** Regie/Inszenierung: Claude Fable · Abnahmevertrag/Architektur: Codex ·
-UX-Sicherung: ChatGPT · Emotion/Impuls: Gemini · Concierge-Kernidee: Volkan.
+UX-Sicherung: ChatGPT (Beats kanonisch statt fixer Laufzeit · WAKE nach erstem
+stabilen Frame, nie verdient · Explore ist Default, guided ist freiwilliges
+Opt-in) · Emotion/Impuls: Gemini · Concierge-Kernidee: Volkan.
 **Änderungen an diesem Dokument nur nach Team-Beschluss.**
 
 ---
@@ -27,8 +32,11 @@ Der Bogen: **Material → Kontakt → Erwachen → Entscheidung → Beweis.**
 2. **Trust-Gesetz:** Keine Fake-Actions, keine Fake-Logs, kein "unsimuliert",
    wenn es simuliert ist. Simulationen sind als DEMO gekennzeichnet. Fähigkeiten
    (Telefonie, Terminierung) erscheinen erst, wenn sie real verdrahtet sind.
-3. **UX-Gesetz:** Kein Interaktions-Gate, je. Menü, Skip Intro und der Weg zu
-   Lenox sind ab Frame ~3 s immer verfügbar. Mystery ist Bonus, nie Bedingung.
+3. **UX-Gesetz:** Kein Interaktions-Gate, je. Menü, Skip Intro und `WAKE LENOX`
+   sind verfügbar, sobald der erste stabile Material-Frame gerendert ist
+   (ruhiges Reveal ~0.5–1.0 s nach Engine Ready). Pointer-Interaktion,
+   Travel-Distanz, Gestenqualität und Play-Dauer sind niemals Voraussetzung.
+   Mystery ist Bonus, nie Bedingung.
 4. **Abnahmeregel (Codex):** Kein Pass wird mit „technisch funktioniert"
    akzeptiert. Jeder Pass muss visuell und emotional beweisen, was er
    behauptet. Volkan nimmt jeden Pass einzeln ab; sein Auge ist die Instanz.
@@ -39,19 +47,19 @@ Der Bogen: **Material → Kontakt → Erwachen → Entscheidung → Beweis.**
 
 | Streitpunkt | Finale Entscheidung |
 |---|---|
-| Material | Flüssiges, schweres Silber, PBR (Metalness ~0.85, Roughness ~0.3, HDRI hoch), seitliches Key-Light |
+| Material | Flüssiges, schweres Silber, PBR, seitliches Key-Light. Start-Hypothese für Session 1: Metalness ~0.85, Roughness ~0.3, HDRI hoch — finale Werte bestimmt Volkans visuelle Abnahme |
 | Raum | Graphit-Void, radialer Licht-Brunnen, Navy-Falloff, Tiefe aus drei Partikel-Z-Bändern; keine Membran (Stufe 2), keine Wände |
 | Komposition | Poröses asymmetrisches Reservoir unterhalb der Mitte (Golden-Ratio-Anker), viel Void darüber |
 | First Contact | Eine Signatur: „Es hat Masse" — träge Verdrängung langsam, Abriss-Tropfen schnell |
 | Ricochet | Quecksilber gegen Glas: nur abgerissene Tropfen, Energieverlust beim Aufprall, nie die Hauptmasse, kein Pinball |
 | Copy vor Interaktion | Keine |
-| Erste Copy | PLAY WITH ME als Bestätigung nach erster sichtbarer Reaktion |
-| Aktivierungs-CTA | **WAKE LENOX** (Amber-Kontur), zeitbasiert ab ~3 s, nie verdient |
+| Erste Copy | PLAY WITH ME als Einladung/Bestätigung nach erster sichtbarer Reaktion — kontrolliert keinen Lifecycle-State |
+| Aktivierungs-CTA | **WAKE LENOX** (Amber-Kontur), sichtbar nach dem ersten stabilen Material-Frame (ruhiges Reveal ~0.5–1.0 s nach Engine Ready), nie verdient |
 | Awakening-Auslöser | Bewusster Klick / Tastatur — nie Scroll |
 | Scroll | Erst nach dem Erwachen (Struktur-Akt) |
 | Latente Symmetrie | Easter-Egg-Schublade; erst nach Material-Abnahme diskutieren |
 | Erste Frage von Lenox | Führung vs. Freiheit — nach dem Blickkontakt-Beat |
-| Ignorierte Frage | **Auto-Open:** Website öffnet nach kurzer Zeit automatisch im Explore-Modus (ChatGPT) |
+| Ignorierte Frage | Kein Waiting-State: Explore ist von Anfang an der aktive Default (Scroll/Menü/Links funktionieren, Hero baut sich bereits auf). Die Frage ist eine freiwillige Einladung — kein Timer, kein Countdown, kein blockierter Zustand (ChatGPT) |
 | Farbfrage | Delight-Moment NACH erstem Business-Beweis; kuratierte Moods (kühl/neutral/warm), Signalsystem only — Marke/Layout/Typo unangetastet. Keine Amber-Mood-Option |
 | Demo-Darstellung | Business-Ablauf mit Dossier — kein Terminal-Protokoll als Hauptansicht |
 | Lenox nach dem Intro | Bleibt dauerhaft Teil der Website, wird nie Chat-Bubble |
@@ -74,9 +82,18 @@ Schulterpunkt, dünner Ausläufer, freie Tropfen in der Tiefe.
 **Langsamer Cursor:** träge Verdrängung, schweres Zurückfließen (~1 s), rest
 des Feldes ruhig. **Schneller Wisch:** Tropfen reißen ab, glühen kurz cyan,
 prallen schwer von den Screen-Kanten ab (Verformung, Energieverlust, viskoses
-Zurückgleiten). Danach: `PLAY WITH ME` (Bestätigung), ab ~3 s `WAKE LENOX`.
+Zurückgleiten). `WAKE LENOX` wird sichtbar, sobald der erste stabile
+Material-Frame gerendert ist (ruhiges Reveal ~0.5–1.0 s nach Engine Ready) —
+Interaktion, Travel-Distanz oder Play-Dauer sind niemals Voraussetzung.
+`PLAY WITH ME` darf nach der ersten sichtbaren Reaktion als Einladung oder
+Bestätigung erscheinen, kontrolliert aber keinen Lifecycle-State.
 
-### Akt 2 · Die Geburt (~4–5 s, Codex' Regie)
+### Akt 2 · Die Geburt (Codex' Regie)
+Kanonisch sind die **Beats**, nicht die Stoppuhr:
+Ignition → Formation → Negative Eye Space → Eye Open → Gaze Acquisition →
+Emotional Hold. Initiales Timing-Ziel: ~3.5–4.4 s; die finale Dauer bestimmt
+Volkans visuelle Abnahme. Die folgende Timeline ist das initiale Treatment,
+keine unveränderliche Laufzeit und keine harte Obergrenze:
 - **0–0.2 s Ignition:** Amber-Kompression am Klickpunkt, ein tiefer Impuls,
   eine Druckwelle, der Raum atmet ein. Amber verschwindet sofort. Klick
   schaltet den einzigen Sound frei (tiefer Körperton, metallischer Oberton).
@@ -102,11 +119,16 @@ Zeile erscheint:
 > **„Willst du dich selbst umsehen — oder soll ich dir zeigen, was ich kann?"**
 > `I'LL LOOK AROUND` · `SHOW ME`
 
-Zwei Chips. Keine dritte Option, keine Chat-Bubble. Menü/Scroll funktionieren
-bereits. Ignoriert → Auto-Open im Explore-Modus.
+Zwei Chips. Keine dritte Option, keine Chat-Bubble. **Explore ist bereits der
+aktive Default:** Scroll, Menü und Links funktionieren, das Hero baut sich
+bereits auf. Die Frage ist nur eine freiwillige Einladung — es gibt keinen
+waiting-for-choice-Zustand, keinen Auto-Selection-Timer, keinen Countdown und
+keinen blockierten Onboarding-Zustand. `I'LL LOOK AROUND` bestätigt den bereits
+aktiven Default und beruhigt die Einladung; `SHOW ME` ist der einzige echte
+Mode-Wechsel (explore → guided).
 
-**Pfad A — Explore:** Lenox wird ruhig, bleibt rechts (Mobile: oben, ~35–40 %),
-Blick + Emotionen aktiv, spricht nur auf Ansprache. Normale Website.
+**Pfad A — Explore (Default):** Lenox wird ruhig, bleibt rechts (Mobile: oben,
+~35–40 %), Blick + Emotionen aktiv, spricht nur auf Ansprache. Normale Website.
 
 **Pfad B — Show me:** Problem-Frage statt Featureliste:
 **„Wo verlierst du heute am meisten?"** → `VERPASSTE ANFRAGEN` ·
@@ -151,10 +173,13 @@ Contact (kurzer Lenox-Intake ODER klassisch E-Mail/Call — beides immer da).
 ## Zustandsarchitektur (intern, orthogonal — Codex)
 
 - **Lifecycle:** dormant → awakening → present
+- **Experience Mode:** explore / guided — Default: explore. Unabhängig vom
+  Lifecycle (z. B. `present + explore + idle + curious` oder
+  `present + guided + listening + neutral`)
 - **Cognitive Mode:** idle / listening / thinking / speaking / acting
 - **Affect:** neutral / curious / pleased / concerned (+ vorhandene Emotion-Grammatik)
 - **Reaction Overlay:** blink / saccade / startle / confirmation
-Kein Mega-Enum. Ebenen kombinieren sich kontrolliert.
+Kein Mega-Enum, kein `waitingForChoice`. Ebenen kombinieren sich kontrolliert.
 
 ## Mobile & Accessibility
 
@@ -169,9 +194,14 @@ beschriftet.
 
 ## Engine-Realität (Baubarkeits-Schicht)
 
-- **Silber = drei Regler:** Partikel sind 3D-Shards mit MeshStandardNodeMaterial,
-  HDRI-Env und Key-Light — Metalness/Roughness/Env-Intensität existieren.
-  Kein Shader-Neubau.
+- **Silber:** wird primär über bestehende Material-, Environment- und
+  Lichtkanäle angestrebt (Partikel sind 3D-Shards mit MeshStandardNodeMaterial,
+  HDRI-Env und Key-Light — Metalness/Roughness/Env-Intensität existieren).
+  Falls die gemeinsam genutzte Materiallogik (u. a. `postEnterMaterialT`-Pfade)
+  keine saubere Isolation erlaubt, ist ein kleiner Lenox-spezifischer
+  Materialkanal ausdrücklich erlaubt. Bedingungen: Chamber-Look unverändert,
+  Post-Enter-Look unverändert, keine globale Materialregression, kein
+  unnötiger Shader-Rewrite.
 - **Größen-/Rollenbänder:** Rollen-Kanal (target-w) existiert.
 - **Bounce:** Screen-Edge-Bounds + Restitution-Uniform existieren; Differenzierung
   Tropfen vs. Hauptmasse ist Tuning.
@@ -184,9 +214,13 @@ beschriftet.
 
 ## Build-Sessions (eine Frage pro Session, Abnahme durch Volkan pro Pass)
 
-1. **Silber-Material** — nur Metalness/Roughness/Env/Key-Light + Cyan-Kinetik.
-   Journey eingefroren. *Abnahme: Standbild wirkt skulptural; Bewegung glitzert
-   metallisch; kein Neon-Nebel.*
+1. **Silber-Material only** — vorhandene Regler zuerst (Metalness/Roughness/
+   Env/Key-Light + Cyan-Kinetik); minimaler Lenox-spezifischer Materialkanal
+   nur falls die geteilte Logik keine Isolation erlaubt; keinerlei Chamber-/
+   Post-Enter-Regression. Metalness ~0.85 / Roughness ~0.3 sind
+   Start-Hypothesen, keine eingefrorenen Designwerte. Journey eingefroren.
+   *Abnahme: Standbild wirkt skulptural; Bewegung glitzert metallisch; kein
+   Neon-Nebel.*
 2. **Raum** — Licht-Brunnen, Z-Bänder, Größenbänder. *Abnahme: Tiefe ohne
    sichtbare Geometrie; Licht-/Schattenflanke klar.*
 3. **Komposition** — Reservoir-Seeding auf den Anker. *Abnahme: Präsenz statt
@@ -194,9 +228,13 @@ beschriftet.
 4. **First Contact** — Verdrängung, Abriss-Tropfen, schwerer Bounce.
    *Abnahme: langsam = Masse, schnell = lokale Energie, Rest ruhig; kein
    Nachzittern, kein Pinball.*
-5. **Wake-Ritual** — die 5 Sekunden auf der Silbermasse. *Abnahme: Geburt aus
-   derselben Materie glaubwürdig; Gaze-Moment funktioniert emotional.*
-6. **Weiche + Hero-Destillation** — Frage, zwei Chips, Aura→Typo, Auto-Open.
+5. **Wake-Ritual** — die Beat-Sequenz auf der Silbermasse (Beats kanonisch;
+   initiales Timing-Ziel ~3.5–4.4 s, finale Dauer durch visuelle Abnahme).
+   *Abnahme: Geburt aus derselben Materie glaubwürdig; Gaze-Moment
+   funktioniert emotional.*
+6. **Weiche + Hero-Destillation** — Frage, zwei Chips, Aura→Typo. Explore ist
+   bereits Default; `I'LL LOOK AROUND` beruhigt die Einladung, `SHOW ME`
+   schaltet explizit auf guided. Kein Timer.
 7. **Guided Demo** — Showroom re-inszeniert, DEMO-markiert.
 8. **Kalibrierung + Scroll-Strecke + Kontakt-Impuls.**
 
@@ -207,4 +245,6 @@ Terminal-Protokoll als Hauptbeweis · „unsimuliert"-Framing · Amber als
 Mood-Option · Farbfrage als Erstkontakt · Featurelisten-Chips · Chatbot-Bubble ·
 Membran-Background in Stufe 1 · Symmetrie-Flackern vor Material-Abnahme ·
 Telefonat direkt nach dem Erwachen · Fake-Telefonie · Verschwinden von Lenox
-nach dem Intro · 32k-Partikel-Festschreibung ohne Performance-Beweis.
+nach dem Intro · 32k-Partikel-Festschreibung ohne Performance-Beweis ·
+Auto-Open-Timer und waiting-for-choice-Zustand · WAKE-CTA hinter Zeit- oder
+Interaktionsschwellen · Awakening-Dauer als harte Deadline.
