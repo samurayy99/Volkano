@@ -25,18 +25,30 @@ const textureLoader = new THREE.TextureLoader();
 
 const loadTexture = (file, { repeat = true, colorSpace = null } = {}) =>
   new Promise((resolve) => {
-    textureLoader.load(file, (loadedTexture) => {
-      loadedTexture.wrapS = repeat
-        ? THREE.RepeatWrapping
-        : THREE.ClampToEdgeWrapping;
-      loadedTexture.wrapT = repeat
-        ? THREE.RepeatWrapping
-        : THREE.ClampToEdgeWrapping;
-      if (colorSpace) {
-        loadedTexture.colorSpace = colorSpace;
-      }
-      resolve(loadedTexture);
-    });
+    textureLoader.load(
+      file,
+      (loadedTexture) => {
+        loadedTexture.wrapS = repeat
+          ? THREE.RepeatWrapping
+          : THREE.ClampToEdgeWrapping;
+        loadedTexture.wrapT = repeat
+          ? THREE.RepeatWrapping
+          : THREE.ClampToEdgeWrapping;
+        if (colorSpace) {
+          loadedTexture.colorSpace = colorSpace;
+        }
+        resolve(loadedTexture);
+      },
+      undefined,
+      // Without this, a missing file never settles the promise: init() awaits it
+      // forever, the app hangs in "probing", and the visitor gets a black screen
+      // with a dead WAKE button — no error, no fallback, no state. A 404 must
+      // degrade, not deadlock.
+      (error) => {
+        console.error(`[flow-engine] texture failed to load: ${file}`, error);
+        resolve(null);
+      },
+    );
   });
 
 const cloneTexture = (sourceTexture, repeatX = 1, repeatY = 1) => {
@@ -224,27 +236,38 @@ class BackgroundGeometry {
     }
   }
 
-  async init() {
+  /**
+   * @param {object} [options]
+   * @param {boolean} [options.backPlate] The rift image behind the aperture.
+   *   Void mode (Lenox) never adds this group to the scene — it only needs the
+   *   geometry, for source anchors and rift descriptors. Loading a 3.4MB hero
+   *   plate for a chamber nobody renders is pure cost, so it is skipped there.
+   */
+  async init({ backPlate = true } = {}) {
     const [normalTexture, colorTexture, roughnessTexture, backPlateTexture] =
       await Promise.all([
         loadTexture(NORMAL_MAP_URL),
         loadTexture(COLOR_MAP_URL, { colorSpace: THREE.SRGBColorSpace }),
         loadTexture(ROUGHNESS_MAP_URL),
-        loadTexture(BACK_PLATE_URL, {
-          repeat: false,
-          colorSpace: THREE.SRGBColorSpace,
-        }),
+        backPlate
+          ? loadTexture(BACK_PLATE_URL, {
+              repeat: false,
+              colorSpace: THREE.SRGBColorSpace,
+            })
+          : null,
       ]);
     this.sourceTextures = [
       normalTexture,
       colorTexture,
       roughnessTexture,
       backPlateTexture,
-    ];
+    ].filter(Boolean);
 
-    backPlateTexture.center.set(0.5, 0.5);
-    backPlateTexture.repeat.set(1, 1);
-    backPlateTexture.offset.set(0, 0);
+    if (backPlateTexture) {
+      backPlateTexture.center.set(0.5, 0.5);
+      backPlateTexture.repeat.set(1, 1);
+      backPlateTexture.offset.set(0, 0);
+    }
 
     const {
       apertureWidth,
@@ -364,19 +387,21 @@ class BackgroundGeometry {
       repeatY: 1,
       side: THREE.DoubleSide,
     });
-    const backPlateMaterial = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xffffff),
-      map: backPlateTexture,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-      transparent: true,
-      opacity: BACK_PLATE_SOURCE_OPACITY,
-      depthWrite: false,
-      depthTest: true,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    });
+    const backPlateMaterial = backPlateTexture
+      ? new THREE.MeshBasicMaterial({
+          color: new THREE.Color(0xffffff),
+          map: backPlateTexture,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+          transparent: true,
+          opacity: BACK_PLATE_SOURCE_OPACITY,
+          depthWrite: false,
+          depthTest: true,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        })
+      : null;
     setTextureOffset(leftWallMaterial, 0.14, 0.06);
     setTextureOffset(rightWallMaterial, 0.14, 0.06);
     setTextureOffset(topWallMaterial, 0.22, 0.28);
@@ -515,18 +540,21 @@ class BackgroundGeometry {
     backWall.position.set(0, 0, backWallZ);
     this.backWall = backWall;
 
-    const backPlate = new THREE.Mesh(
-      new THREE.PlaneGeometry(apertureWidth, apertureHeight),
-      backPlateMaterial,
-    );
-    backPlate.position.set(0, 0, depth - 0.006);
-    this.backPlate = backPlate;
-    this.backPlateMaterial = backPlate.material;
-
     group.add(frameLeft, frameRight, frameTop, frameBottom);
     group.add(linerLeft, linerRight, linerTop, linerBottom);
     group.add(leftWall, rightWall, topWall, bottomWall);
-    group.add(backWall, backPlate);
+    group.add(backWall);
+
+    if (backPlateMaterial) {
+      const backPlate = new THREE.Mesh(
+        new THREE.PlaneGeometry(apertureWidth, apertureHeight),
+        backPlateMaterial,
+      );
+      backPlate.position.set(0, 0, depth - 0.006);
+      this.backPlate = backPlate;
+      this.backPlateMaterial = backPlateMaterial;
+      group.add(backPlate);
+    }
 
     group.position.set(centerX, centerY, centerZ);
     this.object = group;

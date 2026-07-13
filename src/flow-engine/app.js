@@ -1168,9 +1168,12 @@ class App {
     this.particleRenderer.applyRuntime(this.runtime);
 
     this.backgroundGeometry = new BackgroundGeometry();
-    await this.backgroundGeometry.init();
     // Void mode still constructs the vessel (source anchors, rift descriptors
-    // and seeding derive from it) but never shows it.
+    // and seeding derive from it) but never shows it — so it does not need the
+    // rift back plate either. That image belongs to the chamber era.
+    await this.backgroundGeometry.init({
+      backPlate: this.visualMode !== "void",
+    });
     if (this.visualMode !== "void") {
       this.scene.add(this.backgroundGeometry.object);
     }
