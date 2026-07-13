@@ -14,19 +14,25 @@ export type LenoxProofState =
   | "waking"
   | "alive";
 
-/** Lenox expressive emotions (alive state). */
+/**
+ * The eight LENOX PRIME display states (alive). These are system states, not
+ * human moods: the visor communicates what Lenox is doing, not how it feels.
+ */
 export type LenoxEmotion =
   | "neutral"
-  | "happy"
-  | "sad"
-  | "angry"
-  | "surprised"
-  | "suspicious"
+  | "curious"
+  | "pleased"
+  | "concerned"
+  | "listening"
   | "thinking"
-  | "listening";
+  | "speaking"
+  | "acting";
 
-/** Lenox temporary reactions layered over the emotion. */
-export type LenoxReaction = "laugh" | "startle" | "tired";
+/**
+ * Transient reactions layered over a state. `confirm` is the only signal that
+ * leaves cyan: an amber checkmark for a confirmed / completed result.
+ */
+export type LenoxReaction = "laugh" | "startle" | "tired" | "confirm";
 
 /** Source-chamber conversation states (V2 signal layer). */
 export type ConversationState =

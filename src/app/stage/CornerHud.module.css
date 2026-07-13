@@ -1,0 +1,158 @@
+/*
+ * The instrument frame. It is not decoration and it is not a header: it is the
+ * skeleton the built page keeps. Four corners, each one load-bearing —
+ * whose studio, what language, what the entity is doing, and the way out.
+ *
+ * A clock would be theatre. Anything here that does not do a job comes out.
+ */
+
+.hud {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  /* 10px at 45% was legible in a design tool and invisible on a black void.
+     Instrumentation has to be readable or it is just texture. */
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(200, 204, 208, 0.62);
+  /* The frame belongs to the room, not to the viewport. It arrives with him. */
+  opacity: 0;
+  transition: opacity 900ms var(--ease-out-expo);
+}
+
+.hud[data-visible="true"] {
+  opacity: 1;
+}
+
+.corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Clear the notch on phones without moving on desktop. */
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+}
+
+.topLeft {
+  top: 0;
+  left: 0;
+}
+.topRight {
+  top: 0;
+  right: 0;
+  align-items: flex-end;
+}
+.bottomLeft {
+  bottom: 0;
+  left: 0;
+}
+.bottomRight {
+  bottom: 0;
+  right: 0;
+  align-items: flex-end;
+}
+
+/* The brand is the one line allowed to be brighter than the instrumentation. */
+.brand {
+  color: var(--bone);
+  letter-spacing: 0.2em;
+}
+
+/* The status line reads bottom-left, where Next's dev badge also lives. Give it
+   room so it is never half-covered in a screenshot. */
+.bottomLeft .status {
+  margin-top: 2px;
+}
+
+/* The status dot is the only thing on this page that is allowed to be alive. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--silver-dim);
+}
+
+.dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--silver-dim);
+  transition: background 600ms var(--ease-out-expo), box-shadow 600ms var(--ease-out-expo);
+}
+
+.status[data-alive="true"] .dot {
+  background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan-glow);
+  animation: pulse 3.2s ease-in-out infinite;
+}
+
+.status[data-alive="true"] {
+  color: var(--silver);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status[data-alive="true"] .dot {
+    animation: none;
+  }
+  .hud {
+    transition: none;
+  }
+}
+
+/* Language: assumed, not asked. The row is a correction, not a question. */
+.locales {
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.hud[data-visible="true"] .locales {
+  pointer-events: auto;
+}
+
+.locale {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--silver-dim);
+  cursor: pointer;
+  transition: color 250ms var(--ease-out-expo);
+}
+
+.locale:not(:disabled):hover,
+.locale:focus-visible {
+  color: var(--bone);
+  outline: none;
+}
+
+.locale[aria-current="true"] {
+  color: var(--bone);
+}
+
+/* Untranslated locales are visible but honest — half a translation is a bug. */
+.locale[data-ready="false"] {
+  opacity: 0.35;
+}
+
+.locale:disabled {
+  cursor: default;
+}

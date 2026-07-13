@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { LenoxProofState } from "../../flow-engine/types";
+import type { LenoxProofState } from "../flow-engine/types";
 
 const N = 900;
 

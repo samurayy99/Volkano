@@ -8,41 +8,37 @@
 
 :root {
   color-scheme: dark;
-  --bg-0: #040404;
-  --line-soft: rgba(247, 241, 231, 0.08);
-  --line-strong: rgba(247, 241, 231, 0.16);
-  --line-bright: rgba(247, 241, 231, 0.28);
-  --text-main: rgba(247, 241, 231, 0.96);
-  --text-dim: rgba(219, 208, 190, 0.68);
-  --font-display:
-    "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow",
-    "Helvetica Neue", sans-serif;
-  --font-ui:
-    "Inter Tight", "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
-  --light-angle: -72deg;
-  --source-focus-x: 50%;
-  --source-focus-y: 60%;
-  --cube-width: min(1320px, calc(100vw - clamp(6rem, 11vw, 18rem)));
-  --cube-height: min(780px, calc(100vh - clamp(5rem, 10vh, 9rem)));
-  --cube-depth: min(calc(var(--cube-width) * 1.22), 1320px);
-  --cube-perspective: 1880px;
-  --backwall-seat-top: clamp(0.9rem, 1.3vh, 1.2rem);
-  --backwall-seat-side: clamp(0.9rem, 1.4vw, 1.2rem);
-  --backwall-seat-bottom: clamp(0.95rem, 1.5vh, 1.25rem);
-  /* Architectural edge seam color */
-  --seam-light: rgba(247, 241, 231, 0.12);
-  --seam-warm: rgba(255, 200, 140, 0.08);
-  /* Material families — per surface identity */
-  --mat-graphite: hsl(220, 4%, 11%);
-  --mat-obsidian: hsl(230, 5%, 7%);
-  --mat-basalt: hsl(20, 6%, 9%);
-  --mat-void: hsl(0, 0%, 3%);
-  /* Side walls: same neutral wash (symmetric chamber) */
-  --zone-side: rgba(220, 210, 200, 0.02);
-  /* Ceiling / floor only (not left vs right) */
-  --zone-cool: rgba(180, 200, 230, 0.016);
-  --zone-warm: rgba(255, 200, 140, 0.024);
+
+  /* ── Palette ─────────────────────────────────────────── */
+  --void:        #020202;
+  --void-soft:   #08080c;
+  --graphite:    #16161c;
+  --graphite-raised: #1e1e26;
+  --silver:      #c8ccd0;
+  --silver-dim:  rgba(200, 204, 208, 0.45);
+  --cyan:        #4df0ff;
+  --cyan-glow:   rgba(77, 240, 255, 0.25);
+  --cyan-dim:    rgba(77, 240, 255, 0.10);
+  --amber:       #f0a030;
+  --amber-glow:  rgba(240, 160, 48, 0.30);
+  --amber-dim:   rgba(240, 160, 48, 0.12);
+  --bone:        #e8e0d8;
+  --bone-dim:    rgba(232, 224, 216, 0.60);
+  --bone-faint:  rgba(232, 224, 216, 0.25);
+
+  /* ── Typography ──────────────────────────────────────── */
+  /* These two named faces were never actually loaded; the site was falling back
+     to whatever the OS had. layout.tsx loads them now — this points at those. */
+  --font-display: var(--font-display-loaded), "Avenir Next Condensed",
+    "Roboto Condensed", "Arial Narrow", sans-serif;
+  --font-ui: "Inter", "Inter Tight", "Aptos", "Segoe UI", system-ui, sans-serif;
+  --font-mono: var(--font-mono-loaded), "SFMono-Regular", Menlo, monospace;
+
+  /* ── Animation Timing ────────────────────────────────── */
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-particle: 0.8s;
+  --duration-ui:       0.5s;
 }
 
 html,
@@ -50,789 +46,473 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--bg-0);
-  color: var(--text-main);
+  background: var(--void);
+  color: var(--bone);
   font-family: var(--font-ui);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
-  min-height: 100vh;
-  font-synthesis: none;
+a {
+  color: var(--cyan);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+a:hover {
+  color: var(--bone);
 }
 
-a {
+button {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
   color: inherit;
 }
 
-button,
-input,
-textarea,
-select {
+input {
   font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
 }
 
-/* ── Chamber shell / cube container ─────────────────────────────────────── */
-
+/* ── Site Root ────────────────────────────────────────── */
 .site-root {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(
-      circle at 50% 18%,
-      rgba(113, 80, 48, 0.16),
-      transparent 30%
-    ),
-    linear-gradient(180deg, rgba(8, 8, 8, 0.96), rgba(2, 2, 2, 1));
+  background: var(--void);
 }
 
-.cube-wrapper {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  perspective: var(--cube-perspective);
-  /* Pointer parallax: perspective-origin moves subtly with mouse (Phase 4) */
-  perspective-origin: calc(50% + var(--mouse-x, 0) * -4%)
-    calc(29vh + var(--mouse-y, 0) * -6vh);
-  transition: perspective-origin 0.14s ease-out;
-  transform-style: preserve-3d;
-  background:
-    /* Subtle warm ambience where the source would illuminate the environment */
-    radial-gradient(
-      ellipse 60% 50% at var(--source-focus-x) var(--source-focus-y),
-      rgba(128, 72, 28, 0.06),
-      transparent 60%
-    ),
-    radial-gradient(circle at 50% 30%, rgba(86, 60, 37, 0.08), transparent 40%),
-    linear-gradient(180deg, #060606 0%, #020202 100%);
+/*
+ * The stage is now a real SURFACE in the 3D scene (see lenoxBackdrop.js): a
+ * lacquer panel that catches light instead of a CSS gradient that paints it.
+ * This is only the base the canvas composites onto.
+ */
+.lenox-stage {
   isolation: isolate;
+  background: #010203;
 }
 
-.chamber-stage {
+.lenox-wake-control {
+  position: fixed;
+  left: 50%;
+  bottom: max(48px, calc(env(safe-area-inset-bottom) + 32px));
+  z-index: 50;
+  transform: translateX(-50%);
+}
+
+.lenox-wake-btn {
+  --wake-edge: rgba(229, 238, 241, 0.54);
+  --wake-metal: rgba(151, 166, 174, 0.2);
+  --wake-shadow: rgba(0, 0, 0, 0.82);
+  appearance: none;
   position: relative;
-  width: var(--cube-width);
-  height: var(--cube-height);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1;
-  transform-style: preserve-3d;
-}
-
-.chamber-stage::before,
-.chamber-stage::after {
-  content: none;
-}
-
-.chamber-aperture {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  isolation: isolate;
-  transform-style: preserve-3d;
-}
-
-.cube {
-  position: relative;
-  width: var(--cube-width);
-  height: var(--cube-height);
-  transform-style: preserve-3d;
-  transform-origin: center center;
-  transform: rotateY(0deg) translateX(0vw) translateZ(0vw);
-}
-
-/* ── Structural faces ────────────────────────────────────────────────────── */
-
-.cube-face {
-  position: absolute;
-  backface-visibility: hidden;
-  transform-style: preserve-3d;
+  min-height: 44px;
+  padding: 0 28px;
+  border: 1px solid rgba(168, 190, 197, 0.34);
+  border-radius: 999px;
   overflow: hidden;
+  color: rgba(232, 241, 244, 0.9);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 34%),
+    linear-gradient(90deg, transparent, rgba(111, 149, 160, 0.16), transparent),
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.22), transparent 54%),
+    linear-gradient(180deg, rgba(19, 28, 32, 0.74), rgba(2, 5, 7, 0.86));
+  box-shadow:
+    inset 0 1px 0 var(--wake-edge),
+    inset 0 -10px 18px rgba(0, 0, 0, 0.46),
+    inset 0 0 22px var(--wake-metal),
+    0 18px 42px var(--wake-shadow),
+    0 0 0 1px rgba(77, 240, 255, 0.08);
+  font: 11px var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(200, 232, 238, 0.32);
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    color 220ms ease,
+    opacity 300ms ease;
 }
 
-.cube-face-front,
-.cube-face-back {
-  top: 0;
-  left: 0;
-  width: var(--cube-width);
-  height: var(--cube-height);
-}
-
-.cube-face-left,
-.cube-face-right {
-  top: 0;
-  left: 0;
-  width: var(--cube-depth);
-  height: var(--cube-height);
-  backface-visibility: hidden;
-}
-
-.cube-face-top,
-.cube-face-bottom {
+.lenox-wake-btn::before {
+  content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--cube-width);
-  height: var(--cube-depth);
-  display: block;
-  pointer-events: none;
-  backface-visibility: hidden;
-}
-
-.cube-face-front {
-  transform: translateZ(0);
-  pointer-events: none;
-  background: transparent;
-}
-
-.cube-face-back {
-  transform: translateZ(calc(var(--cube-depth) * -1)) rotateY(180deg);
+  inset: 2px 10px auto;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.74),
+    transparent
+  );
+  opacity: 0.68;
   pointer-events: none;
 }
 
-.cube-face-right {
-  transform: rotateY(-270deg) translateX(var(--cube-depth));
-  transform-origin: top right;
-}
-
-.cube-face-left {
-  transform: rotateY(270deg) translateX(calc(var(--cube-depth) * -1));
-  transform-origin: top left;
-}
-
-/* ── Static chamber materials ───────────────────────────────────────────── */
-
-.cube-face-left,
-.cube-face-right {
-  position: relative;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.045),
-    inset 1px 0 0 rgba(247, 241, 231, 0.13),
-    inset -1px 0 0 rgba(247, 241, 231, 0.13),
-    inset 0 1px 0 rgba(247, 241, 231, 0.12),
-    inset 0 -1px 0 rgba(200, 160, 100, 0.06),
-    inset 0 6rem 12rem rgba(255, 255, 255, 0.026),
-    inset 0 -8rem 10rem rgba(0, 0, 0, 0.16),
-    inset -4rem 0 7rem rgba(0, 0, 0, 0.04);
-}
-
-/* Side walls — same stone ramp; horizontal angle mirrors for each face */
-.cube-face-left {
-  background:
-    linear-gradient(
-      90deg,
-      rgba(242, 234, 224, 0.34) 0%,
-      rgba(196, 180, 160, 0.26) 10%,
-      rgba(122, 108, 92, 0.82) 28%,
-      rgba(58, 52, 46, 0.88) 60%,
-      rgba(14, 14, 14, 0.97) 100%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(255, 245, 230, 0.07) 0%,
-      transparent 20%,
-      transparent 74%,
-      rgba(0, 0, 0, 0.18) 100%
-    ),
-    linear-gradient(
-      var(--light-angle),
-      rgba(255, 255, 255, 0.03),
-      transparent 54%
-    ),
-    linear-gradient(90deg, var(--zone-side), transparent 60%);
-}
-
-.cube-face-right {
-  background:
-    linear-gradient(
-      270deg,
-      rgba(242, 234, 224, 0.34) 0%,
-      rgba(196, 180, 160, 0.26) 10%,
-      rgba(122, 108, 92, 0.82) 28%,
-      rgba(58, 52, 46, 0.88) 60%,
-      rgba(14, 14, 14, 0.97) 100%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(255, 245, 230, 0.07) 0%,
-      transparent 20%,
-      transparent 74%,
-      rgba(0, 0, 0, 0.18) 100%
-    ),
-    linear-gradient(
-      calc(var(--light-angle) * -1),
-      rgba(255, 255, 255, 0.03),
-      transparent 54%
-    ),
-    linear-gradient(270deg, var(--zone-side), transparent 60%);
-}
-
-/* Ceiling — darker, recedes, with edge seams where it meets walls */
-.cube-face-top {
-  top: 0;
-  transform: rotateX(-90deg);
-  transform-origin: top center;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(44, 48, 54, 0.92) 0%,
-      rgba(28, 31, 36, 0.94) 36%,
-      rgba(8, 10, 13, 1) 100%
-    ),
-    radial-gradient(
-      ellipse 48% 38% at 50% 30%,
-      rgba(248, 242, 232, 0.065),
-      transparent 58%
-    ),
-    radial-gradient(
-      ellipse 30% 24% at var(--source-focus-x) 84%,
-      rgba(200, 130, 60, 0.03),
-      transparent 54%
-    ),
-    /* Cool zone tint — ceiling is coldest, most receding */
-    radial-gradient(
-        ellipse 70% 50% at 50% 0%,
-        var(--zone-cool),
-        transparent 80%
-      );
-  box-shadow:
-    inset 0 -1px 0 var(--seam-light),
-    inset 0 1px 0 rgba(247, 241, 231, 0.04),
-    inset 1px 0 0 rgba(247, 241, 231, 0.07),
-    inset -1px 0 0 rgba(247, 241, 231, 0.07),
-    inset 0 -6rem 10rem rgba(0, 0, 0, 0.14),
-    inset 5rem 0 9rem rgba(0, 0, 0, 0.04),
-    inset -5rem 0 9rem rgba(0, 0, 0, 0.04);
-}
-
-/* Floor — warmest surface, catches source light, with receding depth */
-.cube-face-bottom {
-  top: auto;
-  bottom: 0;
-  transform: rotateX(90deg);
-  transform-origin: bottom center;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(36, 30, 24, 0.88) 0%,
-      rgba(18, 15, 12, 0.94) 42%,
-      rgba(2, 2, 3, 1) 100%
-    ),
-    radial-gradient(
-      ellipse 38% 28% at var(--source-focus-x) 20%,
-      rgba(196, 124, 56, 0.16),
-      transparent 56%
-    ),
-    radial-gradient(
-      ellipse 56% 28% at 50% 14%,
-      rgba(128, 73, 24, 0.08),
-      transparent 46%
-    ),
-    /* Hot zone tint — floor is warmest surface, lava proximity */
-    radial-gradient(
-        ellipse 60% 40% at var(--source-focus-x) 0%,
-        var(--zone-warm),
-        transparent 70%
-      );
-  box-shadow:
-    inset 0 1px 0 var(--seam-light),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.24),
-    inset 1px 0 0 var(--seam-warm),
-    inset -1px 0 0 var(--seam-warm),
-    inset 0 7rem 10rem rgba(0, 0, 0, 0.16),
-    inset 5rem 0 9rem rgba(0, 0, 0, 0.05),
-    inset -5rem 0 9rem rgba(0, 0, 0, 0.05);
-}
-
-.cube-face-left::before,
-.cube-face-right::before,
-.cube-face-top::before,
-.cube-face-bottom::before,
-.cube-face-left::after,
-.cube-face-right::after,
-.cube-face-top::after,
-.cube-face-bottom::after {
+.lenox-wake-btn::after {
   content: "";
   position: absolute;
   inset: 0;
+  background:
+    linear-gradient(120deg, transparent 0 28%, rgba(255, 255, 255, 0.18) 42%, transparent 58%),
+    radial-gradient(circle at 50% 118%, rgba(77, 240, 255, 0.16), transparent 42%);
+  opacity: 0.34;
   pointer-events: none;
+  transform: translateX(-18%);
+  transition: transform 520ms var(--ease-out-expo), opacity 220ms ease;
 }
 
-/* Charred 3-layer texture — left wall (grain angle: --light-angle, -72deg) */
-.cube-face-left::before {
-  background:
-    /* Macro grain: rare wide bands */
-    repeating-linear-gradient(
-      var(--light-angle),
-      transparent 0% 6%,
-      rgba(247, 241, 231, 0.055) 6% 7.4%
-    ),
-    /* Micro grain: frequent fine lines */
-    repeating-linear-gradient(
-        var(--light-angle),
-        transparent 0% 4%,
-        rgba(247, 241, 231, 0.018) 4% 4.5%
-      ),
-    /* Mineral shimmer: dense bright lines */
-    repeating-linear-gradient(
-        var(--light-angle),
-        transparent 0% 1.2%,
-        rgba(247, 241, 231, 0.08) 1.2% 2.1%
-      ),
-    radial-gradient(
-      circle at 18% 16%,
-      rgba(247, 241, 231, 0.022),
-      transparent 14%
-    ),
-    radial-gradient(circle at 74% 66%, rgba(0, 0, 0, 0.08), transparent 22%);
-  opacity: 0.38;
+.lenox-wake-btn:hover {
+  border-color: rgba(129, 226, 238, 0.52);
+  color: rgba(243, 250, 252, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.66),
+    inset 0 -10px 18px rgba(0, 0, 0, 0.42),
+    inset 0 0 24px rgba(113, 168, 178, 0.26),
+    0 20px 48px rgba(0, 0, 0, 0.88),
+    0 0 30px rgba(77, 240, 255, 0.13);
 }
 
-/* Charred 3-layer texture — right wall (mirrored grain, same weights as left) */
-.cube-face-right::before {
-  background:
-    repeating-linear-gradient(
-      calc(var(--light-angle) * -1),
-      transparent 0% 6%,
-      rgba(247, 241, 231, 0.055) 6% 7.4%
-    ),
-    repeating-linear-gradient(
-        calc(var(--light-angle) * -1),
-        transparent 0% 4%,
-        rgba(247, 241, 231, 0.018) 4% 4.5%
-      ),
-    repeating-linear-gradient(
-        calc(var(--light-angle) * -1),
-        transparent 0% 1.2%,
-        rgba(247, 241, 231, 0.08) 1.2% 2.1%
-      ),
-    radial-gradient(
-      circle at 82% 16%,
-      rgba(247, 241, 231, 0.022),
-      transparent 14%
-    ),
-    radial-gradient(circle at 26% 66%, rgba(0, 0, 0, 0.08), transparent 22%);
-  opacity: 0.38;
+.lenox-wake-btn:hover::after {
+  opacity: 0.54;
+  transform: translateX(18%);
 }
 
-/* Vertical fall-off + symmetric horizontal edge read (centered key) */
-.cube-face-left::after,
-.cube-face-right::after {
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 250, 240, 0.09) 0%,
-      transparent 18%,
-      transparent 74%,
-      rgba(0, 0, 0, 0.14) 92%
-    ),
-    linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0.12),
-      transparent 8%,
-      rgba(247, 241, 231, 0.1) 50%,
-      transparent 92%,
-      rgba(0, 0, 0, 0.12)
-    ),
-    radial-gradient(
-      ellipse 24% 100% at 50% 50%,
-      rgba(0, 0, 0, 0.06),
-      transparent 62%
-    );
-  opacity: 0.96;
+.lenox-wake-btn:active {
+  transform: translateY(1px) scale(0.985);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 8px 20px rgba(0, 0, 0, 0.55),
+    0 10px 26px rgba(0, 0, 0, 0.78);
 }
 
-/* Charred texture — ceiling (horizontal grain — poured concrete / cast slab) */
-.cube-face-top::before {
-  background:
-    repeating-linear-gradient(
-      0deg,
-      transparent 0% 6%,
-      rgba(247, 241, 231, 0.04) 6% 7.2%
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent 0% 4%,
-      rgba(247, 241, 231, 0.014) 4% 4.4%
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent 0% 1.2%,
-      rgba(247, 241, 231, 0.06) 1.2% 2%
-    ),
-    radial-gradient(
-      circle at 26% 22%,
-      rgba(247, 241, 231, 0.016),
-      transparent 14%
-    ),
-    radial-gradient(circle at 64% 58%, rgba(0, 0, 0, 0.08), transparent 16%);
-  opacity: 0.28;
+.lenox-wake-btn:disabled {
+  cursor: default;
+  opacity: 0.42;
 }
 
-/* Charred texture — floor (vertical grain — polished stone / panel seams) */
-.cube-face-bottom::before {
-  background:
-    repeating-linear-gradient(
-      90deg,
-      transparent 0% 6%,
-      rgba(247, 241, 231, 0.045) 6% 7.2%
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent 0% 4%,
-      rgba(247, 241, 231, 0.016) 4% 4.4%
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent 0% 1.2%,
-      rgba(247, 241, 231, 0.065) 1.2% 2%
-    ),
-    radial-gradient(
-      circle at var(--source-focus-x) 22%,
-      rgba(247, 241, 231, 0.018),
-      transparent 18%
-    ),
-    radial-gradient(circle at 64% 58%, rgba(0, 0, 0, 0.07), transparent 16%);
-  opacity: 0.3;
-}
-
-/* Ceiling ::after — edge definition and subtle ambient wash */
-.cube-face-top::after {
-  background:
-    linear-gradient(
-      180deg,
-      rgba(247, 241, 231, 0.06),
-      transparent 12%,
-      rgba(0, 0, 0, 0.12) 100%
-    ),
-    linear-gradient(
-      90deg,
-      rgba(247, 241, 231, 0.045),
-      transparent 10%,
-      transparent 90%,
-      rgba(247, 241, 231, 0.045)
-    ),
-    radial-gradient(
-      ellipse 100% 14% at 50% 100%,
-      rgba(0, 0, 0, 0.12),
-      transparent 80%
-    );
-}
-
-/* Floor ::after — source warm spill and edge definition */
-.cube-face-bottom::after {
-  background:
-    radial-gradient(
-      ellipse 22% 18% at var(--source-focus-x) 12%,
-      rgba(255, 140, 48, 0.12),
-      transparent 50%
-    ),
-    radial-gradient(
-      ellipse 36% 24% at 44% 16%,
-      rgba(200, 120, 50, 0.065),
-      transparent 40%
-    ),
-    linear-gradient(180deg, rgba(247, 241, 231, 0.045), rgba(0, 0, 0, 0.1)),
-    linear-gradient(
-      90deg,
-      var(--seam-warm),
-      transparent 8%,
-      transparent 92%,
-      var(--seam-warm)
-    ),
-    radial-gradient(
-      ellipse 100% 12% at 50% 100%,
-      rgba(0, 0, 0, 0.1),
-      transparent 80%
-    );
-}
-
-.front-source {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  isolation: isolate;
-}
-
-/* ── Front / source host ────────────────────────────────────────────────── */
-
-.front-source-host,
-.front-engine-fallback {
+/* ── Particle Canvas ──────────────────────────────────── */
+.particle-canvas {
   position: absolute;
   inset: 0;
-}
-
-.front-source-host {
-  z-index: 3;
-}
-
-.front-trigger-anchor {
-  position: absolute;
-  pointer-events: none;
-  z-index: 6;
-}
-
-.flow-engine-host,
-.front-flow-host {
   width: 100%;
   height: 100%;
-  touch-action: none;
+  z-index: 1;
 }
 
-.front-flow-host {
-  pointer-events: none;
-}
-
-/* Without legacy choreography CSS, this gate must live in the base sheet: the WebGPU host
-   only receives hover / drag when the canvas subtree can be hit-tested. */
-.site-root[data-front-interactive="true"] .front-flow-host {
-  pointer-events: auto;
-}
-
-.front-flow-host canvas {
+.particle-canvas canvas {
   display: block;
   width: 100%;
   height: 100%;
-  background: transparent;
 }
 
-.front-engine-fallback {
-  background:
-    radial-gradient(
-      circle at 50% 46%,
-      rgba(172, 127, 78, 0.22),
-      transparent 20%
-    ),
-    radial-gradient(circle at 50% 58%, rgba(72, 49, 28, 0.3), transparent 38%);
-  opacity: 0.58;
-}
-
-/* ── Room shell: source-only layout (back wall UI: `legacy-room-choreography.css`) ─ */
-
-.site-root[data-front-interactive="false"] .cube-face-front,
-.site-root[data-front-interactive="false"] .front-source,
-.site-root[data-front-interactive="false"] .front-flow-host {
-  pointer-events: none;
-}
-
-.site-root[data-room-phase="source"] .cube-face-left,
-.site-root[data-room-phase="source"] .cube-face-right,
-.site-root[data-room-phase="source"] .cube-face-top,
-.site-root[data-room-phase="source"] .cube-face-bottom {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.site-root[data-room-phase="source"] .cube-face-back {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.site-root[data-room-phase="source"] .chamber-stage {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.site-root[data-room-phase="source"][data-source-shell-visible="true"] .chamber-stage {
-  opacity: 1;
-  pointer-events: auto;
-  transition: opacity 0.3s ease-out;
-}
-
-/* Post-enter: Enter affordance (removed once sequence starts). */
-.chamber-enter-wrap {
-  position: absolute;
-  inset-inline: 0;
-  bottom: clamp(0.65rem, 2.2vh, 1.1rem);
-  display: flex;
-  justify-content: center;
-  pointer-events: auto;
-  z-index: 8;
-}
-
-.chamber-enter-btn {
-  pointer-events: auto;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.72rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  padding: 0.45rem 1.1rem;
-  border-radius: 999px;
-  border: 1px solid rgba(214, 168, 118, 0.45);
-  color: rgba(250, 236, 216, 0.92);
-  background: rgba(12, 10, 8, 0.55);
-  backdrop-filter: blur(8px);
-}
-
-.chamber-enter-btn:hover {
-  border-color: rgba(247, 206, 150, 0.65);
-  color: #fff7eb;
-}
-
-/* ── Post-enter sequence (handbook v3, withdrawal architecture) ─────────
-   Stage flow: none → impact → cool → withdraw → quiet → push_in →
-   page_lock → hero. Camera leads the reframe; CSS completes the page
-   lock late. Hero UI gated by `heroAllowed` truth chain (emitted as
-   stage === "hero"). */
-
-/* Back-wall spatial authority (readable hierarchy, not UI interact):
-   set from `quiet` onward — separate from `data-back-interface-ready`. */
-.site-root[data-room-phase="source"][data-backwall-authority="true"]
-  .back-chrome,
-.site-root[data-room-phase="source"][data-backwall-authority="true"]
-  .back-scroll {
-  color: rgba(252, 244, 228, 0.94);
-  text-shadow: 0 1px 14px rgba(8, 6, 4, 0.45);
-}
-
-/* Scene presence (NOT UI): back-wall media/haze become present starting
-   at `quiet`. The front canvas is already empty by then, so the back
-   wall is readable through it — no dimension change yet. */
-.site-root[data-room-phase="source"][data-post-enter-stage="quiet"]
-  .back-scene-media,
-.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
-  .back-scene-media,
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .back-scene-media,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .back-scene-media,
-.site-root[data-room-phase="source"][data-post-enter-stage="quiet"]
-  .back-scene-haze,
-.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
-  .back-scene-haze,
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .back-scene-haze,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .back-scene-haze {
-  opacity: 1;
-  transition: opacity 0.6s ease;
-}
-
-/* Front face fade starts at `push_in`: camera dolly + canvas fade land
-   together so the back wall reads through without a flatten yet. */
-.site-root[data-room-phase="source"][data-post-enter-stage="push_in"]
-  .cube-face-front,
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .cube-face-front,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .cube-face-front {
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* Dimension reframe — ONLY at `page_lock` / `hero`, after camera arrived.
-   The CSS variable cascade drives `.chamber-stage`, `.cube`,
-   `.cube-face-back`, and back-surface insets. */
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"],
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"] {
-  --cube-width: 100vw;
-  --cube-height: 100vh;
-  --backwall-seat-top: 0px;
-  --backwall-seat-side: 0px;
-  --backwall-seat-bottom: 0px;
-}
-
-/* Transitions scoped to the active sequence so they don't fire on load. */
-.site-root[data-post-enter-active="true"] .chamber-stage,
-.site-root[data-post-enter-active="true"] .cube,
-.site-root[data-post-enter-active="true"] .cube-face-back,
-.site-root[data-post-enter-active="true"] .cube-face-front {
-  transition:
-    width 0.6s ease,
-    height 0.6s ease,
-    opacity 0.5s ease;
-}
-
-/* Flatten the 3D hierarchy only after the camera has arrived. Without
-   this, the back face stays at translateZ(-cube-depth) rotateY(180deg)
-   and projects smaller than the viewport. */
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .cube-wrapper,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .cube-wrapper {
-  perspective: none;
-  overflow: visible;
-}
-
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"] .cube,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"] .cube {
-  transform-style: flat;
-  transform: none;
-}
-
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .cube-face-back,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .cube-face-back {
-  opacity: 1;
-  pointer-events: auto;
-  transform: none;
-  backface-visibility: visible;
+/* ── UI Overlay Layer ─────────────────────────────────── */
+.ui-layer {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* Side / top / bottom faces release once the frame yields. */
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .cube-face-left,
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .cube-face-right,
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .cube-face-top,
-.site-root[data-room-phase="source"][data-post-enter-stage="page_lock"]
-  .cube-face-bottom,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .cube-face-left,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .cube-face-right,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .cube-face-top,
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .cube-face-bottom {
-  opacity: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
 }
 
-/* Back-surface interactivity unlocks once the back wall takes authority. */
-.site-root[data-room-phase="source"][data-back-interface-ready="true"]
-  .cube-face-back,
-.site-root[data-room-phase="source"][data-back-interface-ready="true"]
-  .back-surface {
+.ui-layer > * {
   pointer-events: auto;
 }
 
-/* Hero beat — chrome + hero type + scroll unlock. Gated by `hero` stage,
-   which the truth chain emits only after withdrawalDone + quietLocked +
-   cameraArrived + pageLocked. */
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .back-chrome {
+/* ── Prompt Text ──────────────────────────────────────── */
+.prompt-text {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 4vw, 2.4rem);
+  font-weight: 300;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+  text-align: center;
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 1.2s var(--ease-out-expo),
+    transform 1.2s var(--ease-out-expo);
+}
+
+.prompt-text.visible {
   opacity: 1;
-  pointer-events: auto;
-  transition: opacity 0.4s ease 0s;
+  transform: translateY(0);
 }
 
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .back-hero {
+/* ── Wake Button ──────────────────────────────────────── */
+.wake-button {
+  font-family: var(--font-display);
+  font-size: clamp(0.85rem, 2.2vw, 1.1rem);
+  font-weight: 400;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  padding: 0.7rem 2rem;
+  border: 1px solid var(--cyan-glow);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.8s var(--ease-out-expo),
+    transform 0.8s var(--ease-out-expo),
+    border-color 0.4s ease,
+    box-shadow 0.4s ease;
+}
+
+.wake-button.visible {
   opacity: 1;
-  transition: opacity 0.5s ease 0.35s;
+  transform: translateY(0);
 }
 
-.site-root[data-room-phase="source"][data-post-enter-stage="hero"]
-  .back-scroll {
-  pointer-events: auto;
-  transition: opacity 0.4s ease 0.6s;
+.wake-button:hover {
+  border-color: var(--cyan);
+  box-shadow: 0 0 32px var(--cyan-dim), 0 0 8px var(--cyan-glow);
 }
 
-/* Backface panels / hero / scroll chrome structural layout:
-   `legacy-room-choreography.css`. */
+.wake-button:active {
+  transform: scale(0.97);
+}
+
+/* ── Chat Container ───────────────────────────────────── */
+.chat-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.5rem;
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  gap: 1.2rem;
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.7s var(--ease-out-expo),
+    transform 0.7s var(--ease-out-expo);
+}
+
+.chat-container.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Message Area ─────────────────────────────────────── */
+.chat-messages {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 3em;
+}
+
+.chat-message {
+  font-size: clamp(0.95rem, 1.8vw, 1.15rem);
+  line-height: 1.55;
+  color: var(--bone);
+  animation: messageIn 0.45s var(--ease-out-expo);
+}
+
+.chat-message .cursor-blink {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--cyan);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes messageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* ── Input Row ────────────────────────────────────────── */
+.chat-input-row {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  gap: 0.5rem;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.5s var(--ease-out-expo),
+    transform 0.5s var(--ease-out-expo);
+}
+
+.chat-input-row.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Premium Input ────────────────────────────────────── */
+.premium-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(200, 204, 208, 0.12);
+  border-radius: 10px;
+  background: rgba(8, 8, 12, 0.7);
+  backdrop-filter: blur(16px);
+  transition:
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+.premium-input-wrap:focus-within {
+  border-color: var(--cyan-glow);
+  box-shadow:
+    0 0 24px rgba(77, 240, 255, 0.08),
+    inset 0 0 8px rgba(77, 240, 255, 0.04);
+}
+.premium-input-caret {
+  color: var(--cyan);
+  font-size: 0.85rem;
+  opacity: 0.8;
+  flex-shrink: 0;
+  user-select: none;
+}
+.premium-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--bone);
+  font-size: 0.95rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+.premium-input::placeholder {
+  color: rgba(232, 224, 216, 0.25);
+}
+.premium-input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 50px rgba(8, 8, 12, 1) inset;
+  -webkit-text-fill-color: var(--bone);
+}
+
+.chat-submit-btn {
+  padding: 0.7rem 1.4rem;
+  border-radius: 12px;
+  background: rgba(77, 240, 255, 0.12);
+  border: 1px solid var(--cyan-glow);
+  color: var(--cyan);
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.chat-submit-btn:hover {
+  background: rgba(77, 240, 255, 0.2);
+  box-shadow: 0 0 20px var(--cyan-dim);
+}
+
+.chat-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Status Indicator ─────────────────────────────────── */
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--silver-dim);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.status-indicator.visible {
+  opacity: 1;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+}
+
+.status-dot.processing {
+  animation: pulse-dot 0.8s ease-in-out infinite;
+  background: var(--amber);
+}
+
+.status-dot.done {
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan-glow);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ── Brand Badge ──────────────────────────────────────── */
+.brand-badge {
+  position: absolute;
+  top: clamp(1rem, 2.5vh, 1.8rem);
+  left: clamp(1rem, 2.5vw, 2rem);
+  z-index: 20;
+  font-family: var(--font-display);
+  font-size: clamp(0.65rem, 1.4vw, 0.8rem);
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--silver-dim);
+  opacity: 0;
+  transition: opacity 1s var(--ease-out-expo);
+}
+
+.brand-badge.visible {
+  opacity: 1;
+}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  .chat-container {
+    padding: 1.2rem 1rem;
+    padding-bottom: max(1.2rem, env(safe-area-inset-bottom));
+    gap: 0.8rem;
+  }
+
+  .chat-input-row {
+    max-width: 100%;
+  }
+
+  .wake-button {
+    padding: 0.6rem 1.6rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.2em;
+  }
+}

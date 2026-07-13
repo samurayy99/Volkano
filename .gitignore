@@ -56,6 +56,13 @@ Screenshot *.png
 
 .claude
 
-.codex 
+.codex
+
+.hermes
+
+# local runs / captures
+/.playwright-cli/
+/output/
+*.mov
 
 

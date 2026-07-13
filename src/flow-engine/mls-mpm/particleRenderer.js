@@ -572,9 +572,12 @@ const buildUnifiedParticleSurfaceNodes = ({
     .mul(lenoxTintT)
     .toConst("lenoxAuraT");
 
+  // Color law: cyan is KINETIC ENERGY ONLY — no static view-thickness term,
+  // resting matter must read neutral silver. lenoxEnergyMul lets the drive
+  // silence cyan entirely during the wake handoff ("cyan falls out").
   const lenoxEnergyT = smoothstep(float(0.18), float(1.7), particleSpeed)
-    .mul(float(0.75))
-    .add(viewThicknessT.mul(float(0.2)))
+    .mul(float(0.85))
+    .mul(uniforms.lenoxEnergyMul.clamp(0, 1))
     .clamp(float(0), float(1))
     .toConst("lenoxEnergyT");
   // Metal albedo IS the reflection tint (F0), so silver must sit bright;
@@ -599,11 +602,12 @@ const buildUnifiedParticleSurfaceNodes = ({
     "surfaceColor",
   );
 
+  // No static emissive floor: resting silver emits nothing (color law);
+  // cyan glow follows kinetic energy and the focal signal only.
   const lenoxEmissive = lenoxCyan
     .mul(
       lenoxEnergyT
         .mul(float(0.05))
-        .add(float(0.006))
         .add(lenoxFocalT.mul(uniforms.lenoxFocalBoost.mul(float(0.5)))),
     )
     .toConst("lenoxEmissive");
@@ -624,11 +628,12 @@ const buildUnifiedParticleSurfaceNodes = ({
     )
     .toConst("particleBloomSource");
 
-  // Liquid-silver micro-surface: per-particle noise breaks up the sheen,
-  // kinetic particles read slightly wetter (glossier) than the resting mass.
+  // Premium silver = one coherent sheen: per-particle roughness variation
+  // stays minimal (strong variation reads as glitter, not liquid metal);
+  // kinetic particles get only a slight wet-gloss lift.
   const lenoxSurfaceRoughness = uniforms.lenoxRoughness
-    .add(roughNoise.mul(float(0.12)))
-    .sub(lenoxEnergyT.mul(float(0.1)))
+    .add(roughNoise.mul(float(0.03)))
+    .sub(lenoxEnergyT.mul(float(0.06)))
     .clamp(float(0.05), float(0.92))
     .toConst("lenoxSurfaceRoughness");
 
@@ -1058,6 +1063,8 @@ class ParticleRenderer {
     this.uniforms.lenoxMetalness = uniform(0.85);
     this.uniforms.lenoxRoughness = uniform(0.3);
     this.uniforms.lenoxSilverGain = uniform(1);
+    /** 0 silences kinetic cyan (wake handoff); 1 = normal energy read. */
+    this.uniforms.lenoxEnergyMul = uniform(1);
 
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
@@ -1153,6 +1160,7 @@ class ParticleRenderer {
     this.uniforms.lenoxMetalness.value = this.runtime.lenoxMetalness ?? 0.85;
     this.uniforms.lenoxRoughness.value = this.runtime.lenoxRoughness ?? 0.3;
     this.uniforms.lenoxSilverGain.value = this.runtime.lenoxSilverGain ?? 1;
+    this.uniforms.lenoxEnergyMul.value = this.runtime.lenoxEnergyMul ?? 1;
     // Chamber stays at exactly 0.12; the silver mass needs the HDRI to have
     // something to mirror, so Lenox lerps the env up with lenoxTintT.
     const envLenoxT = Math.min(1, Math.max(0, this.runtime.lenoxTintT ?? 0));

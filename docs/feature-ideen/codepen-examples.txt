@@ -1,0 +1,1671 @@
+1. Eyes Follow Cursor https://codepen.io/electricgarden/pen/YzzWMyM
+```
+html:
+<div id="grid"></div>
+
+<svg id="base-eye" class="eye" viewbox="0 0 1000 1000" xmlns="http://www.w3.org/2000/svg" fill="black">
+  <clipPath id="lids">
+    <path id="lids-path"
+      stroke-linejoin="round" stroke-linecap="round"
+      d="M 50 500 Q 500 0 950 500 Q 500 850 50 500"
+    />
+  </clipPath>
+  <g clip-path="url(#lids)">
+    <rect class="whites" width="1000" height="1000" fill="#fff"/>
+    <g class="pupil-group">
+      <circle class="pupil" cx="500" cy="500" r="150" fill="#000"/>
+      <circle class="glint" cx="450" cy="450" r="20" fill="#fff"/>
+    </g>
+  </g>
+  <use href="#lids-path" class="lids" stroke="#000" stroke-width="20" />
+</svg>
+
+css:
+.eye {
+  --pupil-x: 0;
+  --pupil-y: 0;
+  --color-whites: var(--fg, #fff);
+  --color-lid: var(--bg, #fff);
+  --color-pupil: var(--bg, #000);
+  --color-glint: var(--fg, #fff);
+  --scale: 0.75;
+  max-width: 100%;
+  max-height: 100vh;
+  fill: none;
+  transform: scale(var(--scale));
+}
+.lids {
+  stroke: var(--color-lid);
+  stroke-width: 5%;
+}
+.whites {
+  fill: var(--color-whites);
+}
+.pupil {
+  fill: var(--color-pupil);
+  cx: 500px;
+  cy: 500px;
+}
+.glint {
+  fill: var(--color-glint);
+}
+.pupil-group {
+  transform: translate(calc(var(--pupil-x) * 1px), calc(var(--pupil-y) * 1px));
+}
+#base-eye {
+  display: none;
+}
+#grid {
+  --num-columns: 5;
+  --num-rows: 5;
+  width: 100%;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: repeat(var(--num-columns), 1fr);
+  grid-template-rows: repeat(var(--num-rows), 1fr);
+}
+body {
+  --bg: #111;
+  --fg: #fff;
+  min-height: 100vh;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+js:
+const baseObject = document.getElementById("base-eye");
+const grid = document.getElementById("grid");
+let eyes, eyeCenters;
+let eyeDensity = 5;
+let numEyesX, numEyesY;
+const center = new THREE.Vector2();
+const mousePos = new THREE.Vector2();
+const PI = Math.PI;
+let maxDist;
+const maxEyeTravelX = 275;
+const maxEyeTravelY = 100;
+
+init();
+
+function init() {
+  window.addEventListener("resize", throttled(handleResize));
+  window.addEventListener("mousemove", throttled(handleMouseMove));
+  handleResize();
+  console.log("init");
+}
+
+function handleMouseMove(event) {
+  mousePos.set(event.clientX, event.clientY);
+  eyes.forEach((eye, i) => {
+    const vecToMouse = new THREE.Vector2().subVectors(mousePos, eyeCenters[i]);
+    const angle = vecToMouse.angle();
+    const dist = mousePos.distanceTo(eyeCenters[i]);
+    const distPercent = map(dist, 0, maxDist, 0, 1);
+    const clampedMouseX = clamp(vecToMouse.x, maxEyeTravelX * -1, maxEyeTravelX);
+    const clampedMouseY = clamp(vecToMouse.y, maxEyeTravelY * -1, maxEyeTravelY);
+    const pupilX = map(clampedMouseX, 0, maxEyeTravelX, 0, maxEyeTravelX);
+    const pupilY = map(clampedMouseY, 0, maxEyeTravelY, 0, maxEyeTravelY);
+    const scale = map(dist, 0, maxDist, 0.5, 1.25);
+    
+    eye.style.setProperty("--pupil-x", pupilX);
+    eye.style.setProperty("--pupil-y", pupilY);
+    eye.style.setProperty("--scale", scale);
+  });
+}
+
+function handleResize() {
+  
+  // recreate the grid and elements 
+  const largeSide = Math.max(innerWidth, innerHeight);
+  const size = Math.round(largeSide / eyeDensity);
+  numEyesX = Math.ceil(innerWidth / size);
+  numEyesY = Math.ceil(innerHeight / size);
+  grid.style.setProperty("--num-columns", numEyesX);
+  grid.style.setProperty("--num-rows", numEyesY);
+  grid.innerHTML = "";
+  generateArrowGrid();
+  
+  center.set(innerWidth * 0.5, innerHeight * 0.5);
+  maxDist = center.length() * 2;
+  
+  // send a fake mouse event to trigger the initial point
+  handleMouseMove({clientX: center.x, clientY: center.y});
+}
+
+function generateArrowGrid() {
+  eyes = [];  
+  eyeCenters = [];
+  for (let i = 0; i < numEyesX * numEyesY; i += 1) {
+    
+    // add the eye to the grid
+    const newArrow = baseObject.cloneNode(true);
+    newArrow.id = `eye-${i}`;
+    newArrow.setAttribute("class", "eye");
+    grid.appendChild(newArrow);
+    eyes.push(newArrow);
+    
+    // save its center point for use later
+    const eyeRect = newArrow.getBoundingClientRect();
+    const eyeCenter = new THREE.Vector2(
+      eyeRect.left + (newArrow.clientWidth * 0.5),
+      eyeRect.top + (newArrow.clientHeight * 0.5),
+    );
+    eyeCenters.push(eyeCenter);
+  }
+}
+
+// USEFUL FUNCTIONS
+function throttled(fn) {
+  let didRequest = false;
+  return param => {
+    if (!didRequest) {
+      requestAnimationFrame(() => {
+        fn(param);
+        didRequest = false;
+      });
+      didRequest = true;
+    }
+  };
+}
+function map(value, min1, max1, min2, max2) {
+  return (value - min1) * (max2 - min2) / (max1 - min1) + min2;
+}
+function clamp (value, min = 0, max = 1) {
+  return value <= min ? min : value >= max ? max : value;
+}
+```
+
+2. jarvis ai bot https://codepen.io/syedabdul-waheed/pen/OJeWzKM
+```
+html:
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Jarvis</title>
+  <meta name="description" content="" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://codepen.io/FlyingEmu/pen/cjBzr.css" />
+  <link rel="stylesheet" href="Style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+</head>
+
+<body onload="jarvisStartingReply()">
+  <div class="scroll">
+    <div id="leftmenu">
+      <div id="date_time">
+        <div id="date" class="semi_arc e4">
+          <div class="semi_arc_2 e4_1">
+            <div class="counterspin4"></div>
+          </div>
+          <div style="font-size: 40px; margin-top: 25px" id="dateValue"></div>
+          <div style="font-size: 25px" id="monthValue"></div>
+        </div>
+
+        <div id="time" class="arc e1">
+          <div style="font-size: 23px; margin-left: -10px; margin-top: 23px" id="timeValue"></div>
+          <div style="font-size: 17px; margin-top: 10px" id="weekDayValue"></div>
+        </div>
+      </div>
+
+      <p class="title">Performance</p>
+      <div class="hline title_underline"></div>
+
+      <span class="menuitem entypo-gauge" style="font-size: 30px; margin-left: 10px">
+        <p id="cpu" class="caption" style="font-size: 20px">CPU Usage: 19%</p>
+      </span>
+      <br />
+
+      <span class="menuitem entypo-chart-area" style="font-size: 30px; margin-left: 10px">
+        <p id="ram" class="caption" style="font-size: 20px"></p>
+      </span>
+      <br />
+
+      <span class="menuitem entypo-chart-pie" style="font-size: 30px; margin-left: 10px">
+        <p id="proc" class="caption" style="font-size: 20px">Processes: 73</p>
+      </span>
+
+      <p class="title">Shortcuts</p>
+      <div class="hline title_underline"></div>
+
+      <div class="menu">
+        <button class="menuitem">
+          <span class="entypo-right-open" />
+          <p class="caption" onclick="playAudio()">User</p>
+        </button>
+        <button class="menuitem">
+          <span class="entypo-right-open" />
+          <p class="caption" onclick="playAudio()">Documents</p>
+        </button>
+        <button class="menuitem">
+          <span class="entypo-right-open" />
+          <p class="caption" onclick="playAudio()">Computer</p>
+        </button>
+        <button class="menuitem">
+          <span class="entypo-right-open" />
+          <p class="caption">Control Panel</p>
+        </button>
+
+        <hr style="border-color: transparent; margin: 0" />
+        <div class="hline" style="margin-top: 5px; margin-bottom: 5px"></div>
+
+        <button class="menuitem">
+          <span class="entypo-right-open" />
+          <p class="caption">Custom Path 1</p>
+        </button>
+        <button class="menuitem">
+          <span class="entypo-right-open" />
+          <p class="caption">Custom Path 2</p>
+        </button>
+        <button class="menuitem">
+          <span class="entypo-right-open" />
+          <p class="caption">Custom Path 3</p>
+        </button>
+      </div>
+
+      <p class="title">Social</p>
+      <div class="hline title_underline"></div>
+
+      <div class="app_icon entypo-facebook-squared"></div>
+      <div class="app_icon entypo-twitter"></div>
+      <div class="app_icon entypo-gplus"></div>
+      <div class="app_icon entypo-skype"></div>
+
+      <div class="app_icon entypo-tumblr"></div>
+      <div class="app_icon entypo-pinterest"></div>
+      <div class="app_icon entypo-soundcloud"></div>
+      <div class="app_icon entypo-stumbleupon"></div>
+    </div>
+
+    <!-- Right Menu -->
+    <div id="rightmenu">
+      <p class="title" style="text-align: left; margin-left: 10px">Notes</p>
+      <div id="particle10" class="hline"></div>
+      <div id="particle11" class="hline"></div>
+      <div id="particle12" class="vline"></div>
+      <textarea id="note_input" rows="12" cols="44">
+For the maximum viewing experience, please view this pen in full screen where the code is displayed to the side of the display.
+        
+        To Complete:
+        - Right Menu (this side of the screen)
+          - Make this note restricted to 11 rows
+          - Fill in empty space below
+        - Weather widget next to date/time
+        - Place quick access taskbar down bottom
+        - Fill in space at the top</textarea>
+      <div id="temperature">
+        <div id="date_time">
+          <div id="date" class="semi_arc e4">
+            <div class="semi_arc_2 e4_1">
+              <div class="counterspin4"></div>
+            </div>
+            <div style="font-size: 34px; margin-top: 25px" id="tempValue"></div>
+            <div style="font-size: 30px"><sup>0</sup>c</div>
+            <div style="font-size: 25px">Temp.</div>
+          </div>
+
+          <div id="time" class="arc e1">
+            <div style="font-size: 23px; margin-right: 8px; margin-top: 23px" id="humidityValue"></div>
+            <div style="font-size: 17px; margin-top: 10px">Humidity</div>
+          </div>
+        </div>
+      </div>
+      <!-- <div id="weather_Name" style="font-size: 15px; top: 10px;left: 200px;"></div> -->
+      <div id="time1" class="arc e1">
+        <!-- <div style="font-size: 23px; margin-left: -10px; margin-top: 23px;">23:41</div>
+          <div style="font-size: 15px; margin-left: 40px; margin-top: -30px; display: inline;">31</div>
+          <div style="font-size: 17px; margin-top: 10px;">Tuesday</div> -->
+        <div id="weatherImage" style="border-radius: 50%"></div>
+      </div>
+    </div>
+
+    <!-- Arc Reactor -->
+    <button id="microphoneButton">
+      <div id="arc_container">
+        <!-- <div id="titleBar" style="align-items: center;">
+        <div id="pointer" style="color: black;font-size: 20px;display: inline;">Hello</div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <div id="pointer" style="color: black;font-size: 30px;display: inline;">Hello</div>
+      </div>  -->
+
+        <div class="arc_reactor">
+          <div class="case_container">
+            <div class="e7">
+              <div class="semi_arc_3 e5_1">
+                <div class="semi_arc_3 e5_2">
+                  <div class="semi_arc_3 e5_3">
+                    <div class="semi_arc_3 e5_4" id="mainCircle"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="core2"></div>
+            </div>
+            <ul class="marks">
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+              <li></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </button>
+    <!-- Particles -->
+    <!-- Left Menu Particles -->
+    <canvas id="particle1" width="20" height="500"></canvas>
+    <script>
+      var canvas = document.getElementById("particle1");
+      var context = canvas.getContext("2d");
+      context.beginPath();
+      context.moveTo(0, 0);
+      context.lineTo(0, 70);
+      context.lineTo(10, 85);
+      context.lineTo(10, 135);
+      context.lineTo(0, 150);
+      context.lineTo(0, 480);
+      context.lineTo(5, 490);
+      context.lineTo(10, 490);
+      context.lineTo(20, 490);
+      context.lineTo(20, 250);
+      context.lineTo(10, 235);
+      context.lineTo(10, 185);
+      context.lineTo(20, 170);
+      context.lineTo(20, 40);
+      context.lineTo(10, 30);
+      context.lineTo(10, 20);
+      context.closePath();
+      context.lineWidth = 1;
+      context.fillStyle = "rgba(2,254,255,0.3)";
+      context.fill();
+      context.strokeStyle = "transparent";
+      context.stroke();
+    </script>
+
+    <canvas id="particle1_1" width="40" height="510"></canvas>
+    <script>
+      var canvas = document.getElementById("particle1_1");
+      var context = canvas.getContext("2d");
+      context.beginPath();
+      context.lineTo(0, 0);
+      context.lineTo(10, 15);
+      context.lineTo(10, 65);
+      context.lineTo(0, 80);
+      context.lineTo(0, 0);
+      context.closePath();
+      context.lineWidth = 1;
+      context.fillStyle = "rgba(2,254,255,0.3)";
+      context.fill();
+      context.strokeStyle = "transparent";
+      context.stroke();
+    </script>
+
+    <canvas id="particle1_2" width="40" height="510"></canvas>
+    <script>
+      var canvas = document.getElementById("particle1_2");
+      var context = canvas.getContext("2d");
+      context.beginPath();
+      context.lineTo(10, 80);
+      context.lineTo(0, 65);
+      context.lineTo(0, 15);
+      context.lineTo(10, 0);
+      context.lineTo(10, 80);
+      context.closePath();
+      context.lineWidth = 1;
+      context.fillStyle = "rgba(2,254,255,0.3)";
+      context.fill();
+      context.strokeStyle = "transparent";
+      context.stroke();
+    </script>
+
+    <div id="particle1_3">> > > ></div>
+
+    <div id="particle2">▶<br />▶<br />▶</div>
+    <div id="particle3" class="vline" />
+    <div id="particle4" class="vline" />
+    <div id="particle5" class="vline" />
+    <div id="particle6" class="vline" />
+    <div id="particle7" class="vline" />
+    <div id="particle8" class="vline" />
+    <div id="particle9" class="vline" />
+  </div>
+
+  <script>
+    // $('#date_time1').hide().delay(5000).fadeIn(400);
+    $("#date_time").hide().delay(2000).fadeIn(1000);
+    $(".title").hide().delay(3000).fadeIn(1000);
+    $("#cpu").hide().delay(4000).fadeIn(1000);
+    $("#ram").hide().delay(4500).fadeIn(1000);
+    $("#proc").hide().delay(5000).fadeIn(1000);
+    $(".caption").hide().delay(6000).fadeIn(1000);
+    $("#note_input").hide().delay(7000).fadeIn(1000);
+    $("#temperature").hide().delay(8000).fadeIn(1000);
+    $("#mainCircle").hide().delay(8000).fadeIn(1000);
+    $("#time1").hide().delay(9000).fadeIn(1000);
+    // function playAudio()
+    // {
+    //   var clickSound = new Audio();
+    //   clickSound.autoplay = true;
+    //   clickSound.src = navigator.userAgent.match(/Firefox/) ? 'clickSound.mp3' : 'clickSound.mp3';
+    //   // play sound effect
+    //   clickSound.play();
+    // }
+  </script>
+  <script src="./index_JS.js"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>
+
+css:
+/* *{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family:'Helvetica', sans-serif;
+}
+body{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    min-height: 100vh;
+}
+#microphoneButton{
+    background: #dbdbdb;
+    border: none;
+    outline: none;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+}
+#microphoneButton.Listen{
+    background: red;
+}
+#microphoneButton.Listen #Mic{
+    fill: #ffffff;
+}
+#Mic{
+    height: 80%;
+} */
+@import url(http://weloveiconfonts.com/api/?family=entypo);
+body {
+  background: black;
+  color: #02feff;
+  height: 100%;
+  overflow: hidden;
+}
+#microphoneButton.Listen {
+  border: none;
+}
+#microphoneButton.Listen #Mic {
+  fill: #ffffff;
+}
+#microphoneButton {
+  border: none;
+}
+#titleBar {
+  margin-left: 400px;
+  margin-top: 30px;
+}
+#pointer {
+  width: 200px;
+  height: 40px;
+  position: relative;
+  background: #02feff;
+  /* border: 1px solid  #02feff; */
+}
+#pointer:after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-left: 20px solid black;
+  border-top: 20px solid transparent;
+  border-bottom: 20px solid transparent;
+}
+#pointer:before {
+  content: "";
+  position: absolute;
+  right: -20px;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-left: 20px solid #02feff;
+  border-top: 20px solid transparent;
+  border-bottom: 20px solid transparent;
+}
+
+.counterspin4 {
+  animation: rotate_anti 4s linear infinite;
+}
+.core {
+  background: #cedce0;
+  width: 100px;
+  height: 100px;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  border: 10px rgba(2, 255, 255, 0.15) solid;
+  animation: flicker 0.2s infinite;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 40px;
+}
+
+.core2 {
+  background: #cedce0;
+  width: 100px;
+  height: 100px;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  border: 10px rgba(2, 255, 255, 0.15) solid;
+  animation: flicker2 0.2s infinite;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 40px;
+}
+
+.big_core {
+  background: #cedce0;
+  width: 200px;
+  height: 200px;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  border: 10px rgba(2, 255, 255, 0.15) solid;
+  animation: big_flicker 0.2s infinite;
+}
+
+.c_ease {
+  animation: colour_ease 3s infinite ease-in-out;
+}
+
+.counterspin5 {
+  animation: rotate_anti 5s linear infinite;
+}
+
+.counterspin4 {
+  animation: rotate_anti 4s linear infinite;
+}
+
+.semi_arc {
+  width: 100px;
+  height: 100px;
+  border: 6px solid #02feff;
+  background: rgba(2, 254, 255, 0.2);
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  transform: rotateZ(0deg);
+  transition: box-shadow 3s ease;
+  text-align: center;
+  line-height: 100px;
+}
+
+.semi_arc:hover {
+  box-shadow: 0px 0px 30px rgba(2, 254, 255, 0.8);
+  transition: 0.3s;
+}
+
+.semi_arc_2 {
+  content: "";
+  position: absolute;
+  width: 94%;
+  height: 94%;
+  left: 3%;
+  top: 3%;
+  border: 5px solid #02feff;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  -moz-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  animation: rotate 4s linear infinite;
+  text-align: center;
+  line-height: 129px;
+}
+
+.semi_arc_2:after {
+  content: "";
+  position: absolute;
+  width: 94%;
+  height: 94%;
+  left: 3%;
+  top: 3%;
+  border: 4px solid #02feff;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  -moz-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  animation: rotate_anti 2s linear infinite;
+}
+
+.semi_arc_3 {
+  content: "";
+  position: absolute;
+  width: 94%;
+  height: 94%;
+  left: 3%;
+  top: 3%;
+  border: 5px solid #02feff;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  -moz-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  animation: rotate 4s linear infinite;
+  text-align: center;
+  line-height: 129px;
+}
+
+.arc {
+  width: 100px;
+  height: 100px;
+  border: 6px solid #02feff;
+  background: rgba(2, 254, 255, 0.2);
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  -moz-transform: rotateY(-30deg) translateZ(-200px);
+  -ms-transform: rotateY(-30deg) translateZ(-200px);
+  -webkit-transform: rotateY(-30deg) translateZ(-200px);
+  transform: rotateY(-30deg) translateZ(-200px);
+  transform: rotateZ(0deg);
+  transition: box-shadow 3s ease;
+  text-align: center;
+  line-height: 100px;
+}
+
+.arc:hover {
+  box-shadow: 0px 0px 30px rgba(2, 254, 255, 0.8);
+  transition: 0.3s;
+}
+
+.arc:after {
+  content: "";
+  position: absolute;
+  width: 94%;
+  height: 94%;
+  left: 3%;
+  top: 3%;
+  border: 4px solid #02feff;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  -moz-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  animation: rotate 4s linear infinite;
+}
+
+.e1:after {
+  border-color: rgba(2, 255, 255, 0.6);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+}
+
+.e2:after {
+  border-color: rgba(2, 255, 255, 0.6);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+
+.e3 {
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  animation: rotate 5s linear infinite;
+}
+
+.e3:after {
+  border-color: rgba(2, 255, 255, 0.6);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+
+.e4 {
+  width: 150px;
+  height: 150px;
+}
+
+.e4_1 {
+  border-color: rgba(2, 255, 255, 0.3);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+}
+
+.e4_1:after {
+  border-color: rgba(2, 255, 255, 0.6);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+.e5 {
+  width: 200px;
+  height: 200px;
+}
+
+.e5_1 {
+  color: rgba(2, 255, 255, 0.15);
+  border: 2px solid;
+  border-left: 2px solid transparent;
+  animation: rotate 5s linear infinite;
+}
+
+.e5_2 {
+  color: rgba(2, 255, 255, 0.7);
+  border: 4px solid;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  animation: rotate_anti 4s linear infinite;
+}
+
+.e5_3 {
+  color: rgba(2, 255, 255, 0.5);
+  border: 2px solid;
+  border-left: 2px solid transparent;
+  border-right: 2px solid transparent;
+  animation: rotate 3s linear infinite;
+}
+
+.e5_4 {
+  color: rgba(2, 255, 255, 0.15);
+  border: 4px solid;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  animation: rotate_anti 2s linear infinite;
+}
+
+.e6 {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0);
+  width: 200px;
+  height: 200px;
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotateZ(0deg);
+  }
+  100% {
+    transform: rotateZ(360deg);
+  }
+}
+@keyframes rotate_anti {
+  0% {
+    transform: rotateZ(360deg);
+  }
+  100% {
+    transform: rotateZ(0deg);
+  }
+}
+@keyframes colour_ease {
+  0% {
+    border-color: #02feff;
+  }
+  50% {
+    border-color: rgba(2, 254, 255, 0.5);
+  }
+  100% {
+    border-color: #02feff;
+  }
+}
+@keyframes flicker {
+  0% {
+    box-shadow: 0px 0px 16px 8px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+  40% {
+    box-shadow: 0px 0px 16px 8px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+  50% {
+    box-shadow: 0px 0px 16px 6px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 100px 2px rgba(21, 211, 233, 0.3);
+  }
+  60% {
+    box-shadow: 0px 0px 16px 8px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+  100% {
+    box-shadow: 0px 0px 16px 8px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+}
+@keyframes flicker2 {
+  0% {
+    box-shadow: 0px 0px 60px 25px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+  40% {
+    box-shadow: 0px 0px 60px 25px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+  50% {
+    box-shadow: 0px 0px 50px 17px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 100px 2px rgba(21, 211, 233, 0.3);
+  }
+  60% {
+    box-shadow: 0px 0px 60px 25px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+  100% {
+    box-shadow: 0px 0px 60px 25px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 4px 2px rgba(21, 211, 233, 0.3);
+  }
+}
+@keyframes big_flicker {
+  0% {
+    box-shadow: 0px 0px 40px 20px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 30px 15px rgba(21, 211, 233, 0.3);
+  }
+  40% {
+    box-shadow: 0px 0px 40px 20px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 30px 15px rgba(21, 211, 233, 0.3);
+  }
+  50% {
+    box-shadow: 0px 0px 35px 17px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 50px 40px rgba(21, 211, 233, 0.3);
+  }
+  60% {
+    box-shadow: 0px 0px 40px 20px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 30px 15px rgba(21, 211, 233, 0.3);
+  }
+  100% {
+    box-shadow: 0px 0px 40px 20px rgba(150, 255, 255, 0.5),
+      inset 0px 1px 30px 15px rgba(21, 211, 233, 0.3);
+  }
+}
+/* Font / Universal Properties */
+[class*="entypo-"]:before {
+  font-family: "entypo", sans-serif;
+  transition: 0.3s;
+}
+
+* {
+  user-select: none;
+  font: 20px "Agency FB", sans-serif;
+}
+
+/* Left Menu */
+#leftmenu {
+  position: fixed;
+  float: left;
+  margin-left: 50px;
+  width: 210px;
+}
+
+#date_time {
+  margin-left: 30px;
+  width: 200px;
+  height: 200px;
+}
+
+#time {
+  margin-left: 110px;
+  position: fixed;
+  background: rgba(0, 0, 0, 0.8);
+  line-height: 0;
+}
+#time1 {
+  top: 450px;
+  left: 1150px;
+  margin-right: 10px;
+  position: fixed;
+  background: rgba(0, 0, 0, 0.8);
+  line-height: 0;
+}
+
+#date {
+  position: fixed;
+  margin-top: 20px;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.title {
+  font-size: 30px;
+  text-align: center;
+  margin: 0;
+  margin-top: 10px;
+  margin-left: -15px;
+}
+
+.title_underline {
+  border-color: rgba(2, 255, 255, 0.5);
+}
+
+.menu {
+  width: 200px;
+  height: 200px;
+  margin: 0;
+  padding: 5px;
+}
+
+.menuitem {
+  width: 100%;
+  height: 40px;
+  padding: 5px;
+  margin-left: 5px;
+  color: #02feff;
+  background: transparent;
+  border: transparent;
+  font-size: 15px;
+  text-align: left;
+  display: block;
+  float: left;
+  transition: 0.3s;
+  cursor: pointer;
+}
+
+.caption {
+  color: rgba(2, 255, 255, 0.6);
+  display: inline;
+  transition: 0.3s;
+  cursor: pointer;
+}
+
+.caption:hover {
+  color: #02feff;
+}
+
+.app_icon {
+  width: 48px;
+  color: rgba(2, 255, 255, 0.6);
+  font-size: 40px;
+  text-align: center;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.app_icon:hover {
+  color: #02feff;
+}
+
+/* Right Menu */
+#rightmenu {
+  float: right;
+  margin-right: 20px;
+  width: 300px;
+}
+
+#note_input {
+  color: rgba(2, 255, 255, 0.6);
+  padding: 5px;
+  border-style: none;
+  background: transparent;
+  resize: none;
+  transition: 0.3s;
+  width: calc(100% - 15px);
+}
+
+#note_input:hover {
+  color: #02feff;
+  transition: 0.3s;
+}
+
+/* Taskbar */
+#taskbar_wrapper #taskbar {
+  position: fixed;
+  width: 200px;
+  height: 200px;
+  background: gray;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Arc Reactor */
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#arc_container {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+}
+
+.arc_reactor {
+  position: relative;
+  top: 50%;
+  margin-top: -125px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  box-shadow: 0px 0px 50px 15px rgba(2, 255, 255, 0.3),
+    inset 0px 0px 50px 15px rgba(2, 255, 255, 0.3);
+}
+
+.case_container {
+  width: 210px;
+  height: 210px;
+  border-radius: 50%;
+  position: absolute;
+  margin-left: 20px;
+  margin-top: 20px;
+}
+
+.core2 {
+  background: #cedce0;
+  width: 110px;
+  height: 110px;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  border: 5px solid rgba(2, 255, 255, 0.15);
+  animation: flicker2 0.2s infinite;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 40px;
+}
+
+.e7 {
+  width: 95.25%;
+  height: 95.25%;
+  left: 2.5475%;
+  right: 2.5475%;
+  border: 6px solid transparent;
+  background: transparent;
+  -moz-border-radius: 50%;
+  -webkit-border-radius: 50%;
+  border-radius: 50%;
+  transform: rotateZ(0deg);
+  transition: box-shadow 3s ease;
+  text-align: center;
+  line-height: 100px;
+}
+
+.marks li {
+  display: block;
+  width: 3px;
+  height: 11px;
+  background: rgba(2, 254, 255, 0.8);
+  position: absolute;
+  margin-left: 105px;
+  margin-top: -110px;
+  animation: colour_ease2 3s infinite ease-in-out;
+}
+
+@keyframes colour_ease2 {
+  0% {
+    background: #02feff;
+  }
+  50% {
+    background: rgba(2, 254, 255, 0.3);
+  }
+  100% {
+    background: #02feff;
+  }
+}
+.marks li:first-child {
+  transform: rotate(6deg) translateY(125px);
+}
+
+.marks li:nth-child(2) {
+  transform: rotate(12deg) translateY(125px);
+}
+
+.marks li:nth-child(3) {
+  transform: rotate(18deg) translateY(125px);
+}
+
+.marks li:nth-child(4) {
+  transform: rotate(24deg) translateY(125px);
+}
+
+.marks li:nth-child(5) {
+  transform: rotate(30deg) translateY(125px);
+}
+
+.marks li:nth-child(6) {
+  transform: rotate(36deg) translateY(125px);
+}
+
+.marks li:nth-child(7) {
+  transform: rotate(42deg) translateY(125px);
+}
+
+.marks li:nth-child(8) {
+  transform: rotate(48deg) translateY(125px);
+}
+
+.marks li:nth-child(9) {
+  transform: rotate(54deg) translateY(125px);
+}
+
+.marks li:nth-child(10) {
+  transform: rotate(60deg) translateY(125px);
+}
+
+.marks li:nth-child(11) {
+  transform: rotate(66deg) translateY(125px);
+}
+
+.marks li:nth-child(12) {
+  transform: rotate(72deg) translateY(125px);
+}
+
+.marks li:nth-child(13) {
+  transform: rotate(78deg) translateY(125px);
+}
+
+.marks li:nth-child(14) {
+  transform: rotate(84deg) translateY(125px);
+}
+
+.marks li:nth-child(15) {
+  transform: rotate(90deg) translateY(125px);
+}
+
+.marks li:nth-child(16) {
+  transform: rotate(96deg) translateY(125px);
+}
+
+.marks li:nth-child(17) {
+  transform: rotate(102deg) translateY(125px);
+}
+
+.marks li:nth-child(18) {
+  transform: rotate(108deg) translateY(125px);
+}
+
+.marks li:nth-child(19) {
+  transform: rotate(114deg) translateY(125px);
+}
+
+.marks li:nth-child(20) {
+  transform: rotate(120deg) translateY(125px);
+}
+
+.marks li:nth-child(21) {
+  transform: rotate(126deg) translateY(125px);
+}
+
+.marks li:nth-child(22) {
+  transform: rotate(132deg) translateY(125px);
+}
+
+.marks li:nth-child(23) {
+  transform: rotate(138deg) translateY(125px);
+}
+
+.marks li:nth-child(24) {
+  transform: rotate(144deg) translateY(125px);
+}
+
+.marks li:nth-child(25) {
+  transform: rotate(150deg) translateY(125px);
+}
+
+.marks li:nth-child(26) {
+  transform: rotate(156deg) translateY(125px);
+}
+
+.marks li:nth-child(27) {
+  transform: rotate(162deg) translateY(125px);
+}
+
+.marks li:nth-child(28) {
+  transform: rotate(168deg) translateY(125px);
+}
+
+.marks li:nth-child(29) {
+  transform: rotate(174deg) translateY(125px);
+}
+
+.marks li:nth-child(30) {
+  transform: rotate(180deg) translateY(125px);
+}
+
+.marks li:nth-child(31) {
+  transform: rotate(186deg) translateY(125px);
+}
+
+.marks li:nth-child(32) {
+  transform: rotate(192deg) translateY(125px);
+}
+
+.marks li:nth-child(33) {
+  transform: rotate(198deg) translateY(125px);
+}
+
+.marks li:nth-child(34) {
+  transform: rotate(204deg) translateY(125px);
+}
+
+.marks li:nth-child(35) {
+  transform: rotate(210deg) translateY(125px);
+}
+
+.marks li:nth-child(36) {
+  transform: rotate(216deg) translateY(125px);
+}
+
+.marks li:nth-child(37) {
+  transform: rotate(222deg) translateY(125px);
+}
+
+.marks li:nth-child(38) {
+  transform: rotate(228deg) translateY(125px);
+}
+
+.marks li:nth-child(39) {
+  transform: rotate(234deg) translateY(125px);
+}
+
+.marks li:nth-child(40) {
+  transform: rotate(240deg) translateY(125px);
+}
+
+.marks li:nth-child(41) {
+  transform: rotate(246deg) translateY(125px);
+}
+
+.marks li:nth-child(42) {
+  transform: rotate(252deg) translateY(125px);
+}
+
+.marks li:nth-child(43) {
+  transform: rotate(258deg) translateY(125px);
+}
+
+.marks li:nth-child(44) {
+  transform: rotate(264deg) translateY(125px);
+}
+
+.marks li:nth-child(45) {
+  transform: rotate(270deg) translateY(125px);
+}
+
+.marks li:nth-child(46) {
+  transform: rotate(276deg) translateY(125px);
+}
+
+.marks li:nth-child(47) {
+  transform: rotate(282deg) translateY(125px);
+}
+
+.marks li:nth-child(48) {
+  transform: rotate(288deg) translateY(125px);
+}
+
+.marks li:nth-child(49) {
+  transform: rotate(294deg) translateY(125px);
+}
+
+.marks li:nth-child(50) {
+  transform: rotate(300deg) translateY(125px);
+}
+
+.marks li:nth-child(51) {
+  transform: rotate(306deg) translateY(125px);
+}
+
+.marks li:nth-child(52) {
+  transform: rotate(312deg) translateY(125px);
+}
+
+.marks li:nth-child(53) {
+  transform: rotate(318deg) translateY(125px);
+}
+
+.marks li:nth-child(54) {
+  transform: rotate(324deg) translateY(125px);
+}
+
+.marks li:nth-child(55) {
+  transform: rotate(330deg) translateY(125px);
+}
+
+.marks li:nth-child(56) {
+  transform: rotate(336deg) translateY(125px);
+}
+
+.marks li:nth-child(57) {
+  transform: rotate(342deg) translateY(125px);
+}
+
+.marks li:nth-child(58) {
+  transform: rotate(348deg) translateY(125px);
+}
+
+.marks li:nth-child(59) {
+  transform: rotate(354deg) translateY(125px);
+}
+
+.marks li:nth-child(60) {
+  transform: rotate(360deg) translateY(125px);
+}
+
+/* Particles / Unique Elements */
+.vline {
+  width: 0;
+  height: 200px;
+  float: left;
+  border-left: 1px solid rgba(2, 255, 255, 0.3);
+}
+
+.hline {
+  width: 200px;
+  height: 0;
+  border-bottom: 1px solid rgba(2, 255, 255, 0.3);
+}
+
+#particle1 {
+  position: fixed;
+  margin-left: 260px;
+  margin-top: 410px;
+}
+
+#particle1_1 {
+  position: fixed;
+  margin-left: 255px;
+  margin-top: 480px;
+}
+
+#particle1_2 {
+  position: fixed;
+  margin-left: 275px;
+  margin-top: 580px;
+}
+
+#particle1_3 {
+  position: fixed;
+  color: rgba(2, 255, 255, 0.3);
+  font-size: 90px;
+  margin-left: 190px;
+  margin-top: 730px;
+  transform: rotate(90deg);
+  z-index: -1;
+}
+
+#particle2 {
+  position: fixed;
+  margin-left: 20px;
+  margin-top: 20px;
+}
+
+#particle3 {
+  position: fixed;
+  height: 240px;
+  margin-left: 40px;
+}
+
+#particle4 {
+  position: fixed;
+  height: 240px;
+  margin-top: 200px;
+  margin-left: -10px;
+}
+
+#particle5 {
+  position: fixed;
+  height: 290px;
+  margin-top: -90px;
+  margin-left: 230px;
+  border-color: rgba(2, 255, 255, 0.15);
+}
+
+#particle6 {
+  position: fixed;
+  height: 290px;
+  margin-top: 5px;
+  margin-left: 3px;
+  border-color: rgba(2, 255, 255, 0.2);
+}
+
+#particle7 {
+  position: fixed;
+  height: 290px;
+  margin-top: 5px;
+  margin-left: 3px;
+  border-color: rgba(2, 255, 255, 0.15);
+}
+
+#particle8 {
+  position: fixed;
+  height: 500px;
+  margin-left: -232px;
+  margin-top: 280px;
+  border-color: rgba(2, 255, 255, 0.15);
+}
+
+#particle9 {
+  position: fixed;
+  height: 320px;
+  margin-left: 3px;
+  border-color: rgba(2, 255, 255, 0.2);
+}
+
+/* Right Menu Particles */
+#particle10 {
+  width: 330px;
+  float: right;
+  border-color: rgba(2, 255, 255, 0.5);
+}
+
+#particle11 {
+  margin-right: 30px;
+  margin-top: 3px;
+  width: 330px;
+  float: right;
+  border-color: rgba(2, 255, 255, 0.5);
+}
+
+#particle12 {
+  float: left;
+  height: 352px;
+  margin-top: -40px;
+  border-color: rgba(2, 255, 255, 0.5);
+}
+
+js:
+const API_KEY = "YOUR_API_KEY";
+
+const speechRecognition =
+  window.webkitSpeechRecognition || //Google Chrome
+  window.SpeechRecognition; //Firefox
+
+//To get a Battery
+let batteryPromise = navigator.getBattery();
+batteryPromise.then(batteryCallback1);
+
+function batteryCallback1(batteryObject) {
+  printBatteryStatus(batteryObject);
+}
+function printBatteryStatus(batteryObject) {
+  const batteryLevel = batteryObject.level * 100;
+  // console.log("Percentage", batteryLevel+"%");
+  document.getElementById("ram").innerHTML = "Battery: " + batteryLevel + "%";
+}
+
+//Temperature
+getWeatherDetails1();
+function getWeatherDetails1() {
+  if ("geolocation" in navigator) {
+    navigator.geolocation.getCurrentPosition(async function (position) {
+      let lat = position.coords.latitude;
+      let lon = position.coords.longitude;
+
+      const api_url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`;
+
+      let response = await fetch(api_url);
+
+      let data = await response.json();
+
+      manipulateWeatherData(data);
+    });
+  }
+}
+function manipulateWeatherData(data) {
+  let city = data.name;
+  let temp = data.main.temp;
+  let humidity = data.main.humidity;
+  let weather_Name = data.weather[0].main;
+
+  let icon = data.weather[0].icon;
+  let description = data.weather[0].main;
+  //console.log(data);
+  // let msg=`Current temperature is ${temp} degree celcius and humidity is ${humidity} grams of water vapour per kilogram`;
+  // Speak(msg);
+  //We can use other data if we want to show on screen
+  let imageUrl = `https://openweathermap.org/img/w/${icon}.png`;
+
+  let image = `<img src="${imageUrl}" height="90" width="90">`;
+  // document.write(image);
+  document.getElementById("tempValue").innerHTML = `${temp}`;
+  document.getElementById("humidityValue").innerHTML = `${humidity}` + "*";
+  document.getElementById("weatherImage").innerHTML = image;
+  document.getElementById("weather_Name").innerHTML = weather_Name;
+}
+//Get Date
+getDate1();
+function getDate1() {
+  var d = new Date();
+  var months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
+  ];
+  document.getElementById("monthValue").innerHTML = months[d.getMonth()];
+  document.getElementById("dateValue").innerHTML = d.getDate();
+  document.getElementById("timeValue").innerHTML =
+    d.getHours() + ":" + d.getMinutes();
+  var days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday"
+  ];
+  document.getElementById("weekDayValue").innerHTML = days[d.getDay()];
+}
+
+// jarvisStartingReply();
+function startListening() {
+  const recong = new speechRecognition();
+  recong.start();
+
+  recong.onresult = function (data) {
+    handleResults(data);
+  };
+}
+function handleResults(data) {
+  let text = data.results[0][0].transcript;
+  text = text.toLowerCase();
+  console.log(text);
+
+  ProcessCommand(text);
+}
+function ProcessCommand(UserText) {
+  if (UserText.includes("push enable")) {
+    // UserText=UserText.slice(16);
+    // Speak('Searching initiated...'+UserText);
+    // searchOnGoogle(UserText);
+  } else {
+  }
+}
+
+function Speak(TEXT) {
+  const utter = new SpeechSynthesisUtterance();
+
+  utter.text = TEXT;
+  utter.voice = window.speechSynthesis.getVoices()[1];
+  window.speechSynthesis.speak(utter);
+  window.speechSynthesis.getVoices().forEach((i) => {
+    console.log(i);
+  });
+}
+
+function jarvisStartingReply() {
+  Speak(
+    "please wait...system initializing...backing up configurations...gathering audio and video files..."
+  );
+  Speak("system initialized...");
+  Speak(
+    "i am online and ready... say push enable to talk... or simply click arc reactor..."
+  );
+  startListening();
+}
+```
+
+3. 

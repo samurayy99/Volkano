@@ -54,6 +54,8 @@ export class FlowEngineBridge implements FlowEngineApi {
   private chamberDrive = new SourceChamberDrive();
   private lenoxDrive: LenoxEyesDrive | null = null;
   private lastLenoxState: LenoxProofState = "idle";
+  /** Rolling engine tick time (ms), exposed as __LENOX_PERF__ in Lenox mode. */
+  private engineMsAvg: number | null = null;
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
@@ -103,15 +105,16 @@ export class FlowEngineBridge implements FlowEngineApi {
 
     this.app.promoteIdlePopulation();
     if (this.options.lenoxMode) {
-      // Reseed positions as free signal dust: pre-wake play is pure fluid
-      // physics with zero settle targets (no springs, no bounce-back).
+      // First contact: one compact central ignition bursts into the same
+      // projected viewport box it later ricochets inside. No settle target,
+      // reservoir or spring is introduced after the launch.
       this.app.mlsMpmSim?.seedLenoxDustPopulation?.({
-        centerX: 32,
-        centerY: 36.5,
+        bounds: {
+          min: this.app.runtime?.simBoundsMin,
+          max: this.app.runtime?.simBoundsMax,
+        },
         zBase: 30,
-        spreadX: 31,
-        spreadY: 17,
-        spreadZ: 8,
+        spreadZ: 2.8,
       });
     }
     this.app.clearPointer();
@@ -195,6 +198,18 @@ export class FlowEngineBridge implements FlowEngineApi {
   setLenoxParticlesVisible(visible: boolean): void {
     if (this.disposed || !this.lenoxDrive) return;
     this.app?.setParticlesVisible?.(visible);
+  }
+
+  /** 0 = centred, 1 = left third with room for the console. */
+  setLenoxOperator(target: number, tau?: number): void {
+    if (this.disposed) return;
+    this.app?.setLenoxOperator?.(target, tau);
+  }
+
+  /** A/B what he reflects: the void studio (true) or the legacy meadow HDRI. */
+  setLenoxEnvironment(useVoid: boolean): void {
+    if (this.disposed) return;
+    this.app?.setLenoxEnvironment?.(useVoid);
   }
 
   setChamberEnergy(level01: number): void {
@@ -383,7 +398,24 @@ export class FlowEngineBridge implements FlowEngineApi {
           this.interactiveEnabled && !this.postEnterActive ? 1 : 0;
         this.app.setPointerInfluence(pointerInfluence);
       }
-      await this.app.update(delta);
+      if (this.lenoxDrive) {
+        // Real engine frame time (CPU-side tick incl. GPU submit) — the
+        // React FPS HUD runs its own rAF and does not measure the engine.
+        const engineT0 = performance.now();
+        await this.app.update(delta);
+        const engineMs = performance.now() - engineT0;
+        this.engineMsAvg =
+          this.engineMsAvg === null
+            ? engineMs
+            : this.engineMsAvg * 0.95 + engineMs * 0.05;
+        (globalThis as Record<string, unknown>).__LENOX_PERF__ = {
+          engineMs: Math.round(engineMs * 100) / 100,
+          avgMs: Math.round(this.engineMsAvg * 100) / 100,
+          particles: this.app.runtime?.particles ?? 0,
+        };
+      } else {
+        await this.app.update(delta);
+      }
     } catch (error) {
       this.options.onError?.(error);
     }

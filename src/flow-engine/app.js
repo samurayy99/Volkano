@@ -2,12 +2,16 @@ import * as THREE from "three/webgpu";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { Lights } from "./lights";
 
-import { float, Fn, mrt, output, pass, vec4 } from "three/tsl";
+import { float, Fn, mrt, output, pass, smoothstep, uniform, vec4 } from "three/tsl";
 import MlsMpmSimulator from "./mls-mpm/mlsMpmSimulator";
 import ParticleRenderer from "./mls-mpm/particleRenderer";
 import BackgroundGeometry from "./backgroundGeometry";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { PREENTER_VESSEL } from "./vesselDescriptors";
+import { loadLenoxVessel } from "./lenox/lenoxVessel.js";
+import { LENOX_SIGNAL_FACE } from "./lenox/lenoxEyesDrive.js";
+import { createLenoxBackdrop } from "./lenox/lenoxBackdrop.js";
+import { createVoidEnvironment } from "./lenox/voidEnvironment.js";
 import { forensicHoldReadIsolation } from "./post-enter/forensicPostEnter.js";
 import {
   ARREST_BLOOM_SPIKE,
@@ -22,6 +26,14 @@ import {
 } from "./post-enter/postEnterDrive.js";
 
 const HDRI_URL = "/flow-assets/autumn_field_puresky_1k.hdr";
+
+/**
+ * A blur pyramid never returns exactly zero — a faint, near-uniform value
+ * survives across the entire render region. Below this floor the bloom is
+ * discarded outright, so no residue can tint or plate the canvas rectangle.
+ */
+const BLOOM_RESIDUE_FLOOR = 0.004;
+const BLOOM_RESIDUE_KNEE = 0.03;
 const MOBILE_BREAKPOINT = 768;
 
 const SOURCE_RADIUS_SCALE = Object.freeze({
@@ -37,6 +49,94 @@ const DEFAULT_LOOK = Object.freeze({
   bloomStrength: 0.16,
   bloomRadius: 0.46,
 });
+
+/**
+ * Lenox vessel framing. The sphere is sized from the viewport, not from a
+ * model constant: this fraction of the usable viewport height in `present`.
+ */
+const LENOX_VESSEL_FILL = 0.46;
+const LENOX_VESSEL_FILL_PORTRAIT = 0.4;
+/** Signal face fraction of the visor display (the whole face stays inside). */
+const LENOX_FACE_FILL = 0.82;
+/** Face center + display plane in sim space — mirrors PRESENCE_CENTER in the drive. */
+const LENOX_FACE_CENTER = Object.freeze({ x: 32, y: 36.5 });
+const LENOX_EYE_Z = 28.4;
+/** Display sits this far behind the signal plane (sim units, +z = away from camera). */
+const LENOX_SCREEN_CLEARANCE = 1.4;
+/**
+ * How far the head turns toward the cursor at full gaze. This is what makes
+ * the following legible — the parallax of the signal plane inside the visor
+ * does more for it than any amount of eye travel.
+ */
+const LENOX_HEAD_YAW = THREE.MathUtils.degToRad(13);
+const LENOX_HEAD_PITCH = THREE.MathUtils.degToRad(8);
+
+/**
+ * How hard a signal drives the scene's selective bloom channel. The glow is
+ * NOT geometry: the engine already runs a bloom pass over an MRT channel, and
+ * every signal writes into it. That is a screen-space falloff — it has the
+ * exact silhouette of whatever emitted it, it is perfectly smooth, and it
+ * cannot produce the stepped rings or blown-out cores that stacked additive
+ * copies of a shape always will.
+ */
+const LENOX_SIGNAL_BLOOM = 1.05;
+
+/**
+ * A true capsule: straight flanks with semicircular caps, half-width 1 and
+ * half-height `aspect`. Scaling an ellipse instead would give the eye soft,
+ * lens-like ends — the LED read depends on those flat sides.
+ */
+const makeCapsuleGeometry = (aspect) => {
+  const straight = Math.max(aspect - 1, 0.001);
+  const shape = new THREE.Shape();
+  shape.moveTo(-1, -straight);
+  shape.lineTo(-1, straight);
+  shape.absarc(0, straight, 1, Math.PI, 0, true);
+  shape.lineTo(1, -straight);
+  shape.absarc(0, -straight, 1, 0, Math.PI, true);
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape, 20);
+};
+
+/**
+ * The speech slot: a horizontal rounded bar, normalized so scale = half-extent
+ * on each axis. Closing it squashes the caps into a thin lens, which is what an
+ * articulating mouth actually does — a circle that opens and shuts on a beat is
+ * a fish, not a speaker.
+ */
+const makeSlotGeometry = (aspect = 3) => {
+  const cap = Math.max(aspect - 1, 0.001);
+  const shape = new THREE.Shape();
+  shape.moveTo(-cap, -1);
+  shape.lineTo(cap, -1);
+  shape.absarc(cap, 0, 1, -Math.PI / 2, Math.PI / 2, false);
+  shape.lineTo(-cap, 1);
+  shape.absarc(-cap, 0, 1, Math.PI / 2, (Math.PI * 3) / 2, false);
+  shape.closePath();
+  const geometry = new THREE.ShapeGeometry(shape, 20);
+  geometry.scale(1 / aspect, 1, 1);
+  return geometry;
+};
+
+/** Stroke arc in a unit box: a ring sector normalized so scale = half-extent. */
+const makeStrokeArcGeometry = (inner, outer, start, length) => {
+  const geometry = new THREE.RingGeometry(inner, outer, 48, 1, start, length);
+  geometry.scale(1 / outer, 1 / outer, 1);
+  return geometry;
+};
+
+/** The Lenox mark: a thick checkmark in a unit box. Amber, confirm only. */
+const makeCheckGeometry = () => {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.88, 0.12);
+  shape.lineTo(-0.3, -0.5);
+  shape.lineTo(0.86, 0.76);
+  shape.lineTo(0.86, 0.38);
+  shape.lineTo(-0.28, -0.86);
+  shape.lineTo(-0.88, -0.24);
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape, 1);
+};
 
 const BASE_RUNTIME_DEFAULTS = Object.freeze({
   noise: 1.08,
@@ -165,10 +265,17 @@ const createRuntimeState = (width = window.innerWidth) => {
     lenoxRoughness: 0.3,
     lenoxEnvIntensity: 1.35,
     lenoxSilverGain: 1,
+    lenoxEnergyMul: 1,
     settleOffset: new THREE.Vector3(),
     settleBob: new THREE.Vector3(),
     settleSquashT: 1,
     settleSquashCenter: 32,
+    /** Critical-settle damping rates (Lenox); 0 = chamber spring untouched. */
+    settleDampingShell: 0,
+    settleDampingFocal: 0,
+    /** Birth swirl (Lenox); wraps the collapsing field instead of folding it. */
+    settleSwirl: 0,
+    settleSwirlCenter: new THREE.Vector3(32, 36.5, 30),
     /** Viewport-projected sim bounds (Lenox); null = grid walls (chamber). */
     simBoundsMin: null,
     simBoundsMax: null,
@@ -201,6 +308,7 @@ class App {
   camera = null;
   scene = null;
   environmentTexture = null;
+  voidEnvironmentTexture = null;
 
   lights = null;
   backgroundGeometry = null;
@@ -234,11 +342,20 @@ class App {
 
   runtime = null;
 
-  /** Lenox gaze rig (void mode): stable sockets + clamped focal anchors. */
+  /** Lenox PRIME signal rig (void mode): capsule eyes, arcs, mouth, mark. */
   lenoxRig = null;
+  /** World size of one face unit, expressed per sim axis (see fitLenoxVessel). */
+  lenoxFaceUnit = new THREE.Vector3(1, 1, 1);
+  /** Lenox vessel (sphere-robot body); the signal face renders in its visor. */
+  lenoxVessel = null;
+  lenoxVesselPromise = null;
+  /** The lacquer panel behind him. A surface that catches light, not a glow. */
+  lenoxBackdrop = null;
+  _backdropLight = new THREE.Vector3(0.35, 0.4, 1);
   /** Lenox lifecycle camera framing (void mode). */
   lenoxFramings = null;
   lenoxFrame = null;
+  lenoxOperator = null;
 
   postEnterDriveActive = false;
 
@@ -376,128 +493,447 @@ class App {
   }
 
   /**
-   * Lenox gaze rig — the deterministic identity layer (works with particles
-   * disabled). Per eye, in sim space (children of the particle group):
-   *   socket — stable dark almond aperture plate (barely above void, never
-   *            white, never a cutout hole)
-   *   anchor — small restrained cyan focal disc; travel is clamped inside
-   *            the socket, per-eye vector (CodePen-2 architecture)
-   * Particles wrap around this rig; they do not define it.
+   * LENOX PRIME rig — the display signal layer.
+   *
+   * The visor is a screen, not an eye socket. Everything is drawn from four
+   * primitives in soft cyan: a vertical capsule, an arc, a mouth and (for a
+   * confirmed result only) an amber checkmark. There is deliberately no iris,
+   * ring stack, pupil, lid, glint or brow — that vocabulary reads as a
+   * pseudo-eyeball behind glass and is what made Lenox look tired.
+   *
+   * Coordinates are FACE UNITS: an isotropic 2D space centered on the display
+   * with +x = screen right. `face` carries the sim→face mapping, so the
+   * anisotropic sim grid (x 1.6 / y 0.88) can never squash a signal again.
+   * The glow is not geometry. Every signal writes into the engine's selective
+   * bloom channel (`mrtNode`), so its light comes back from the post pass as a
+   * true screen-space falloff around the exact silhouette that emitted it.
    */
   initLenoxGazeRig() {
     if (!this.particleRenderer?.object || this.lenoxRig) return;
 
-    // Rig root: head tilt / squash / bounce apply to every part at once.
-    const root = new THREE.Group();
+    const root = new THREE.Group(); // sim space: bob + tilt
+    const head = new THREE.Group(); // pivots on the SPHERE center: yaw + pitch
+    const face = new THREE.Group(); // face units: isotropic, on the display plane
+    head.add(face);
+    root.add(head);
     this.particleRenderer.object.add(root);
 
-    const eyeShape = new THREE.Shape();
-    eyeShape.moveTo(-1, 0);
-    eyeShape.quadraticCurveTo(0, 1.35, 1, 0);
-    eyeShape.quadraticCurveTo(0, -1.35, -1, 0);
-    const eyeGeometry = new THREE.ShapeGeometry(eyeShape, 24);
-    const eyeMaterial = new THREE.MeshBasicMaterial({
-      color: 0x122530,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-    });
+    // --- geometry (unit-normalized; the per-frame scale carries the size) ---
+    const capsuleGeometry = makeCapsuleGeometry(LENOX_SIGNAL_FACE.eyeAspect);
+    const arcGeometry = makeStrokeArcGeometry(0.82, 1, Math.PI * 0.06, Math.PI * 0.88);
+    const mouthArcGeometry = makeStrokeArcGeometry(0.72, 1, Math.PI * 1.16, Math.PI * 0.68);
+    const mouthSlotGeometry = makeSlotGeometry(3);
+    const waveGeometry = makeStrokeArcGeometry(0.84, 1, -Math.PI * 0.3, Math.PI * 0.6);
+    const checkGeometry = makeCheckGeometry();
 
-    const anchorGeometry = new THREE.CircleGeometry(1, 24);
-    const accentMaterial = new THREE.MeshBasicMaterial({
-      color: 0x46d4ee,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-    });
+    const CYAN = 0x7deeff;
+    const AMBER = 0xffb457;
 
-    // Brow: thin rounded bar (energy field, not hair).
-    const browShape = new THREE.Shape();
-    browShape.moveTo(-1, -0.14);
-    browShape.quadraticCurveTo(-1.06, 0, -1, 0.14);
-    browShape.lineTo(1, 0.14);
-    browShape.quadraticCurveTo(1.06, 0, 1, -0.14);
-    browShape.lineTo(-1, -0.14);
-    const browGeometry = new THREE.ShapeGeometry(browShape, 8);
-
-    // Mouth: parametric ring sector (bottom arc). curve via rotation/scale,
-    // "open" swaps to the full ring.
-    const arcGeometry = new THREE.RingGeometry(0.78, 1, 32, 1, Math.PI * 1.15, Math.PI * 0.7);
-    const ringGeometry = new THREE.RingGeometry(0.66, 1, 32);
+    /**
+     * A signal: a crisp core that also feeds the scene bloom. `mrtNode` is the
+     * whole trick — it writes the shape into the engine's selective bloom
+     * channel, so the light comes back as a real screen-space falloff around
+     * the exact silhouette. No halo meshes, no fog sprites, nothing to tune.
+     */
+    const bloomGain = uniform(LENOX_SIGNAL_BLOOM);
+    const signal = (color, opacity) => {
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const c = new THREE.Color(color);
+      // The bloom attachment carries its OWN alpha, and blending reads it per
+      // target. Without this uniform a faded-out signal would keep glowing at
+      // full strength, so the bloom alpha is driven from the same opacity.
+      const bloomAlpha = uniform(opacity);
+      material.userData.bloomAlpha = bloomAlpha;
+      material.mrtNode = mrt({
+        bloomIntensity: vec4(
+          float(c.r).mul(bloomGain),
+          float(c.g).mul(bloomGain),
+          float(c.b).mul(bloomGain),
+          bloomAlpha,
+        ),
+      });
+      return material;
+    };
 
     const make = (geometry, material, renderOrder) => {
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.visible = false;
       mesh.renderOrder = renderOrder;
-      root.add(mesh);
+      mesh.frustumCulled = false;
+      mesh.visible = false;
+      face.add(mesh);
       return mesh;
     };
 
+    const eyeMaterials = [signal(CYAN, 1), signal(CYAN, 1)];
+    const arcMaterials = [signal(CYAN, 1), signal(CYAN, 1)];
+    const mouthMaterial = signal(CYAN, 1);
+    const waveMaterial = signal(CYAN, 0.5);
+    const checkMaterial = signal(AMBER, 1);
+
     this.lenoxRig = {
       root,
-      eyes: [make(eyeGeometry, eyeMaterial, 2), make(eyeGeometry, eyeMaterial, 2)],
-      anchors: [make(anchorGeometry, accentMaterial, 3), make(anchorGeometry, accentMaterial, 3)],
-      brows: [make(browGeometry, accentMaterial, 3), make(browGeometry, accentMaterial, 3)],
-      mouthArc: make(arcGeometry, accentMaterial, 3),
-      mouthRing: make(ringGeometry, accentMaterial, 3),
-      accentMaterial,
-      eyeMaterial,
-      geometries: [eyeGeometry, anchorGeometry, browGeometry, arcGeometry, ringGeometry],
-      materials: [eyeMaterial, accentMaterial],
-      accentColor: new THREE.Color(0x46d4ee),
+      head,
+      face,
+      eyes: [
+        make(capsuleGeometry, eyeMaterials[0], 12),
+        make(capsuleGeometry, eyeMaterials[1], 12),
+      ],
+      arcs: [
+        make(arcGeometry, arcMaterials[0], 12),
+        make(arcGeometry, arcMaterials[1], 12),
+      ],
+      mouthArc: make(mouthArcGeometry, mouthMaterial, 12),
+      mouthSlot: make(mouthSlotGeometry, mouthMaterial, 12),
+      // Two brackets per side: the outer one lags, so LISTENING breathes.
+      waves: [
+        make(waveGeometry, waveMaterial, 11),
+        make(waveGeometry, waveMaterial, 11),
+        make(waveGeometry, waveMaterial, 11),
+        make(waveGeometry, waveMaterial, 11),
+      ],
+      check: make(checkGeometry, checkMaterial, 14),
+
+      bloomGain,
+      eyeMaterials,
+      arcMaterials,
+      mouthMaterial,
+      waveMaterial,
+      checkMaterial,
+      accentColor: new THREE.Color(CYAN),
+
+      geometries: [
+        capsuleGeometry,
+        arcGeometry,
+        mouthArcGeometry,
+        mouthSlotGeometry,
+        waveGeometry,
+        checkGeometry,
+      ],
+      materials: [
+        ...eyeMaterials,
+        ...arcMaterials,
+        mouthMaterial,
+        waveMaterial,
+        checkMaterial,
+      ],
     };
   }
 
   /**
-   * Per-frame expressive pose from the Lenox drive (sim-space coordinates).
-   * The drive owns all emotion math; this just applies transforms.
+   * Lenox vessel — async body load. The rig keeps working stand-alone until
+   * the robot arrives, then docks inside the visor (same parent → same bob,
+   * tilt and squash as the ocular planes).
+   */
+  initLenoxVessel() {
+    if (this.lenoxVesselPromise || !this.lenoxRig) return;
+    this.lenoxVesselPromise = loadLenoxVessel({
+      parentScale: this.particleRenderer?.object?.scale,
+    })
+      .then((vessel) => {
+        if (!this.lenoxRig) return;
+        this.lenoxVessel = vessel;
+        vessel.root.visible = false;
+        // Under the head pivot: body and face yaw together, as one head.
+        this.lenoxRig.head.add(vessel.root);
+        this.fitLenoxVessel();
+      })
+      .catch((error) => {
+        console.warn("[lenox] vessel load failed — rig runs bodyless", error);
+      });
+  }
+
+  /**
+   * Two fits, one chain, both derived from the viewport — never hand-tuned:
+   *
+   *   viewport height → vessel height (LENOX_VESSEL_FILL) → display bounds
+   *   display bounds  → face unit     (LENOX_FACE_FILL)
+   *
+   * The face unit is the world size of one face unit, expressed per sim axis.
+   * Because the sim parent scales x and y differently, the face group must
+   * counter-scale per axis — otherwise every signal renders vertically
+   * squashed, which is exactly what made the old eyes read as tired slits.
+   */
+  fitLenoxVessel() {
+    if (!this.lenoxFramings || !this.lenoxRig) return;
+
+    const { fov, present } = this.lenoxFramings;
+    const fovRad = THREE.MathUtils.degToRad(fov);
+    const visibleHeight = 2 * present.distance * Math.tan(fovRad / 2);
+    const portrait = (this.camera?.aspect ?? 1.78) < 0.85;
+    const vesselHeight =
+      visibleHeight * (portrait ? LENOX_VESSEL_FILL_PORTRAIT : LENOX_VESSEL_FILL);
+
+    // Sim-space anchors. The head pivot sits at the SPHERE center, so a look
+    // reads as a head TURN; the display and the signal plane hang off it.
+    const displayZ = LENOX_EYE_Z + LENOX_SCREEN_CLEARANCE;
+    const vessel = this.lenoxVessel;
+    this._lenoxPivot ??= new THREE.Vector3();
+    const pivot = this._lenoxPivot.set(0, 0, 0);
+
+    if (vessel) {
+      vessel.fitToWorldHeight(vesselHeight);
+      vessel.centerOffsetSim(pivot);
+      // The vessel's origin IS the display center, so in head space it hangs
+      // exactly one pivot offset in front of the sphere center.
+      vessel.root.position.set(-pivot.x, -pivot.y, -pivot.z);
+    }
+
+    this.lenoxRig.head.position.set(
+      LENOX_FACE_CENTER.x + pivot.x,
+      LENOX_FACE_CENTER.y + pivot.y,
+      displayZ + pivot.z,
+    );
+
+    // The display bounds are the frame the face must live in. Without a body
+    // (async load, or a load failure) the face falls back to a display-sized
+    // share of the same vessel height, so the rig is never left oversized.
+    const display = vessel
+      ? vessel.displayWorldSize()
+      : { width: vesselHeight * 0.68, height: vesselHeight * 0.54 };
+
+    // The narrower constraint wins, so the face is always fully on screen.
+    const unitWorld = Math.min(
+      (display.width * LENOX_FACE_FILL) / LENOX_SIGNAL_FACE.width,
+      (display.height * LENOX_FACE_FILL) / LENOX_SIGNAL_FACE.height,
+    );
+
+    const parent = this.particleRenderer?.object?.scale;
+    this.lenoxFaceUnit.set(
+      unitWorld / (parent?.x ?? 1),
+      unitWorld / (parent?.y ?? 1),
+      1,
+    );
+    // The signal plane floats in front of the display, inside head space.
+    this.lenoxRig.face.position.set(
+      -pivot.x,
+      -pivot.y,
+      LENOX_EYE_Z - (displayZ + pivot.z),
+    );
+  }
+
+  /** Signal opacity: the core fade AND the bloom it feeds move together. */
+  setSignalOpacity(material, value) {
+    const v = Math.max(0, Math.min(value, 1));
+    material.opacity = v;
+    if (material.userData.bloomAlpha) material.userData.bloomAlpha.value = v;
+  }
+
+  /**
+   * BIRTH: author the solver's settle targets from Lenox' real outer surfaces.
+   * The mass then collapses into his silhouette — top cap, side modules, the
+   * curve around the visor — instead of into a bounding sphere or the legacy
+   * particle face. Called once, at the wake.
+   */
+  buildLenoxShellTargets(count) {
+    const vessel = this.lenoxVessel;
+    const simObject = this.particleRenderer?.object;
+    if (!vessel || !simObject || !this.mlsMpmSim) return false;
+
+    this._lenoxShellPoints = vessel.sampleSurfaceSim(
+      count,
+      simObject,
+      this._lenoxShellPoints,
+    );
+    if (!this._lenoxShellPoints) return false;
+
+    return !!this.mlsMpmSim.buildLenoxShellTargets(this._lenoxShellPoints, count);
+  }
+
+  /**
+   * Per-frame signal pose from the Lenox drive (face units).
+   * The drive owns all state math; this only draws the grammar.
    */
   setLenoxRig(pose) {
     if (!this.lenoxRig || !pose) return;
+    this.updateLenoxBackdrop(pose.dt ?? 0);
     const r = this.lenoxRig;
     const p = Math.max(0, Math.min(pose.presence ?? 0, 1));
     const on = p > 0.02;
+    const t = pose.time ?? 0;
+    const confirm = Math.max(0, Math.min(pose.confirm ?? 0, 1));
+    // The amber mark and the cyan face never share the display.
+    const cyanFade = (1 - confirm) * p;
 
+    // Head motion lives in sim space so the vessel inherits the same bob and
+    // tilt. The squash goes on the face and the body, never on the sim root:
+    // scaling the root would drag every absolute sim position with it.
     r.root.position.set(pose.head.x, pose.head.y, 0);
     r.root.rotation.z = pose.head.tilt;
-    r.root.scale.set(pose.head.scaleX, pose.head.scaleY, 1);
+    r.root.scale.set(1, 1, 1);
 
-    r.accentColor.set(pose.accentColor);
-    r.accentMaterial.color.lerp(r.accentColor, 0.12);
+    const squash = pose.head.squash ?? 1;
 
-    for (let i = 0; i < 2; i++) {
-      const eye = r.eyes[i];
-      const anchor = r.anchors[i];
-      const brow = r.brows[i];
-      const e = pose.eyes[i];
-      eye.visible = on;
-      eye.position.set(e.x, e.y, e.z);
-      eye.rotation.z = e.rot;
-      eye.scale.set(e.scaleX * p, Math.max(e.scaleY, 0.02) * p, 1);
+    // THE LOOK. A signal sliding a few pixels inside a bar is barely legible as
+    // a gaze — there is no reference frame to read it against. A head that
+    // TURNS is unmistakable, so the whole head yaws and pitches toward the
+    // cursor around the sphere center, and the eyes only add the last bit of
+    // travel on top. Sim +x renders screen-left, so a positive yaw turns the
+    // face toward screen right.
+    const look = pose.look ?? { x: 0, y: 0 };
+    r.head.rotation.y = look.x * LENOX_HEAD_YAW;
+    // The nod is a single answer to a stressed syllable, added on top of the
+    // gaze pitch. Nodding continuously while speaking reads as a bobblehead.
+    r.head.rotation.x = look.y * LENOX_HEAD_PITCH - (pose.head.nod ?? 0);
 
-      const a = pose.anchors[i];
-      anchor.visible = on;
-      anchor.position.set(a.x, a.y, e.z - 0.6);
-      anchor.scale.set(a.r * p, a.r * Math.max(Math.min(e.scaleY / e.baseScaleY, 1), 0.05) * p, 1);
-
-      const b = pose.brows[i];
-      brow.visible = on && b.visible;
-      brow.position.set(b.x, b.y, e.z - 0.4);
-      brow.rotation.z = b.rot;
-      brow.scale.set(b.len * p, p, 1);
+    // The body. Presence breathes it in around the display center; the scale
+    // stays uniform in sim space (the vessel counter-scales the anisotropic
+    // parent internally), so the sphere always renders round.
+    // The BODY has its own envelope, separate from the face. During the birth
+    // the shell fades up out of the particle mass while the visor is still
+    // dark — matter first, then identity. `body` is 1 whenever Lenox is awake.
+    const body = Math.max(0, Math.min(pose.body ?? p, 1));
+    const vessel = this.lenoxVessel;
+    if (vessel?.root) {
+      vessel.root.visible = body > 0.002;
+      vessel.setReveal(body);
+      // Breathing lives in the BODY, not the face: the shell swells by under a
+      // percent. It is barely a measurement and entirely a difference — a body
+      // that holds perfectly still is the thing that reads as dead.
+      const breath = 1 + (pose.breath ?? 0) * 0.009;
+      // The shell arrives at full size — it condenses out of matter that is
+      // already there, so it must not also inflate.
+      const grow = (0.97 + 0.03 * body) * breath;
+      vessel.root.scale.set(grow, grow * squash, grow);
     }
 
+    // Sim +x renders screen-LEFT. The face group is mirrored so the signal
+    // grammar can be authored in plain screen space (+x = right); child
+    // rotations are negated below to survive that mirror.
+    r.face.visible = on;
+    r.face.scale.set(
+      -this.lenoxFaceUnit.x,
+      this.lenoxFaceUnit.y * squash,
+      1,
+    );
+
+    r.accentColor.set(pose.accentColor);
+    for (const mat of r.eyeMaterials) mat.color.lerp(r.accentColor, 0.06);
+    for (const mat of r.arcMaterials) mat.color.lerp(r.accentColor, 0.06);
+
+    if (!on) return;
+
+    for (let i = 0; i < 2; i++) {
+      const e = pose.eyes[i];
+      const arc = Math.max(0, Math.min(e.arc ?? 0, 1));
+      const halfH = e.ry * LENOX_SIGNAL_FACE.eyeAspect;
+      // Mirrored face group → a child rotation renders inverted.
+      const rot = -e.rot;
+      const capsuleAlpha = (1 - arc) * cyanFade;
+      const arcAlpha = arc * cyanFade;
+      const arcY = e.y - halfH * 0.1;
+      const arcSx = e.rx * 1.95;
+      const arcSy = halfH * 0.62;
+
+      // Capsule and arc cross-fade rather than swap: CURIOUS is one eye
+      // caught mid-morph, and that in-between has to be a real frame.
+      const capsule = r.eyes[i];
+      capsule.visible = arc < 0.995;
+      capsule.position.set(e.x, e.y, 0);
+      capsule.rotation.z = rot;
+      capsule.scale.set(e.rx, e.ry, 1);
+      this.setSignalOpacity(r.eyeMaterials[i], capsuleAlpha);
+
+      const arcMesh = r.arcs[i];
+      arcMesh.visible = arc > 0.005;
+      arcMesh.position.set(e.x, arcY, 0);
+      arcMesh.rotation.z = rot;
+      arcMesh.scale.set(arcSx, arcSy, 1);
+      this.setSignalOpacity(r.arcMaterials[i], arcAlpha);
+
+    }
+
+    // Mouth. Two forms cross-fade: a tone arc (curve = the whole message) and
+    // an articulation slot while speaking. Both share one material, so the
+    // mouth is always exactly one signal — never a shape stacked on a shape.
     const m = pose.mouth;
-    r.mouthArc.visible = on && m.visible && m.open < 0.5;
-    r.mouthRing.visible = on && m.visible && m.open >= 0.5;
-    for (const mesh of [r.mouthArc, r.mouthRing]) {
-      mesh.position.set(m.x, m.y, pose.eyes[0].z - 0.4);
-      mesh.rotation.z = m.curve >= 0 ? 0 : Math.PI;
+    const speak = Math.max(0, Math.min(m.speak ?? 0, 1));
+    const mouthOn = on && m.visible;
+    const mouthAlpha = mouthOn ? (m.alpha ?? 1) * cyanFade : 0;
+    const curveMag = Math.max(Math.abs(m.curve), 0.06);
+    const mouthRot = m.curve >= 0 ? 0 : Math.PI;
+
+    r.mouthArc.visible = mouthOn && speak < 0.985;
+    r.mouthArc.position.set(m.x, m.y, 0);
+    // The arc flips around its own chord, so a frown never drifts off-center.
+    r.mouthArc.rotation.z = mouthRot;
+    r.mouthArc.scale.set(m.width, m.width * curveMag * 1.15, 1);
+
+    // The slot's height IS the speech envelope: irregular, with real pauses.
+    r.mouthSlot.visible = mouthOn && speak > 0.015;
+    r.mouthSlot.position.set(m.x, m.y - m.width * 0.05, 0.001);
+    r.mouthSlot.scale.set(m.width * 0.86, m.slotOpen ?? 0.012, 1);
+
+    this.setSignalOpacity(r.mouthMaterial, mouthAlpha);
+
+    // LISTENING: bracket waves flank the eyes and breathe outward.
+    const waves = Math.max(0, Math.min(pose.waves ?? 0, 1));
+    this.setSignalOpacity(r.waveMaterial, waves * cyanFade * 0.55);
+    for (let i = 0; i < 4; i++) {
+      const mesh = r.waves[i];
+      mesh.visible = waves > 0.01;
+      if (!mesh.visible) continue;
+      const rightSide = i >= 2;
+      const rank = i % 2;
+      const eye = pose.eyes[rightSide ? 1 : 0];
+      const pulse = 1 + Math.sin(t * 3.4 - rank * 0.9) * 0.08;
+      const spread = (0.075 + rank * 0.055) * pulse;
+      mesh.position.set(eye.x + (rightSide ? spread : -spread), eye.y, 0);
+      // The geometry opens toward -x; mirroring it gives the left bracket.
       mesh.scale.set(
-        m.width * p,
-        Math.max(Math.abs(m.curve), 0.12) * m.width * 0.8 * p,
+        (rightSide ? 1 : -1) * (0.05 + rank * 0.022),
+        eye.ry * LENOX_SIGNAL_FACE.eyeAspect * (0.85 + rank * 0.2),
         1,
       );
     }
-    r.mouthRing.scale.set(m.width * 0.5 * p, m.width * 0.55 * p, 1);
+
+    // CONFIRMED: the mark that is also the Lenox sigil. Amber, transient,
+    // never a resting face. This one moment is allowed to bloom.
+    const checkOn = confirm > 0.01;
+    const scale = (pose.checkScale ?? 0.42) * (0.82 + 0.18 * confirm);
+    r.check.visible = checkOn;
+    r.check.position.set(0, 0.02, 0);
+    // Negative x: the mirrored face group would otherwise draw a reversed mark.
+    r.check.scale.set(-scale, scale, 1);
+    this.setSignalOpacity(r.checkMaterial, confirm * p);
+
+  }
+
+  /**
+   * The pointer tilts the panel's light. It changes the ANGLE only — never the
+   * intensity — so a highlight sweeps across the facets exactly as it would on
+   * a lacquered surface turned under a lamp. Nothing brightens under the mouse.
+   */
+  updateLenoxBackdrop(dt) {
+    const backdrop = this.lenoxBackdrop;
+    if (!backdrop) return;
+
+    // The light source sits on the same side as the cursor and well in front of
+    // the panel, so the highlight tracks it without ever pointing AT it.
+    const goalX = this.pointerNdc.x * 1.25;
+    const goalY = this.pointerNdc.y * 1.05;
+    const k = dt > 0 ? 1 - Math.exp(-dt / 0.35) : 1;
+    this._backdropLight.x += (goalX - this._backdropLight.x) * k;
+    this._backdropLight.y += (goalY - this._backdropLight.y) * k;
+    this._backdropLight.z = 1.15;
+    backdrop.uniforms.light.value.copy(this._backdropLight);
+  }
+
+  /**
+   * A/B the reflected world (E). The bars in the void environment are authored
+   * at fixed azimuths, so it must not inherit the meadow's rotation offset.
+   */
+  setLenoxEnvironment(useVoid) {
+    if (!this.scene) return;
+    const voidEnv = useVoid ? this.voidEnvironmentTexture : null;
+    this.scene.environment = voidEnv ?? this.environmentTexture;
+    this.scene.environmentRotation.set(0, voidEnv ? 0 : -2.15, 0);
   }
 
   /** Dev: hide/show the particle body (rig must read on its own). */
@@ -664,10 +1100,36 @@ class App {
     postProcessing.outputNode = Fn(() => {
       const sceneColor = outputPass.rgb;
       const sceneAlpha = outputPass.a;
-      const bloomColor = bloomPass.rgb;
+
+      // Gate the pyramid residue to zero before it can touch alpha at all.
+      const bloomRaw = bloomPass.rgb;
+      const rawLuma = bloomRaw.r
+        .mul(0.2126)
+        .add(bloomRaw.g.mul(0.7152))
+        .add(bloomRaw.b.mul(0.0722));
+      const bloomColor = bloomRaw.mul(
+        smoothstep(float(BLOOM_RESIDUE_FLOOR), float(BLOOM_RESIDUE_KNEE), rawLuma),
+      );
+
+      // The WebGPU canvas composites PREMULTIPLIED:
+      //   page = src.rgb + (1 - src.a) · page
+      // So alpha is a coverage budget: every unit of alpha SUBTRACTS a unit of
+      // page, and the rgb has to pay it back. The old `max(sceneAlpha,
+      // bloomLuma · 1.5)` raised alpha to 1.5× the light the bloom actually
+      // contributed — the glow bought 1.5 units of page occlusion and paid
+      // back 1, and the shortfall is the dark rectangle. It only looked fixed
+      // against a black page because there was no page left to darken.
+      //
+      // Here alpha is the bloom's own luminance: exactly the light it adds, so
+      // the premultiplied invariant holds and the glow composites correctly
+      // over black, graphite or mid-grey. Where the bloom is gated to zero,
+      // alpha stays the model's own coverage — transparent stays transparent.
+      const bloomLuma = bloomColor.r
+        .mul(0.2126)
+        .add(bloomColor.g.mul(0.7152))
+        .add(bloomColor.b.mul(0.0722));
       const combinedColor = sceneColor.add(bloomColor).clamp(0, 1);
-      const bloomLuma = bloomColor.r.max(bloomColor.g).max(bloomColor.b);
-      const finalAlpha = sceneAlpha.max(bloomLuma.mul(1.5)).clamp(0, 1);
+      const finalAlpha = sceneAlpha.max(bloomLuma).clamp(0, 1);
 
       return vec4(combinedColor, finalAlpha);
     })().renderOutput();
@@ -688,10 +1150,14 @@ class App {
 
     const hdriTexture = await loadHdrTexture(HDRI_URL);
     this.environmentTexture = hdriTexture;
+    // Lenox lives in a black room, so he reflects a black room. The chamber keeps
+    // the meadow HDRI it was built against. Toggle with E to compare.
+    this.voidEnvironmentTexture =
+      this.visualMode === "void" ? createVoidEnvironment() : null;
 
     this.scene.background = null;
-    this.scene.environment = hdriTexture;
     this.scene.environmentRotation = new THREE.Euler(0, -2.15, 0);
+    this.setLenoxEnvironment(true);
 
     this.mlsMpmSim = new MlsMpmSimulator(this.renderer);
     await this.mlsMpmSim.init(this.runtime.maxParticles);
@@ -715,6 +1181,9 @@ class App {
 
     if (this.visualMode === "void") {
       this.initLenoxGazeRig();
+      this.initLenoxVessel();
+      this.lenoxBackdrop = createLenoxBackdrop();
+      this.scene.add(this.lenoxBackdrop.object ?? this.lenoxBackdrop.mesh);
       this.computeLenoxFramings(width, height);
       this.updateLenoxCamera(0);
     }
@@ -780,23 +1249,67 @@ class App {
       };
     };
 
+    const present = frameFor(
+      presenceHalf,
+      portrait ? 0.78 : 0.64,
+      portrait ? 0.16 : 0,
+    );
+
+    // OPERATOR — he leaves the centre and makes room for what he built. The
+    // camera looks toward +z, so world +x is screen LEFT: pushing the camera to
+    // -x is what slides HIM left. He shrinks, but he does not retreat — the
+    // distance is chosen so he still owns a quarter of the frame.
+    const operator = frameFor(presenceHalf, portrait ? 0.46 : 0.26, 0);
+    const operatorHalfW =
+      Math.tan(fovRad / 2) * operator.distance * aspect;
+    operator.targetY = present.targetY;
+    operator.shiftX = -0.5 * operatorHalfW;
+
     this.lenoxFramings = {
       center,
       fov,
       wide: frameFor(dustHalf, portrait ? 0.98 : 0.86, 0),
-      present: frameFor(
-        presenceHalf,
-        portrait ? 0.78 : 0.52,
-        portrait ? 0.16 : 0,
-      ),
+      present,
+      operator,
     };
-    if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0 };
+    if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0, tau: 0.8 };
+    // The body is framed from the viewport, so every reframe refits it.
+    this.fitLenoxVessel();
+
+    // The panel sits well behind the whole simulation volume — particles must
+    // never end up on the wrong side of it — and is sized against the WIDE
+    // framing, where the camera is farthest and its frustum widest.
+    if (this.lenoxBackdrop) {
+      const panelZ = center.z + 1.5;
+      const reach = this.lenoxFramings.wide.distance + 1.5;
+      const halfH = Math.tan(fovRad / 2) * reach * 1.08;
+      const halfW = halfH * aspect;
+      this.lenoxBackdrop.configure?.({
+        center,
+        panelZ,
+        halfW,
+        halfH,
+        aspect,
+      });
+      if (!this.lenoxBackdrop.configure) {
+        const mesh = this.lenoxBackdrop.mesh;
+        mesh.position.set(center.x, center.y, panelZ);
+        mesh.scale.set(halfW, halfH, 1);
+        this.lenoxBackdrop.uniforms.extent.value.set(halfW, halfH);
+      }
+    }
+
   }
 
-  /** Drive → target composition t (0 wide … 1 present). */
-  setLenoxComposition(target) {
-    if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0 };
+  /**
+   * Drive → target composition t (0 wide … 1 present), with the time constant
+   * it should ease on. The birth needs a tighter one: at the default 0.8s the
+   * camera was still travelling while Lenox booted, so he arrived small.
+   */
+  setLenoxComposition(target, tau = 0.8) {
+    if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0, tau: 0.8 };
     this.lenoxFrame.target = Math.max(0, Math.min(target ?? 0, 1));
+    this.lenoxFrame.tau = Math.max(0.05, tau);
   }
 
   /**
@@ -820,22 +1333,49 @@ class App {
 
   updateLenoxCamera(dt) {
     if (!this.camera || !this.lenoxFramings) return;
-    const frame = this.lenoxFrame ?? (this.lenoxFrame = { t: 0, target: 0 });
-    const k = dt > 0 ? 1 - Math.exp(-dt / 0.8) : 1;
+    const frame =
+      this.lenoxFrame ?? (this.lenoxFrame = { t: 0, target: 0, tau: 0.8 });
+    const k = dt > 0 ? 1 - Math.exp(-dt / (frame.tau ?? 0.8)) : 1;
     frame.t += (frame.target - frame.t) * k;
 
-    const { center, fov, wide, present } = this.lenoxFramings;
-    const t = THREE.MathUtils.smootherstep(frame.t, 0, 1);
-    const distance = THREE.MathUtils.lerp(wide.distance, present.distance, t);
-    const targetY = THREE.MathUtils.lerp(wide.targetY, present.targetY, t);
+    const op =
+      this.lenoxOperator ??
+      (this.lenoxOperator = { t: 0, target: 0, tau: 1.1 });
+    const ko = dt > 0 ? 1 - Math.exp(-dt / (op.tau ?? 1.1)) : 1;
+    op.t += (op.target - op.t) * ko;
 
-    this.cameraTarget.set(center.x, targetY, center.z);
+    const { center, fov, wide, present, operator } = this.lenoxFramings;
+    const t = THREE.MathUtils.smootherstep(frame.t, 0, 1);
+    let distance = THREE.MathUtils.lerp(wide.distance, present.distance, t);
+    let targetY = THREE.MathUtils.lerp(wide.targetY, present.targetY, t);
+    let shiftX = 0;
+
+    // The operator move is layered on top of the lifecycle framing, so it eases
+    // out of wherever the camera actually is. It only ever travels one way —
+    // reversing direction mid-move is what reads as a stutter.
+    if (operator && op.t > 1e-4) {
+      const o = THREE.MathUtils.smootherstep(op.t, 0, 1);
+      distance = THREE.MathUtils.lerp(distance, operator.distance, o);
+      targetY = THREE.MathUtils.lerp(targetY, operator.targetY, o);
+      shiftX = operator.shiftX * o;
+    }
+
+    this.cameraTarget.set(center.x + shiftX, targetY, center.z);
     this.camera.fov = fov;
-    this.camera.position.set(center.x, targetY, center.z - distance);
+    this.camera.position.set(center.x + shiftX, targetY, center.z - distance);
     this.camera.lookAt(this.cameraTarget);
     this.camera.updateProjectionMatrix();
 
-    this.updateLenoxScreenBounds(distance, targetY);
+    this.updateLenoxScreenBounds(distance, targetY, shiftX);
+  }
+
+  /** Drive → operator composition (0 centred … 1 left third, console room). */
+  setLenoxOperator(target, tau = 1.1) {
+    if (!this.lenoxOperator) {
+      this.lenoxOperator = { t: 0, target: 0, tau: 1.1 };
+    }
+    this.lenoxOperator.target = Math.max(0, Math.min(target ?? 0, 1));
+    this.lenoxOperator.tau = Math.max(0.05, tau);
   }
 
   /**
@@ -843,13 +1383,15 @@ class App {
    * space so the fluid ricochets off the ACTUAL screen edges on any device
    * and any lifecycle framing. Clamped to the grid's safe interior.
    */
-  updateLenoxScreenBounds(distance, targetYWorld) {
+  updateLenoxScreenBounds(distance, targetYWorld, shiftX = 0) {
     if (!this.runtime || !this.camera || !this.particleRenderer) return;
 
     const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
     const halfH = Math.tan(fovRad / 2) * distance;
     const halfW = halfH * this.camera.aspect;
-    const center = this.lenoxFramings.center;
+    // The operator move slides the camera off Lenox' axis, so the visible edges
+    // slide with it — otherwise the fluid ricochets off edges that moved.
+    const center = { x: this.lenoxFramings.center.x + shiftX, z: this.lenoxFramings.center.z };
 
     if (!this.runtime.simBoundsMin) {
       this.runtime.simBoundsMin = new THREE.Vector3();
@@ -1175,16 +1717,36 @@ class App {
       for (const m of this.lenoxRig.materials) m?.dispose?.();
       this.lenoxRig = null;
     }
+    if (this.lenoxVessel) {
+      this.lenoxVessel.root.traverse((child) => {
+        if (!child.isMesh) return;
+        child.geometry?.dispose?.();
+        const mats = Array.isArray(child.material)
+          ? child.material
+          : [child.material];
+        for (const m of mats) m?.dispose?.();
+      });
+      this.lenoxVessel = null;
+    }
+    if (this.lenoxBackdrop) {
+      const backdropObject = this.lenoxBackdrop.object ?? this.lenoxBackdrop.mesh;
+      backdropObject.parent?.remove(backdropObject);
+      this.lenoxBackdrop.dispose();
+      this.lenoxBackdrop = null;
+    }
+    this.lenoxVesselPromise = null;
     this.particleRenderer?.dispose?.();
     this.backgroundGeometry?.dispose?.();
     this.lights?.dispose?.();
     this.mlsMpmSim?.dispose?.();
     this.postProcessing?.dispose?.();
     this.environmentTexture?.dispose?.();
+    this.voidEnvironmentTexture?.dispose?.();
 
     this.scene = null;
     this.camera = null;
     this.environmentTexture = null;
+    this.voidEnvironmentTexture = null;
 
     this.particleRenderer = null;
     this.backgroundGeometry = null;

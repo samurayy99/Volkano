@@ -1,0 +1,109 @@
+/*
+ * The hairline is anchored to the centre of the viewport because that is where
+ * he stands. When he moves to the left third to build, this anchor has to come
+ * from the engine's projected head position instead — a fixed offset would then
+ * be a lie that happens to look right at one window size.
+ */
+
+.contact {
+  position: fixed;
+  z-index: 45;
+  /* His eye line, not the geometric centre — the line leaves at the height it
+     is spoken from. */
+  top: 47%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  /* Clear of his silhouette: the line starts at his edge, not on his face. */
+  padding-left: 96px;
+  pointer-events: none;
+}
+
+/* Drawn, not faded. It has a direction, and the direction is away from him. */
+.hairline {
+  flex: none;
+  width: 64px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--bone-faint) 22%,
+    var(--bone-dim)
+  );
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 600ms var(--ease-out-expo);
+}
+
+.speech {
+  margin: 0;
+  max-width: 34ch;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+  color: var(--bone);
+  /* The glyph churn must not reflow the sentence around it. */
+  min-height: 1.7em;
+  opacity: 0;
+  transition: opacity 400ms var(--ease-out-expo);
+}
+
+/* The settled sentence, for screen readers only. The visible text is aria-hidden
+   because it is noise until the last frame. */
+.announced {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.contact[data-drawn="true"] .hairline {
+  transform: scaleX(1);
+}
+
+.contact[data-drawn="true"] .speech {
+  opacity: 1;
+  transition-delay: 500ms;
+}
+
+/*
+ * Narrow screens: he fills the frame, so there is no room beside him. The line
+ * turns and the sentence sits under him — same grammar, rotated.
+ */
+@media (max-width: 720px) {
+  .contact {
+    top: auto;
+    bottom: 26vh;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 16px;
+    padding: 0 28px;
+  }
+
+  .hairline {
+    width: 44px;
+    background: linear-gradient(90deg, transparent, var(--bone-dim), transparent);
+    transform-origin: center;
+  }
+
+  .speech {
+    max-width: 30ch;
+    text-align: center;
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hairline,
+  .speech {
+    transition: none;
+  }
+}

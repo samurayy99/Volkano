@@ -26,6 +26,7 @@ import {
   mix,
   ivec3,
   smoothstep,
+  exp,
 } from "three/tsl";
 import { triNoise3Dvec } from "../common/noise";
 import { StructuredArray } from "./structuredArray.js";
@@ -584,6 +585,25 @@ class mlsMpmSimulator {
     this.uniforms.recallLateralWeight = uniform(0);
     this.uniforms.recallVerticalWeight = uniform(0);
     this.uniforms.settleWeight = uniform(0);
+    /**
+     * Frame-rate-independent settle damping (Lenox critical settle), applied
+     * as exp(-rate·dt) inside the settle branch. Role-graded via the target-w
+     * focal band: shell/core damps hard (sovereign stillness), focal stays
+     * livelier for gaze. 0/0 = chamber and post-enter unchanged.
+     */
+    this.uniforms.settleDampingShell = uniform(0);
+    this.uniforms.settleDampingFocal = uniform(0);
+    /**
+     * Birth swirl (Lenox): a tangential force around `settleSwirlCenter`.
+     *
+     * A rectangular field pulled radially onto a compact shell discharges its
+     * CORNERS as four diagonal streams — the mass visibly collapses as four
+     * lobes, which reads as a folding screen, not as matter organising itself
+     * around a body. A little rotation makes those streams spiral in and
+     * merge. It ramps to zero at the shell lock; 0 = chamber untouched.
+     */
+    this.uniforms.settleSwirl = uniform(0);
+    this.uniforms.settleSwirlCenter = uniform(new THREE.Vector3(32, 36.5, 30));
     /** Rigid offset added to settle targets (Lenox gaze); zero = chamber behavior. */
     this.uniforms.settleOffset = uniform(new THREE.Vector3());
     /** Vertical squash of settle targets around `settleSquashCenter` (Lenox pulse); 1 = identity. */
@@ -961,6 +981,21 @@ class mlsMpmSimulator {
         );
       });
 
+      If(this.uniforms.settleSwirl.greaterThan(float(0.001)), () => {
+        const swirlRadial = particlePosition
+          .sub(this.uniforms.settleSwirlCenter)
+          .toConst("swirlRadial");
+        // Tangent around the vertical axis. Scaled by the radial distance, so
+        // the outer corners — the ones that would streak — get wrapped, while
+        // the core stays calm.
+        const swirlTangent = cross(vec3(0, 1, 0), swirlRadial).toConst(
+          "swirlTangent",
+        );
+        particleVelocity.addAssign(
+          swirlTangent.mul(this.uniforms.settleSwirl).mul(this.uniforms.dt),
+        );
+      });
+
       If(this.uniforms.settleWeight.greaterThan(float(0.0005)), () => {
         const settleData = this.settleTargetBuffer
           .element(instanceIndex)
@@ -1000,6 +1035,20 @@ class mlsMpmSimulator {
             .mul(this.uniforms.settleWeight)
             .mul(this.uniforms.dt),
         );
+        // Critical settle (Lenox): the spring above has no damping of its
+        // own, so inherited fluid momentum overshoots the targets and the
+        // mass keeps pendulating. exp(-rate·dt) is frame-rate independent;
+        // rate 0 (chamber/post-enter) leaves velocity untouched.
+        const settleDampRate = mix(
+          this.uniforms.settleDampingShell,
+          this.uniforms.settleDampingFocal,
+          settleFocalW,
+        ).toConst("settleDampRate");
+        If(settleDampRate.greaterThan(float(0.001)), () => {
+          particleVelocity.mulAssign(
+            exp(settleDampRate.negate().mul(this.uniforms.dt)),
+          );
+        });
       });
 
       const slowdownDamping = float(1)
@@ -1741,6 +1790,12 @@ class mlsMpmSimulator {
     this.uniforms.recallLateralWeight.value = runtime.recallLateralWeight ?? 0;
     this.uniforms.recallVerticalWeight.value = runtime.recallVerticalWeight ?? 0;
     this.uniforms.settleWeight.value = runtime.settleWeight ?? 0;
+    this.uniforms.settleDampingShell.value = runtime.settleDampingShell ?? 0;
+    this.uniforms.settleDampingFocal.value = runtime.settleDampingFocal ?? 0;
+    this.uniforms.settleSwirl.value = runtime.settleSwirl ?? 0;
+    if (runtime.settleSwirlCenter) {
+      this.uniforms.settleSwirlCenter.value.copy(runtime.settleSwirlCenter);
+    }
     if (runtime.settleOffset) {
       this.uniforms.settleOffset.value.copy(runtime.settleOffset);
     } else {
@@ -2257,12 +2312,15 @@ class mlsMpmSimulator {
    *   nodes    — two asymmetric attention knots; follow gaze (w=1)
    * CPU one-shot write (same call-site class as buildAnalyticalRecallTargets).
    */
-  buildLenoxPresenceTargets(spec) {
+  buildLenoxPresenceTargets(spec, options = {}) {
     if (!this.settleTargetBuffer || !this.gridSize || !spec) return;
 
     const cap = this.settleTargetBuffer.length || 0;
+    const requestedCount = Math.floor(options.particleCount ?? 0);
     const particleCount = Math.min(
-      this.numParticles > 0
+      requestedCount > 0
+        ? requestedCount
+        : this.numParticles > 0
         ? this.numParticles
         : (this.runtime?.particles ?? cap),
       cap,
@@ -2374,8 +2432,55 @@ class mlsMpmSimulator {
    * targets at all — the dust obeys pure fluid physics (momentum, swirls,
    * wall containment), exactly like the original source play. No springs,
    * no bounce-back.
+   *
+   * First-contact staging: particles begin as one compact central ignition
+   * and receive deterministic radial velocity. They burst into the projected
+   * viewport, then remain an untethered interactive field. This provides a
+   * readable beginning instead of dropping random disconnected islands into
+   * an already-filled screen.
    */
-  seedLenoxDustPopulation({ centerX, centerY, zBase, spreadX, spreadY, spreadZ }) {
+  /**
+   * Lenox BIRTH targets: the settle field is authored from points sampled on
+   * the robot's real outer surfaces, so the fluid collapses into HIS shape.
+   *
+   * The old presence targets authored a face out of particles — an envelope,
+   * a core and two ocular knots — from the era when Lenox had no body. With
+   * the sphere-robot as the body that face is a ghost: the mass formed it,
+   * faded, and the robot popped in beside it. Here the matter becomes the
+   * shell it is about to hand over to.
+   *
+   * `w` = 0 on every target: this is shell, not focal. Shell never follows the
+   * gaze offset, so the body stays spatially anchored while the eyes move.
+   */
+  buildLenoxShellTargets(points, count) {
+    if (!this.settleTargetBuffer || !points) return false;
+
+    const cap = this.settleTargetBuffer.length || 0;
+    const n = Math.min(Math.floor(count), cap, Math.floor(points.length / 3));
+    if (n <= 0) return false;
+
+    const lo = GRID_CLAMP_MARGIN + 1;
+    const hi = this.gridSize.x - GRID_CLAMP_MARGIN - 1;
+    const clampV = (v) => Math.min(hi, Math.max(lo, v));
+
+    for (let i = 0; i < n; i++) {
+      this.settleTargetBuffer.set(i, "settleTarget", [
+        clampV(points[i * 3]),
+        clampV(points[i * 3 + 1]),
+        clampV(points[i * 3 + 2]),
+        0,
+      ]);
+    }
+
+    const b = this.settleTargetBuffer.buffer;
+    if (b) {
+      b.needsUpdate = true;
+      if (b.value) b.value.needsUpdate = true;
+    }
+    return true;
+  }
+
+  seedLenoxDustPopulation({ bounds, zBase, spreadZ }) {
     if (!this.runtime || !this.particleBuffer) return;
 
     const particleCount = this.particleBuffer.length || 0;
@@ -2386,20 +2491,42 @@ class mlsMpmSimulator {
     const hiY = this.gridSize.y - GRID_CLAMP_MARGIN - 1;
     const hiZ = this.gridSize.z - GRID_CLAMP_MARGIN - 1;
     const clampV = (v, loV, hiV) => Math.min(hiV, Math.max(loV, v));
-    const zeroVelocity = [0, 0, 0];
     const zeroColor = [0, 0, 0];
     const zeroMat3 = new Array(12).fill(0);
 
+    // Leave enough projection-safe space for the depth layer. Combined with
+    // the shallow Z spread this keeps the visible shards inside the viewport
+    // while the screen-edge restitution turns them back into the composition.
+    const inset = 1.8;
+    const minX = clampV((bounds?.min?.x ?? lo) + inset, lo, hiX);
+    const maxX = clampV((bounds?.max?.x ?? hiX) - inset, lo, hiX);
+    const minY = clampV((bounds?.min?.y ?? lo) + inset, lo, hiY);
+    const maxY = clampV((bounds?.max?.y ?? hiY) - inset, lo, hiY);
+
     for (let i = 0; i < particleCount; i++) {
-      const bx = hash01(i, 23.117) + hash01(i, 71.913) - 1; // center-biased
-      const by = hash01(i, 47.339) + hash01(i, 5.531) - 1;
-      const bz = hash01(i, 89.771) * 2 - 1;
+      const u = hash01(i, 23.117);
+      const v = hash01(i, 47.339);
+      const w = hash01(i, 89.771);
+      const theta = TAU * u;
+      const zDir = v * 2 - 1;
+      const radial = Math.sqrt(Math.max(0, 1 - zDir * zDir));
+      const dirX = Math.cos(theta) * radial;
+      const dirY = Math.sin(theta) * radial;
+      const dirZ = zDir;
+      const radius = Math.cbrt(w);
+      const centerX = (minX + maxX) * 0.5;
+      const centerY = (minY + maxY) * 0.5;
+      const burstSpeed = 3.2 + hash01(i, 5.531) * 2.35;
       this.particleBuffer.set(i, "position", [
-        clampV(centerX + bx * spreadX, lo, hiX),
-        clampV(centerY + by * spreadY, lo, hiY),
-        clampV(zBase + bz * spreadZ, lo, hiZ),
+        clampV(centerX + dirX * radius * 4.8, minX, maxX),
+        clampV(centerY + dirY * radius * 3.8, minY, maxY),
+        clampV(zBase + dirZ * radius * spreadZ, lo, hiZ),
       ]);
-      this.particleBuffer.set(i, "velocity", zeroVelocity);
+      this.particleBuffer.set(i, "velocity", [
+        dirX * burstSpeed,
+        dirY * burstSpeed,
+        dirZ * burstSpeed * 0.28,
+      ]);
       this.particleBuffer.set(i, "C", zeroMat3);
       this.particleBuffer.set(i, "color", zeroColor);
       this.particleBuffer.set(i, "heat", 0);
