@@ -1,5 +1,7 @@
 # DER BEGLEITER — Sekunden-Storyboard
 
+> Historical concept source. Superseded as product direction by `docs/product/lenox-design-playground-manifesto.md`. Reuse interaction and engine insights only after they are reconciled with the three-template visual targets.
+
 **Status:** Rev. 2 — Berater-Review (Codex + ChatGPT) eingearbeitet, Machbarkeits-Check bestanden · wartet auf Volkans finales Go
 **Datum:** 2026-07-14
 **Synthese aus:** Volkans Begleiter-/Look-Wahl-Konzept · noth.in-Dramaturgie · Codex (Auto-Kalibrierung, Zustandspalette) · ChatGPT (Signal-Membran, Scan, Vertical-Slice-Strategie) · 8 CodePen-Mechaniken (siehe Referenz-Memory)

@@ -1,25 +1,23 @@
-# Active Task: Codex Takeover
+# Active Task: LENOX Design Playground Visual Gate
 
 ## Goal
 
-Take over Fable's interrupted uncommitted work and leave the repository in a verified, runnable checkpoint aligned with the current multi-template direction.
+Establish the approved product truth and create exactly three independent visual target boards for `GRAVITY`, `ATELIER`, and `SIGNAL` before any new template runtime code is written.
 
 ## Context
 
-Fable stopped mid-edit because its session limit was reached.
-The latest changes include a shared transform-progress clock, a more physical reconstruction front, scan-linked particle response, Journey camera changes, EXPERIENCE plates, SYSTEMS strata, and a dev shot-control surface.
-The previous `OBSIDIAN -> ALABASTER` rescue is no longer the product goal.
-Read `AGENTS.md` and `docs/agent-system/CURRENT.md` before editing.
+The interrupted Fable handoff was stabilized, verified, and committed as local rescue checkpoint `5c84922` on branch `codex/lenox-design-playground`.
+
+The canonical product definition is `docs/product/lenox-design-playground-manifesto.md`. The previous `OBSIDIAN -> ALABASTER`, current Journey styling, and Source Chamber framing are historical inputs, not the target product.
 
 ## Required Outcome
 
-- inspect the full dirty diff and understand the interrupted work
-- preserve useful generic infrastructure
-- do not blindly finish or promote the obsolete two-signature concept
-- repair only concrete breakage or incomplete wiring found during verification
-- leave the current application runnable from PLAY and WAKE through the post-READY journey
-- verify type-check, tests, touched-file lint, production build, and the real browser on desktop and mobile
-- identify which current pieces are reusable for a modular three-template engine and which are direction-specific legacy
+- preserve the protected PLAY/WAKE/LENOX opening as the common source image
+- inspect the current desktop and mobile result directly
+- generate one production-quality desktop target for each of `GRAVITY`, `ATELIER`, and `SIGNAL`
+- keep LENOX recognizably identical while radically changing hierarchy, navigation, composition, and content staging
+- record the target dimensions, palette, typography, motion grammar, and mobile translation for each direction
+- stop before runtime implementation and request visual selection or refinement
 
-Do not build the three templates in this takeover run.
-Do not reset, revert, commit, push, deploy, add dependencies, or rewrite unrelated feature lines.
+Do not implement template components, registry types, shared content extraction, or engine migration until the visual gate is explicitly accepted.
+Do not push or deploy.

@@ -21,6 +21,11 @@ The current product direction is a modular multi-template website engine:
 - adding a later template must not require duplicating content or core behavior
 
 `OBSIDIAN` and `ALABASTER` are not the product concept. Treat them only as existing implementation experiments or possible palettes inside a future template.
+
+The canonical product definition is `docs/product/lenox-design-playground-manifesto.md`.
+The three launch directions are `GRAVITY`, `ATELIER`, and `SIGNAL`. They are complete websites over one semantic content source, not visual themes. Preserve LENOX and the protected PLAY/WAKE opening across all three.
+
+The active visual gate is strict: do not implement new template runtime code until all three visual targets have been generated and explicitly accepted or refined.
 ## LENOX
 
 The current runtime vessel is the sphere character. Preserve it unless the task explicitly reopens the asset direction.

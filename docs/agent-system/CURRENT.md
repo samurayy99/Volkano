@@ -1,8 +1,8 @@
 # Current Handoff
 
 **Date:** 2026-07-15
-**Writer state:** Codex completed the interrupted-run takeover and left a verified local checkpoint. No writer is currently active.
-**Repository:** dirty working tree; no destructive cleanup is allowed.
+**Writer state:** Codex is executing the approved Design Playground visual gate. It is the only writer.
+**Repository:** rescue checkpoint `5c84922` exists on `codex/lenox-design-playground`; no destructive cleanup is allowed.
 
 ## Product Direction
 
@@ -11,6 +11,32 @@ The goal is not an `OBSIDIAN -> ALABASTER` website.
 The goal is a modular engine with three genuinely different website templates sharing one content source, with curated colour and typography controls inside each template.
 LENOX persists across all templates and remains the live interface.
 The existing `PLAY WITH ME -> WAKE LENOX` entry remains the strongest protected foundation.
+
+The canonical product truth now lives in `docs/product/lenox-design-playground-manifesto.md`.
+
+The launch directions are:
+- `GRAVITY`: cinematic spatial website
+- `ATELIER`: asymmetric editorial website
+- `SIGNAL`: precise systemic website
+
+They share semantic content and LENOX, but must differ in layout, navigation, typography, motion grammar, spatial composition, and content staging.
+
+## Active Gate
+
+No new template runtime code may be written until three independent visual targets have been generated and accepted or refined.
+
+The current run may:
+- document the product truth
+- capture and inspect the current visual baseline
+- generate three visual targets and a reconstruction storyboard
+- document the visual verdict
+
+The current run may not:
+- build a template registry
+- extract shared content into production code
+- implement GRAVITY, ATELIER, or SIGNAL components
+- migrate signature engine APIs
+- push or deploy
 
 ## Current Code Lines
 
