@@ -12,7 +12,8 @@ import type { LenoxProofState } from "../../flow-engine/types";
 export type StageState =
   | "dormant" // the field is loose; nothing has happened yet
   | "waking" // the collapse — drive-owned, we only watch
-  | "recognition" // he is here, and for two seconds nobody says anything
+  | "recognition" // he is here; greeting, the question, and his reason all live here
+  | "transforming" // the world changes: gather → ignition → scan (one clock)
   | "building" // particles → hairlines → decode
   | "ready"; // he steps aside; the page he made is standing
 
@@ -28,7 +29,8 @@ export type StageState =
  */
 export type StageEvent =
   | { type: "ENGINE"; state: LenoxProofState } // the drive reports where it is
-  | { type: "SPOKEN" } // first contact has landed; he starts building
+  | { type: "SPOKEN" } // the question is answered and his reason spoken; the world changes
+  | { type: "TRANSFORMED" } // the scan has passed; he starts building
   | { type: "BUILT" }; // the page is standing
 
 /** Pre-wake engine states. The drive owns these; the stage only reads them. */
@@ -48,7 +50,8 @@ const PRE_WAKE: LenoxProofState[] = [
 const LEGAL: Record<StageState, readonly StageState[]> = {
   dormant: ["waking"],
   waking: ["recognition"],
-  recognition: ["building"],
+  recognition: ["transforming"],
+  transforming: ["building"],
   building: ["ready"],
   ready: [],
 };
@@ -80,6 +83,8 @@ export function stageReducer(
       return advance(current, "recognition");
     }
     case "SPOKEN":
+      return advance(current, "transforming");
+    case "TRANSFORMED":
       return advance(current, "building");
     case "BUILT":
       return advance(current, "ready");
@@ -98,6 +103,7 @@ export function statusFor(
       return "offline";
     case "waking":
       return "initialising";
+    case "transforming":
     case "building":
       return "building";
     default:

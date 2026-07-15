@@ -33,6 +33,44 @@ const AMBIENT = 0.0035;
 const CEILING = 0.03;
 
 /**
+ * ALABASTER — the bright studio (Signatur-Welt). Same authored-band idea,
+ * inverted premise: the room is light, so what sculpts his silver are DARK
+ * contour bands plus a warm ceiling. His identity does not change — the same
+ * obsidian head simply stands in an ivory room and reflects it.
+ */
+const ALABASTER_PROFILE = {
+  ambient: 0.34,
+  ambientTint: [1.0, 0.975, 0.92], // ivory, faintly warm — never neutral grey
+  ceiling: 0.5,
+  bands: [
+    // Dark contour band where the forehead silver used to flare: shape by shadow.
+    {
+      target: "forehead-contour-dark",
+      az: 2.42, el: 0.58, sigmaAz: 0.22, sigmaEl: 0.4,
+      intensity: -0.26, tint: [1, 1, 1],
+    },
+    // Window-like bright card, slightly warm — the editorial key.
+    {
+      target: "studio-window",
+      az: 5.4, el: 0.34, sigmaAz: 0.42, sigmaEl: 0.5,
+      intensity: 5.2, tint: [1.0, 0.97, 0.9],
+    },
+    // Dark floorline all around: grounds the chin, keeps the V-notch readable.
+    {
+      target: "floorline-dark",
+      az: 3.2, el: -0.6, sigmaAz: 2.6, sigmaEl: 0.34,
+      intensity: -0.22, tint: [1, 1, 1],
+    },
+    // Cool side rim so the lamellae still separate from the bright room.
+    {
+      target: "side-cool",
+      az: 0.82, el: 0.16, sigmaAz: 0.24, sigmaEl: 0.5,
+      intensity: 1.9, tint: [0.72, 0.86, 0.95],
+    },
+  ],
+};
+
+/**
  * Reflection bands, in radians. `az` runs 0..2π around him; `el` is elevation,
  * 0 at the horizon. These are deliberately broader than real strip softboxes:
  * the goal is a moving studio band on rounded metal, not pinpoint catchlights
@@ -109,26 +147,41 @@ function wrapDelta(a, b) {
   return d;
 }
 
-export function createVoidEnvironment() {
+export function createVoidEnvironment(profile) {
+  const ambient = profile?.ambient ?? AMBIENT;
+  const ambientTint = profile?.ambientTint ?? [1, 1, 1.15];
+  const ceilingStrength = profile?.ceiling ?? CEILING;
+  const bands = profile?.bands ?? REFLECTION_BANDS;
+
   const data = new Float32Array(W * H * 4);
 
   for (let y = 0; y < H; y++) {
     // Equirectangular: v=0 is straight up, v=1 straight down.
     const el = Math.PI / 2 - ((y + 0.5) / H) * Math.PI;
-    const ceiling = CEILING * Math.max(0, Math.sin(el)) ** 2;
+    const ceiling = ceilingStrength * Math.max(0, Math.sin(el)) ** 2;
 
     for (let x = 0; x < W; x++) {
       const az = ((x + 0.5) / W) * Math.PI * 2;
 
-      let r = AMBIENT + ceiling;
-      let g = r;
-      let b = r * 1.15; // the dark itself is faintly cold, never neutral grey
+      const base = ambient + ceiling;
+      let r = base * ambientTint[0];
+      let g = base * ambientTint[1];
+      let b = base * ambientTint[2];
 
-      for (const band of REFLECTION_BANDS) {
+      for (const band of bands) {
         const dAz = wrapDelta(az, band.az) / band.sigmaAz;
         const dEl = (el - band.el) / band.sigmaEl;
         const falloff = Math.exp(-(dAz * dAz + dEl * dEl));
         if (falloff < 1e-4) continue;
+        // Negative Intensität = dunkles Konturband (ALABASTER formt durch
+        // Schatten). Multiplikativ, damit es nie unter Null clippt.
+        if (band.intensity < 0) {
+          const dim = 1 + band.intensity * falloff;
+          r *= dim;
+          g *= dim;
+          b *= dim;
+          continue;
+        }
         const v = band.intensity * falloff;
         r += v * band.tint[0];
         g += v * band.tint[1];
@@ -136,9 +189,9 @@ export function createVoidEnvironment() {
       }
 
       const i = (y * W + x) * 4;
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
+      data[i] = Math.max(r, 0);
+      data[i + 1] = Math.max(g, 0);
+      data[i + 2] = Math.max(b, 0);
       data[i + 3] = 1;
     }
   }
@@ -151,4 +204,9 @@ export function createVoidEnvironment() {
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
   return texture;
+}
+
+/** The bright studio for the ALABASTER signature. */
+export function createAlabasterEnvironment() {
+  return createVoidEnvironment(ALABASTER_PROFILE);
 }

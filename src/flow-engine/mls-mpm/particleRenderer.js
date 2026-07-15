@@ -19,6 +19,7 @@ import {
   fract,
   sin,
   step,
+  positionWorld,
 } from "three/tsl";
 
 import { forensicHoldReadIsolation } from "../post-enter/forensicPostEnter.js";
@@ -602,13 +603,32 @@ const buildUnifiedParticleSurfaceNodes = ({
     "surfaceColor",
   );
 
+  // Die Front streift die Materie: ein schmales Gauss-Band um den Radius
+  // lässt genau die Partikel aufleuchten, die die Kante gerade passiert —
+  // die einzige Ausnahme vom "Cyan ist nur Kinetik"-Gesetz, und sie IST
+  // Kinetik: die Welle trägt die Energie.
+  const scanDist = positionWorld
+    .sub(uniforms.scanOrigin)
+    .length()
+    .sub(uniforms.scanR)
+    .div(float(0.5))
+    .toConst("lenoxScanDist");
+  const scanFlare = scanDist
+    .mul(scanDist)
+    .negate()
+    .exp()
+    .mul(uniforms.scanRim)
+    .mul(lenoxTintT)
+    .toConst("lenoxScanFlare");
+
   // No static emissive floor: resting silver emits nothing (color law);
   // cyan glow follows kinetic energy and the focal signal only.
   const lenoxEmissive = lenoxCyan
     .mul(
       lenoxEnergyT
         .mul(float(0.05))
-        .add(lenoxFocalT.mul(uniforms.lenoxFocalBoost.mul(float(0.5)))),
+        .add(lenoxFocalT.mul(uniforms.lenoxFocalBoost.mul(float(0.5))))
+        .add(scanFlare.mul(float(0.55))),
     )
     .toConst("lenoxEmissive");
   const surfaceEmissive = mix(
@@ -1065,6 +1085,14 @@ class ParticleRenderer {
     this.uniforms.lenoxSilverGain = uniform(1);
     /** 0 silences kinetic cyan (wake handoff); 1 = normal energy read. */
     this.uniforms.lenoxEnergyMul = uniform(1);
+    /**
+     * Rekonstruktions-Front (Rescue): dieselbe Welt-Radius-Prüfung wie im
+     * Backdrop, damit die Materie an der Kante aufleuchtet WÄHREND die Kante
+     * sie passiert — nicht global per Environment-Pop (peer-review trap #1).
+     */
+    this.uniforms.scanOrigin = uniform(new THREE.Vector3(0, 0, 0));
+    this.uniforms.scanR = uniform(0);
+    this.uniforms.scanRim = uniform(0);
 
     this._worldQuaternion = new THREE.Quaternion();
     this._worldScale = new THREE.Vector3();
@@ -1140,6 +1168,17 @@ class ParticleRenderer {
 
   applyRuntime(runtime) {
     if (runtime) this.runtime = runtime;
+  }
+
+  /**
+   * Rekonstruktions-Front (Rescue): Welt-Radius + Kantenstärke, dieselben
+   * Werte, die auch der Backdrop bekommt — EIN Ursprung, EINE Front.
+   * origin ist optional (der Standard bleibt der einmal gesetzte Ursprung).
+   */
+  setScanFront(radius, rim, origin) {
+    this.uniforms.scanR.value = Math.max(radius ?? 0, 0);
+    this.uniforms.scanRim.value = Math.max(Math.min(rim ?? 0, 1), 0);
+    if (origin) this.uniforms.scanOrigin.value.copy(origin);
   }
 
   updateRuntimeUniforms() {

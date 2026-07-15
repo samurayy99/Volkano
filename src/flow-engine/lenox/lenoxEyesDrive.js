@@ -1222,6 +1222,34 @@ export class LenoxEyesDrive {
           : 0;
     rt.settleDampingShell = spec.settleDampingShell * dampOn;
     rt.settleDampingFocal = spec.settleDampingFocal * dampOn;
+
+    /**
+     * Signature transform (Rescue): two beats on his own matter, derived from
+     * THE one transform scalar (`app.lenoxTransformP`, pushed by the GSAP
+     * clock). The drive used to run its own dt-clock here — two clocks for
+     * one synced moment drift on any frame hitch (peer-review trap #2), so
+     * the internal clock is gone.
+     *   GATHER (p 0–0.26)  — the field tightens onto him; churn dies down.
+     *   IGNITE (p 0.26–0.40) — one undamped kick: damping drops, noise and
+     *     speed spike, and speed alone makes the silver flare cyan.
+     * Applied AFTER the state law so it modulates final values; `present` only.
+     */
+    const tp = app.lenoxTransformP ?? 0;
+    if (tp > 0 && tp < 1 && this.activeState === "present") {
+      if (tp < 0.26) {
+        const g = smooth01(tp / 0.26);
+        rt.settleWeight *= 1 + 1.7 * g;
+        rt.noise *= 1 - 0.75 * g;
+        rt.speed *= 1 - 0.22 * g;
+      } else if (tp < 0.4) {
+        const kick = Math.sin(Math.min((tp - 0.26) / 0.14, 1) * Math.PI);
+        rt.settleDampingShell *= 1 - 0.9 * kick;
+        rt.settleDampingFocal *= 1 - 0.6 * kick;
+        rt.noise *= 1 + 2.6 * kick;
+        rt.speed *= 1 + 0.95 * kick;
+      }
+    }
+
     rt.lenoxEnergyMul = cur.energyMul;
     rt.lenoxFocalBoost = spec.focalSignalStrength;
 

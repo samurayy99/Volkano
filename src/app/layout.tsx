@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Barlow_Condensed, IBM_Plex_Mono } from 'next/font/google';
+import { Barlow_Condensed, Fraunces, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
 
 /**
@@ -21,6 +21,21 @@ const mono = IBM_Plex_Mono({
   display: 'swap',
 });
 
+/**
+ * ALABASTER's editorial voice (Art-Direction-Rescue). A variable optical-size
+ * serif — soft-but-severe, graphite on ivory — replacing the earlier
+ * "Georgia via CSS variable" placeholder that the review correctly called
+ * out as not a typographic decision. Mono stays the machine's voice; this is
+ * the world's voice.
+ */
+const serif = Fraunces({
+  subsets: ['latin'],
+  weight: 'variable',
+  variable: '--font-serif-loaded',
+  display: 'swap',
+  axes: ['opsz'],
+});
+
 export const metadata: Metadata = {
   title: 'VOLKAN AI STUDIO — Lenox',
   description:
@@ -37,7 +52,7 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      className={`${display.variable} ${mono.variable}`}
+      className={`${display.variable} ${mono.variable} ${serif.variable}`}
       suppressHydrationWarning
     >
       <body>{children}</body>

@@ -30,5 +30,9 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "output"]
+  // Tests run on Node's native TypeScript (`node --test`), which resolves real file
+  // paths and so needs the `.ts` extension in its import. Rather than loosening a
+  // compiler option for the whole project, the test is simply not part of the app's
+  // typecheck — nothing imports it, and Node checks it by running it.
+  "exclude": ["node_modules", "output", "**/*.test.ts"]
 }

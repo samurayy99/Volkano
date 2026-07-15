@@ -6,13 +6,18 @@ import type {
   LenoxEmotion,
   LenoxProofState,
   LenoxReaction,
+  LenoxSignatureId,
 } from "../flow-engine/types";
 import { useLocale } from "../i18n/useLocale";
 import { FallbackEyes } from "./FallbackEyes";
+import { createPlayMeter, decideSignature } from "./stage/calibration";
+import { useCompositionMode } from "./stage/compositionMode";
 import { CornerHud } from "./stage/CornerHud";
 import { FirstContact } from "./stage/FirstContact";
+import { Journey } from "./stage/Journey";
 import { stageReducer } from "./stage/stageState";
-import { Workspace } from "./stage/Workspace";
+import type { StationPose } from "./stage/stations";
+import { transformTimeline } from "./stage/transformTimeline";
 
 /** The eight PRIME display states, in character-sheet order. */
 const EMOTIONS: LenoxEmotion[] = [
@@ -93,10 +98,29 @@ export function LenoxExperience() {
   const [stage, dispatch] = useReducer(stageReducer, "dormant");
   const { locale, setLocale, m } = useLocale();
 
+  useEffect(() => {
+    stageRef.current = stage;
+  }, [stage]);
+
+  /**
+   * How he makes room: aside (desktop) or upward (phone). One source, and it is
+   * FROZEN for the whole of BUILDING — rotating the device mid-build would redraw
+   * the seam while the seam is still animating, which is a guaranteed layout jump
+   * at the exact moment the page is supposed to be assembling itself. The build
+   * finishes in the composition it started in (≤ 4s) and corrects on the first
+   * frame after READY.
+   */
+  const mode = useCompositionMode(stage === "building");
+
   const applyLenoxState = useCallback((next: LenoxProofState) => {
     setState(next);
     dispatch({ type: "ENGINE", state: next });
   }, []);
+
+  // The engine no longer has an opinion about the composition — it is told.
+  useEffect(() => {
+    bridgeRef.current?.setCompositionMode(mode);
+  }, [mode]);
 
   // WebGPU detection + engine boot.
   useEffect(() => {
@@ -144,10 +168,28 @@ export function LenoxExperience() {
   // While he inspects his own work the cursor must not yank his eyes back.
   const gazeScripted = useRef(false);
 
+  /**
+   * DIE KALIBRIERUNG misst das Spiel — still. Lokal, flüchtig, nie gesendet:
+   * das Meter lebt in diesem Ref und stirbt mit der Session. Gemessen wird
+   * nur vor dem Wake; ab dem ersten Wake-Frame ist die Messung eingefroren.
+   */
+  const playMeter = useRef(createPlayMeter());
+  const stageRef = useRef<ReturnType<typeof stageReducer> | "dormant">(
+    "dormant",
+  );
+
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     const bridge = bridgeRef.current;
     if (!bridge) return;
     bridge.setPointer(event.clientX, event.clientY, false);
+    if (stageRef.current === "dormant") {
+      playMeter.current.sample(
+        event.clientX,
+        event.clientY,
+        event.pointerType,
+        performance.now(),
+      );
+    }
     if (gazeScripted.current) return;
     bridge.setLenoxGaze(
       event.clientX / window.innerWidth - 0.5,
@@ -217,8 +259,33 @@ export function LenoxExperience() {
     applyLenoxState("waking");
   }, [applyLenoxState]);
 
-  const onSpoken = useCallback(() => dispatch({ type: "SPOKEN" }), []);
   const onBuilt = useCallback(() => dispatch({ type: "BUILT" }), []);
+
+  /**
+   * Akt III → IV: die Frage ist beantwortet, sein Satz gesprochen. Die
+   * gewählte Welt liegt im Ref (kein Re-Render nötig — die Verwandlung liest
+   * sie genau einmal), der Reducer schaltet auf `transforming`.
+   */
+  const chosenSignature = useRef<LenoxSignatureId>("obsidian");
+  const onCommitSignature = useCallback((id: LenoxSignatureId) => {
+    chosenSignature.current = id;
+    dispatch({ type: "SPOKEN" });
+  }, []);
+
+  /**
+   * Weg A: die Kammer hat gemessen; die Wahl ist deterministisch — und sie
+   * wählt NIE die Welt, in der der Besucher schon steht (das Gesetz aus dem
+   * Video-Verdikt: der Signature-Moment muss sichtbar sein).
+   */
+  const resolveLenoxChoice = useCallback(
+    () =>
+      decideSignature(
+        playMeter.current.finish(),
+        new Date().getHours(),
+        chosenSignature.current,
+      ),
+    [],
+  );
 
   /**
    * Build hooks. None of these own a clock — the timeline calls them at its own
@@ -246,30 +313,80 @@ export function LenoxExperience() {
   }, []);
 
   /**
-   * He stays. Changing region is not a new intro — he glances at the part of the
-   * page you just asked for, and comes back to you. No re-wake, ever.
+   * Shot-Freeze (?shotdev) — das Previz-Werkzeug der Art-Direction-Rescue:
+   * Keyframes werden im ECHTEN Renderer komponiert, eingefroren,
+   * geschossen. Bewusst NUR eine Sammlung von Bridge-Aufrufen (die Bridge
+   * ist der sanktionierte Zustands-Eingang) — kein zweiter State-Owner,
+   * kein Roh-Zugriff auf App-Interna. Nicht Teil der Experience.
+   */
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("shotdev")) return;
+    const g = globalThis as Record<string, unknown>;
+    g.__LENOX_SHOT__ = {
+      wake,
+      emotion: (e: LenoxEmotion) => onEmotion(e),
+      gaze: (x: number, y: number) => {
+        gazeScripted.current = !(x === 0 && y === 0);
+        bridgeRef.current?.setLenoxGaze(x, y);
+      },
+      target: (id: LenoxSignatureId) =>
+        bridgeRef.current?.setSignatureTarget(id),
+      progress: (p: number) => bridgeRef.current?.setTransformProgress(p),
+      commit: () => bridgeRef.current?.commitSignature(),
+      pose: (pose: StationPose, tau?: number) =>
+        bridgeRef.current?.setJourneyPose(pose, tau),
+      operator: (t: number) => bridgeRef.current?.setLenoxOperator(t, 0.4),
+    };
+    return () => {
+      delete g.__LENOX_SHOT__;
+    };
+  }, [wake, onEmotion]);
+
+  // The workspace may fire ONE reaction legitimately: the amber confirm, and
+  // only for a result that really happened (the contact transmission). The
+  // drive owns the overlay; this is a straight pass-through.
+  const onReaction = useCallback((reaction: LenoxReaction) => {
+    bridgeRef.current?.setLenoxReaction(reaction);
+  }, []);
+
+  /**
+   * Der Director sagt, welche Station führt; hier passiert nur der Blick:
+   * ein kurzer Glance zur Arbeit ("work") und zurück, oder sofortige
+   * Freigabe an den Besucher. Die Emotion setzt die Station selbst — der
+   * Glance darf sie nicht überschreiben.
    *
-   * The return timer is single: click three regions quickly and the old timers
-   * would fire mid-glance, snapping him back to neutral while he is still
-   * looking at the second one.
+   * The return timer is single: scroll through three stations quickly and
+   * old timers would fire mid-glance, yanking his eyes around.
    */
   const glanceBack = useRef<number | null>(null);
-  const onRegionChange = useCallback(() => {
-    const bridge = bridgeRef.current;
-    if (!bridge) return;
-    if (glanceBack.current !== null) window.clearTimeout(glanceBack.current);
+  const onStationChange = useCallback(
+    (_region: string, glance: "work" | "visitor") => {
+      const bridge = bridgeRef.current;
+      if (!bridge) return;
+      if (glanceBack.current !== null) window.clearTimeout(glanceBack.current);
 
-    gazeScripted.current = true;
-    onEmotion("curious");
-    bridge.setLenoxGaze(0.38, -0.02);
+      if (glance === "visitor") {
+        gazeScripted.current = false;
+        bridge.setLenoxGaze(0, 0);
+        glanceBack.current = null;
+        return;
+      }
 
-    glanceBack.current = window.setTimeout(() => {
-      bridge.setLenoxGaze(0, 0);
-      onEmotion("neutral");
-      gazeScripted.current = false;
-      glanceBack.current = null;
-    }, 900);
-  }, [onEmotion]);
+      gazeScripted.current = true;
+      bridge.setLenoxGaze(0.38, -0.02);
+      glanceBack.current = window.setTimeout(() => {
+        bridge.setLenoxGaze(0, 0);
+        gazeScripted.current = false;
+        glanceBack.current = null;
+      }, 900);
+    },
+    [],
+  );
+
+  /** Scroll-Director → Engine-Kamera. Die Engine east; hier nur Durchgabe. */
+  const onPose = useCallback((pose: StationPose, tau: number) => {
+    bridgeRef.current?.setJourneyPose(pose, tau);
+  }, []);
 
   useEffect(
     () => () => {
@@ -285,17 +402,49 @@ export function LenoxExperience() {
     [onEmotion],
   );
 
+  /**
+   * AKT IV — die Verwandlung läuft, sobald der Reducer `transforming` sagt.
+   * Eine Uhr (transformTimeline) treibt Drive-Puls, Scan-Uniform und
+   * DOM-Tokens; am Ende meldet sie TRANSFORMED und der Build übernimmt.
+   */
+  useEffect(() => {
+    if (stage !== "transforming") return;
+    const bridge = bridgeRef.current;
+    if (!bridge) {
+      dispatch({ type: "TRANSFORMED" });
+      return;
+    }
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const tl = transformTimeline(
+      chosenSignature.current,
+      {
+        setSignatureInstant: (id) => bridge.setSignature(id),
+        setSignatureTarget: (id) => bridge.setSignatureTarget(id),
+        setTransformProgress: (p) => bridge.setTransformProgress(p),
+        commitSignature: () => bridge.commitSignature(),
+        onEmotion,
+        onDone: () => dispatch({ type: "TRANSFORMED" }),
+      },
+      reduced,
+    );
+    return () => {
+      tl.kill();
+    };
+  }, [stage, onEmotion]);
+
   const preWake = PRE_WAKE.includes(state);
   const built = stage === "building" || stage === "ready";
 
   return (
     <div
       className="lenox-stage"
+      data-composition={mode}
       style={{
         position: "fixed",
         inset: 0,
         overflow: "hidden",
-        touchAction: "none",
       }}
       onPointerMove={onPointerMove}
       // Leaving the window releases his eyes — unless the timeline is currently
@@ -311,13 +460,30 @@ export function LenoxExperience() {
       ) : (
         <div
           ref={hostRef}
-          style={{ position: "absolute", inset: 0, zIndex: 1 }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 1,
+            /**
+             * The touch lock belongs HERE, on the canvas, and nowhere above it.
+             *
+             * It used to sit on the stage root with a comment claiming the
+             * workspace "takes it back" with `pan-y`. It cannot. A touch gesture
+             * is only permitted if it is allowed by the hit element AND every
+             * ancestor up to the scrolling container — so `none` on the shared
+             * parent silently killed scrolling in the workspace and the rail on
+             * every real phone. The emulator never showed it, because a synthetic
+             * pointer is not a finger.
+             */
+            touchAction: "none",
+          }}
         />
       )}
 
       <CornerHud
         stage={stage}
         gpu={gpuPath}
+        mode={mode}
         locale={locale}
         setLocale={setLocale}
         m={m}
@@ -343,27 +509,36 @@ export function LenoxExperience() {
         </div>
       ) : null}
 
-      {/* He has found you. The line grows out of him, he says one sentence, and
-          then he builds — no question in between. */}
+      {/* He has found you. One sentence, then THE question — and both answers
+          end in the same transformation. Mounted through recognition only;
+          the moment the world starts changing, the line has done its job. */}
       {stage === "recognition" ? (
         <FirstContact
-          text={m.greeting}
+          m={m}
+          locale={locale}
           onSpeechStart={onSpeechStart}
-          onSpoken={onSpoken}
+          onEmotion={onEmotion}
+          resolveLenoxChoice={resolveLenoxChoice}
+          onCommit={onCommitSignature}
         />
       ) : null}
 
       {/* Mounted for BUILDING and never unmounted. What he built has to still be
-          standing afterwards, or the build was a cutscene. */}
+          standing afterwards, or the build was a cutscene — and from READY on
+          it is a JOURNEY: the page scrolls, the camera travels, he companions. */}
       {built ? (
-        <Workspace
+        <Journey
           m={m}
+          locale={locale}
+          mode={mode}
           building={stage === "building"}
           onOperator={onOperator}
           onGaze={onGaze}
           onEmotion={onEmotion}
+          onReaction={onReaction}
+          onPose={onPose}
           onBuilt={onBuilt}
-          onRegionChange={onRegionChange}
+          onStationChange={onStationChange}
         />
       ) : null}
 

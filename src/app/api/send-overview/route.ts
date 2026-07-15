@@ -8,6 +8,21 @@ function getResend(): Resend | null {
   return _resend;
 }
 
+/**
+ * Real sending is OFF unless deliberately enabled, even with a key present.
+ *
+ * This is a public, unauthenticated endpoint that mails an arbitrary address —
+ * unprotected, it is a spam relay for whoever finds it (recipient abuse, quota
+ * burn, domain reputation). The repo has no durable anti-abuse layer (no WAF
+ * rule, no shared rate-limit store), and an in-memory counter inside a
+ * serverless function only pretends to be one. Until a real control exists
+ * (e.g. a platform rate-limit rule on this path, or a shared-store limiter),
+ * production stays in the honest `dev` state the UI already knows how to show.
+ */
+function sendingEnabled(): boolean {
+  return process.env.SEND_OVERVIEW_ENABLED === 'true';
+}
+
 const FROM_EMAIL = 'Lenox <lenox@volkanaistudio.com>';
 const TO_EMAIL = process.env.OVERVIEW_TO_EMAIL || 'hello@volkano.dev';
 const SUBJECT = 'Lenox — Your AI Intake System Overview';
@@ -87,8 +102,12 @@ export async function POST(request: Request) {
     }
 
     const resend = getResend();
-    if (!resend) {
-      console.warn('RESEND_API_KEY not set — skipping email send');
+    if (!resend || !sendingEnabled()) {
+      console.warn(
+        !resend
+          ? 'RESEND_API_KEY not set — skipping email send'
+          : 'SEND_OVERVIEW_ENABLED not set — real sending stays disabled',
+      );
       return NextResponse.json({ ok: true, dev: true });
     }
 

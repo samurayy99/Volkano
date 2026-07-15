@@ -26,6 +26,16 @@
   --bone-dim:    rgba(232, 224, 216, 0.60);
   --bone-faint:  rgba(232, 224, 216, 0.25);
 
+  /* ── Signature channels (DER BEGLEITER) ────────────────
+     The stage's hairlines and surfaces used to hard-code these RGB triplets.
+     As channels they re-map per signature; `rgb(var(--ch) / a)` keeps every
+     alpha exactly where it was authored. OBSIDIAN = the values that were
+     always there. */
+  --silver-ch:       200 204 208;
+  --bone-ch:         232 224 216;
+  --surface-ch:      22 22 28;
+  --surface-deep-ch: 2 2 2;
+
   /* ── Typography ──────────────────────────────────────── */
   /* These two named faces were never actually loaded; the site was falling back
      to whatever the OS had. layout.tsx loads them now — this points at those. */
@@ -39,6 +49,37 @@
   --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-particle: 0.8s;
   --duration-ui:       0.5s;
+}
+
+/* ── ALABASTER (Signatur-Welt, DER BEGLEITER) ─────────────────────────────
+   Lenox bleibt kanonisch — das hier ist der RAUM: Elfenbein mit Graphit-Härte.
+   Leitplanke aus dem Storyboard: nie SaaS, nie Beige, nie Apple-White.
+   Amber bleibt byte-identisch — das Gesetz gilt in jeder Welt. */
+:root[data-signature="alabaster"] {
+  color-scheme: light;
+
+  --void:        #e9e2d3;
+  --void-soft:   #e2dbca;
+  --graphite:    #ddd5c4;
+  --graphite-raised: #d6cebb;
+  --silver:      #34373e;
+  --cyan:        #0d6e80;
+  --cyan-glow:   rgba(13, 110, 128, 0.28);
+  --cyan-dim:    rgba(13, 110, 128, 0.10);
+  --bone-faint:  rgba(30, 28, 24, 0.34);
+
+  --silver-ch:       58 61 69;
+  --bone-ch:         38 36 31;
+  --surface-ch:      226 219 202;
+  --surface-deep-ch: 214 206 187;
+
+  /* Editorial: die helle Welt spricht eine echte optische Serif (Fraunces,
+     via next/font geladen) — nicht Georgia als Platzhalter. Kontrast-Gesetz
+     der Rescue-Direktive: Graphit auf Elfenbein ≥ 7:1 für Fliesstext. */
+  --font-display: var(--font-serif-loaded), "Iowan Old Style", Georgia, serif;
+  --bone:        #1e1c18;
+  --bone-dim:    rgba(30, 28, 24, 0.74);
+  --silver-dim:  rgba(52, 55, 62, 0.62);
 }
 
 html,
@@ -96,6 +137,37 @@ input {
 .lenox-stage {
   isolation: isolate;
   background: #010203;
+}
+
+/* ── Composition ──────────────────────────────────────────
+ *
+ * BANDED: the phone has no left third to give him, so he takes the top and the
+ * page is built underneath. Three bands, one owner each, and they cannot overlap
+ * because the workspace's top edge is DERIVED from the two above it rather than
+ * guessed at (`top: 52%` was a guess, and it put a navigation rail on his face).
+ *
+ *   ── safe-top ─────────────────
+ *   SYSTEM BAR    --system-bar     brand · pulse · language
+ *   ── ───────────────────────────
+ *   STAGE         --stage-h        LENOX. ALONE. No DOM enters here. Ever.
+ *   ── the seam ──────────────────  ← --workspace-top
+ *   WORKSPACE     the rest         sticky nav, then the only scroller on the page
+ *
+ * `svh`, never `vh` or `dvh`: svh is the SMALLEST viewport state (browser chrome
+ * showing), so the layout is correct in the worst case and can never be clipped.
+ *
+ * START VALUES. To be validated on real devices — and only ever changed here.
+ */
+.lenox-stage[data-composition="banded"] {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --system-bar: clamp(48px, 7svh, 60px);
+  --stage-h: clamp(240px, 42svh, 420px);
+  --nav-h: 56px;
+  --content-pad: clamp(14px, 4vw, 24px);
+
+  --workspace-top: calc(var(--safe-top) + var(--system-bar) + var(--stage-h));
 }
 
 .lenox-wake-control {
@@ -198,6 +270,13 @@ input {
 .lenox-wake-btn:disabled {
   cursor: default;
   opacity: 0.42;
+}
+
+/* The primary control on the site had no keyboard focus state at all: a visitor
+   tabbing to it could not see where they were. Ergonomics, not material. */
+.lenox-wake-btn:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: 3px;
 }
 
 /* ── Particle Canvas ──────────────────────────────────── */

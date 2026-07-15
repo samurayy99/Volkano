@@ -11,7 +11,11 @@ import { PREENTER_VESSEL } from "./vesselDescriptors";
 import { loadLenoxVessel } from "./lenox/lenoxVessel.js";
 import { LENOX_SIGNAL_FACE } from "./lenox/lenoxEyesDrive.js";
 import { createLenoxBackdrop } from "./lenox/lenoxBackdrop.js";
-import { createVoidEnvironment } from "./lenox/voidEnvironment.js";
+import {
+  createAlabasterEnvironment,
+  createVoidEnvironment,
+} from "./lenox/voidEnvironment.js";
+import { ENGINE_SIGNATURES, isSignatureId } from "./lenox/signatures.js";
 import { forensicHoldReadIsolation } from "./post-enter/forensicPostEnter.js";
 import {
   ARREST_BLOOM_SPIKE,
@@ -352,10 +356,18 @@ class App {
   /** The lacquer panel behind him. A surface that catches light, not a glow. */
   lenoxBackdrop = null;
   _backdropLight = new THREE.Vector3(0.35, 0.4, 1);
+  /** DER BEGLEITER: which world he stands in, and the one behind the front. */
+  lenoxSignatureId = "obsidian";
+  lenoxSignatureTargetId = null;
+  lenoxSignatureEnvs = null;
+  lenoxScanMaxR = 8;
+  lenoxScanEnvSwapped = false;
   /** Lenox lifecycle camera framing (void mode). */
   lenoxFramings = null;
   lenoxFrame = null;
   lenoxOperator = null;
+  /** "side" (he steps aside) or "banded" (he steps up). React decides; see setCompositionMode. */
+  compositionMode = "side";
 
   postEnterDriveActive = false;
 
@@ -931,9 +943,124 @@ class App {
    */
   setLenoxEnvironment(useVoid) {
     if (!this.scene) return;
-    const voidEnv = useVoid ? this.voidEnvironmentTexture : null;
+    const voidEnv = useVoid ? this.getLenoxSignatureEnv(this.lenoxSignatureId) : null;
     this.scene.environment = voidEnv ?? this.environmentTexture;
     this.scene.environmentRotation.set(0, voidEnv ? 0 : -2.15, 0);
+  }
+
+  /* ── DER BEGLEITER: signature worlds ─────────────────────────────────── */
+
+  /** Reflection world per signature, generated once, kept for re-calibration. */
+  getLenoxSignatureEnv(id) {
+    if (!this.lenoxSignatureEnvs) this.lenoxSignatureEnvs = {};
+    if (!this.lenoxSignatureEnvs[id]) {
+      this.lenoxSignatureEnvs[id] =
+        id === "alabaster"
+          ? createAlabasterEnvironment()
+          : this.voidEnvironmentTexture;
+    }
+    return this.lenoxSignatureEnvs[id];
+  }
+
+  /** Instant world (boot default / reduced motion): no front, no ceremony. */
+  setLenoxSignature(id) {
+    if (this.visualMode !== "void" || !isSignatureId(id)) return;
+    this.lenoxSignatureId = id;
+    this.lenoxSignatureTargetId = null;
+    this.lenoxScanEnvSwapped = false;
+    this.lenoxBackdrop?.setSignature?.(ENGINE_SIGNATURES[id]);
+    const env = this.getLenoxSignatureEnv(id);
+    if (env && this.scene) {
+      this.scene.environment = env;
+      this.scene.environmentRotation.set(0, 0, 0);
+    }
+  }
+
+  /** Arm the world behind the front (also pre-builds its env texture). */
+  setLenoxSignatureTarget(id) {
+    if (this.visualMode !== "void" || !isSignatureId(id)) return;
+    this.lenoxSignatureTargetId = id;
+    this.lenoxScanEnvSwapped = false;
+    this.lenoxBackdrop?.setSignatureTarget?.(ENGINE_SIGNATURES[id]);
+    this.getLenoxSignatureEnv(id);
+  }
+
+  /**
+   * Drive the reconstruction front, 0..1. The front radiates from him, so his
+   * reflections flip early (t ≈ 0.1): the new world reaches HIM first.
+   */
+  setLenoxSignatureScan(t) {
+    if (this.visualMode !== "void" || !this.lenoxBackdrop) return;
+    const clamped = Math.max(0, Math.min(t ?? 0, 1));
+    const rim = Math.sin(Math.min(clamped * 1.12, 1) * Math.PI);
+    this.lenoxBackdrop.setScan?.(clamped * this.lenoxScanMaxR, rim);
+    if (
+      !this.lenoxScanEnvSwapped &&
+      clamped > 0.1 &&
+      this.lenoxSignatureTargetId &&
+      this.scene
+    ) {
+      this.scene.environment = this.getLenoxSignatureEnv(
+        this.lenoxSignatureTargetId,
+      );
+      this.scene.environmentRotation.set(0, 0, 0);
+      this.lenoxScanEnvSwapped = true;
+    }
+  }
+
+  /** The target world becomes the world. */
+  commitLenoxSignature() {
+    if (this.visualMode !== "void" || !this.lenoxBackdrop) return;
+    this.lenoxBackdrop.commitSignature?.();
+    if (this.lenoxSignatureTargetId) {
+      this.lenoxSignatureId = this.lenoxSignatureTargetId;
+      this.lenoxSignatureTargetId = null;
+    }
+    this.lenoxScanEnvSwapped = false;
+    this.lenoxTransformP = 0;
+    if (this.scene) this.scene.environmentIntensity = 1;
+  }
+
+  /**
+   * DIE VERWANDLUNG, EIN SKALAR (Rescue, peer-review trap #2). Die GSAP-Uhr
+   * schiebt genau EINEN Fortschritt p (0..1, linear) hierher; die Engine
+   * leitet ALLES daraus ab — Gather-/Zündungs-Physik (der Drive liest
+   * `lenoxTransformP` pro Frame), Front-Radius (geshaped), Partikel-Flare
+   * und die Environment-Blende. Zwei Uhren für einen synchronen Moment
+   * können driften; ein Skalar kann es nicht.
+   *
+   * Phasen auf p: 0–0.26 GATHER · 0.26–0.38 ZÜNDUNG · 0.30–0.95 FRONT ·
+   * Env-Wechsel, wenn die Front IHN passiert (~0.34) — mit Intensitäts-
+   * Blende statt hartem Pop (trap #1).
+   */
+  setLenoxTransformProgress(p) {
+    if (this.visualMode !== "void") return;
+    const clamped = Math.max(0, Math.min(p ?? 0, 1));
+    this.lenoxTransformP = clamped;
+
+    // Front: shaped in-engine (die Uhr liefert linear). smootherstep hält
+    // Anfang UND Ende weich; die Anisotropie liegt im Shader.
+    const frontLin = Math.max(0, Math.min((clamped - 0.3) / 0.62, 1));
+    const front = THREE.MathUtils.smootherstep(frontLin, 0, 1);
+    const rim = Math.sin(Math.min(frontLin * 1.08, 1) * Math.PI);
+    const radius = front * this.lenoxScanMaxR;
+    this.lenoxBackdrop?.setScan?.(radius, rim);
+    this.particleRenderer?.setScanFront?.(radius, rim);
+
+    // Reflexionswelt: Wechsel wenn die Front seinen Körper verlässt, mit
+    // einer Helligkeits-Blende (Glocke um den Wechselpunkt) — Metall darf
+    // nicht eine ganze Sekunde lang die falsche Welt spiegeln, aber der
+    // Umschlag darf auch nicht knallen.
+    const swapAt = 0.34;
+    if (!this.lenoxScanEnvSwapped && clamped > swapAt && this.lenoxSignatureTargetId && this.scene) {
+      this.scene.environment = this.getLenoxSignatureEnv(this.lenoxSignatureTargetId);
+      this.scene.environmentRotation.set(0, 0, 0);
+      this.lenoxScanEnvSwapped = true;
+    }
+    if (this.scene) {
+      const bell = Math.exp(-(((clamped - swapAt) / 0.07) ** 2));
+      this.scene.environmentIntensity = 1 - 0.55 * bell;
+    }
   }
 
   /** Dev: hide/show the particle body (rig must read on its own). */
@@ -1258,15 +1385,32 @@ class App {
       portrait ? 0.16 : 0,
     );
 
-    // OPERATOR — he leaves the centre and makes room for what he built. The
-    // camera looks toward +z, so world +x is screen LEFT: pushing the camera to
-    // -x is what slides HIM left. He shrinks, but he does not retreat — the
+    // OPERATOR (side) — he leaves the centre and makes room for what he built.
+    // The camera looks toward +z, so world +x is screen LEFT: pushing the camera
+    // to -x is what slides HIM left. He shrinks, but he does not retreat — the
     // distance is chosen so he still owns a quarter of the frame.
-    const operator = frameFor(presenceHalf, portrait ? 0.46 : 0.26, 0);
-    const operatorHalfW =
-      Math.tan(fovRad / 2) * operator.distance * aspect;
+    const operator = frameFor(presenceHalf, 0.26, 0);
+    const operatorHalfW = Math.tan(fovRad / 2) * operator.distance * aspect;
     operator.targetY = present.targetY;
     operator.shiftX = -0.5 * operatorHalfW;
+
+    // OPERATOR (banded) — the same gesture on the only axis a phone actually has.
+    // He rises into a band at the top and the page is built underneath him.
+    //
+    // The old code shifted him sideways in portrait too, on an axis that does not
+    // exist there: he ended up squeezed behind the navigation instead of above it.
+    // shiftX is zero here, and the room is made by lowering the camera target —
+    // dropping the target raises the SUBJECT in frame.
+    //
+    // 0.52: he may shrink, he may not vanish. The old portrait value (0.46) was
+    // sized against a side column; in a full-width band he can afford to stay
+    // larger.
+    // 0.22: lowering the camera target raises him on screen by that fraction of
+    // the viewport. 0.30 lifted him so far that his crown pushed up out of the
+    // band and behind the system bar — measured, not guessed. This centres his
+    // head in the band instead.
+    const operatorBanded = frameFor(presenceHalf, 0.52, 0.22);
+    operatorBanded.shiftX = 0;
 
     this.lenoxFramings = {
       center,
@@ -1274,6 +1418,7 @@ class App {
       wide: frameFor(dustHalf, portrait ? 0.98 : 0.86, 0),
       present,
       operator,
+      operatorBanded,
     };
     if (!this.lenoxFrame) this.lenoxFrame = { t: 0, target: 0, tau: 0.8 };
     // The body is framed from the viewport, so every reframe refits it.
@@ -1285,8 +1430,15 @@ class App {
     if (this.lenoxBackdrop) {
       const panelZ = center.z + 1.5;
       const reach = this.lenoxFramings.wide.distance + 1.5;
-      const halfH = Math.tan(fovRad / 2) * reach * 1.08;
-      const halfW = halfH * aspect;
+      const halfH = Math.tan(fovRad / 2) * reach * 1.45;
+      /**
+       * 1.9, not 1.08: the OPERATOR composition shifts the camera half a
+       * frustum sideways, so the visible world reaches ~1.5x the centred
+       * half-width. Undersized, the panel ended mid-frame — invisible while
+       * both sides were black, an abrupt world-edge the moment a bright
+       * signature existed. The panel is one quad; oversizing costs nothing.
+       */
+      const halfW = halfH * aspect * 1.9;
       this.lenoxBackdrop.configure?.({
         center,
         panelZ,
@@ -1294,6 +1446,10 @@ class App {
         halfH,
         aspect,
       });
+      // The front must be able to leave the frame completely.
+      this.lenoxScanMaxR = Math.hypot(halfW, halfH) * 1.25;
+      // Partikel prüfen denselben Welt-Radius wie das Panel: ein Ursprung.
+      this.particleRenderer?.setScanFront?.(0, 0, center);
       if (!this.lenoxBackdrop.configure) {
         const mesh = this.lenoxBackdrop.mesh;
         mesh.position.set(center.x, center.y, panelZ);
@@ -1347,21 +1503,57 @@ class App {
     const ko = dt > 0 ? 1 - Math.exp(-dt / (op.tau ?? 1.1)) : 1;
     op.t += (op.target - op.t) * ko;
 
-    const { center, fov, wide, present, operator } = this.lenoxFramings;
+    const { center, fov, wide, present, operator, operatorBanded } =
+      this.lenoxFramings;
     const t = THREE.MathUtils.smootherstep(frame.t, 0, 1);
     let distance = THREE.MathUtils.lerp(wide.distance, present.distance, t);
     let targetY = THREE.MathUtils.lerp(wide.targetY, present.targetY, t);
     let shiftX = 0;
 
+    // Which way he makes room is the composition's business, not the timeline's.
+    // The timeline only ever says "make room" (onOperator(1)); the axis is decided
+    // here, from the mode React handed us.
+    const framing =
+      this.compositionMode === "banded" ? operatorBanded : operator;
+
     // The operator move is layered on top of the lifecycle framing, so it eases
     // out of wherever the camera actually is. It only ever travels one way —
     // reversing direction mid-move is what reads as a stutter.
-    if (operator && op.t > 1e-4) {
+    if (framing && op.t > 1e-4) {
       const o = THREE.MathUtils.smootherstep(op.t, 0, 1);
-      distance = THREE.MathUtils.lerp(distance, operator.distance, o);
-      targetY = THREE.MathUtils.lerp(targetY, operator.targetY, o);
-      shiftX = operator.shiftX * o;
+      distance = THREE.MathUtils.lerp(distance, framing.distance, o);
+      targetY = THREE.MathUtils.lerp(targetY, framing.targetY, o);
+      shiftX = framing.shiftX * o;
     }
+
+    /**
+     * JOURNEY LAYER (DER BEGLEITER, Slice 2) — the scroll director's camera,
+     * layered on top of whatever the lifecycle framing decided. One scalar
+     * per axis, eased engine-side so scroll jitter never reaches the lens:
+     *   zoom   — multiplies the distance (0.55 = close, 1.6 = receded)
+     *   shiftX — in HALF-WIDTHS of the current frustum (+ pushes him left)
+     *   shiftY — in half-heights (+ pushes him down)
+     * Frustum-relative units keep a pose meaning the same thing at every
+     * viewport and every zoom.
+     */
+    const j =
+      this.lenoxJourney ??
+      (this.lenoxJourney = {
+        zoom: 1, shiftX: 0, shiftY: 0,
+        zoomT: 1, shiftXT: 0, shiftYT: 0,
+        tau: 0.3,
+      });
+    const kj = dt > 0 ? 1 - Math.exp(-dt / (j.tau ?? 0.3)) : 1;
+    j.zoom += (j.zoomT - j.zoom) * kj;
+    j.shiftX += (j.shiftXT - j.shiftX) * kj;
+    j.shiftY += (j.shiftYT - j.shiftY) * kj;
+
+    distance *= j.zoom;
+    const jFovRad = THREE.MathUtils.degToRad(fov);
+    const jHalfH = Math.tan(jFovRad / 2) * distance;
+    const jHalfW = jHalfH * this.camera.aspect;
+    shiftX += j.shiftX * jHalfW;
+    targetY += j.shiftY * jHalfH;
 
     this.cameraTarget.set(center.x + shiftX, targetY, center.z);
     this.camera.fov = fov;
@@ -1372,7 +1564,42 @@ class App {
     this.updateLenoxScreenBounds(distance, targetY, shiftX);
   }
 
-  /** Drive → operator composition (0 centred … 1 left third, console room). */
+  /**
+   * Which way he makes room. React owns this decision (one source, see
+   * `compositionMode.ts`); the engine no longer guesses it from the aspect ratio.
+   * @param {"side"|"banded"} mode
+   */
+  setCompositionMode(mode) {
+    this.compositionMode = mode === "banded" ? "banded" : "side";
+  }
+
+  /**
+   * Scroll director → journey camera pose. The director owns WHERE the
+   * camera is per station; the engine owns HOW it gets there (eased above).
+   * @param {{zoom?: number, shiftX?: number, shiftY?: number}} pose
+   * @param {number} [tau] easing time constant (s); small = tight scrub
+   */
+  setLenoxJourneyPose(pose, tau = 0.3) {
+    const j =
+      this.lenoxJourney ??
+      (this.lenoxJourney = {
+        zoom: 1, shiftX: 0, shiftY: 0,
+        zoomT: 1, shiftXT: 0, shiftYT: 0,
+        tau: 0.3,
+      });
+    if (Number.isFinite(pose?.zoom)) {
+      j.zoomT = Math.max(0.4, Math.min(pose.zoom, 2.4));
+    }
+    if (Number.isFinite(pose?.shiftX)) {
+      j.shiftXT = Math.max(-1.2, Math.min(pose.shiftX, 1.2));
+    }
+    if (Number.isFinite(pose?.shiftY)) {
+      j.shiftYT = Math.max(-1.2, Math.min(pose.shiftY, 1.2));
+    }
+    j.tau = Math.max(0.05, tau);
+  }
+
+  /** Drive → operator composition (0 centred … 1 out of the way). */
   setLenoxOperator(target, tau = 1.1) {
     if (!this.lenoxOperator) {
       this.lenoxOperator = { t: 0, target: 0, tau: 1.1 };

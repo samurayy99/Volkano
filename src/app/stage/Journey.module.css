@@ -1,0 +1,453 @@
+/*
+ * Die Reise. Der Canvas zeigt durch alles hindurch — dieser Layer hat keinen
+ * eigenen Hintergrund, denn der Raum ist der Raum, in dem er steht. DIESES
+ * Element ist der einzige Scroller der Seite; die Kamera hängt am Director,
+ * nie an einem zweiten Listener.
+ */
+
+.journey {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* Der Canvas sperrt Touch; hier — und nur hier — darf ein Finger die
+     Seite bewegen. Pointer-Events laufen durch (bubbling) zum Stage-Root,
+     der Gaze und Partikel weiter versorgt. */
+  touch-action: pan-y;
+}
+
+.journey::-webkit-scrollbar {
+  display: none;
+}
+
+/* Während er baut, ist es ein Werkstück: kein Scroll, kein Klick. */
+.journey[data-live="false"] {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ── Die Rail: Anker der Strecke ─────────────────────────────────────── */
+
+.rail {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(14px, 2vw, 28px);
+  padding: clamp(18px, 3vh, 30px) clamp(28px, 5vw, 72px)
+    clamp(10px, 1.6vh, 16px);
+  /* Content läuft beim Scrollen unter ihr durch — sie braucht die Scrim-
+     Grammatik der Stage-Grenze (dissolve, nicht Kollision). */
+  background: linear-gradient(
+    180deg,
+    rgb(var(--surface-deep-ch) / 0.82) 62%,
+    rgb(var(--surface-deep-ch) / 0)
+  );
+}
+
+.journey[data-mode="side"] .rail {
+  padding-left: calc(38% + clamp(24px, 3vw, 44px));
+}
+
+.region {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  min-height: 34px;
+  color: var(--silver-dim);
+  font: 11px var(--font-mono);
+  letter-spacing: 0.18em;
+  cursor: pointer;
+  transition: color 240ms var(--ease-out-expo);
+}
+
+.journey[data-live="true"] .region:hover,
+.region:focus-visible {
+  color: var(--bone);
+  outline: none;
+}
+
+.region[aria-current="true"] {
+  color: var(--cyan);
+  text-shadow: 0 0 14px var(--cyan-glow);
+}
+
+/* ── Stationen ───────────────────────────────────────────────────────── */
+
+.station {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+}
+
+.inner {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 3vh, 34px);
+  padding: clamp(28px, 5vh, 56px) clamp(28px, 5vw, 72px)
+    clamp(48px, 8vh, 96px) 0;
+}
+
+/* SIDE: jede Station hat ihre eigene Bühnenhälfte — die Kamera entscheidet,
+   wie viel Raum ER einnimmt; der Content weicht entsprechend. */
+.journey[data-mode="side"] .station[data-station="experience"] .inner,
+.journey[data-mode="side"] .station[data-station="work"] .inner {
+  margin-left: 38%;
+}
+
+/* SYSTEMS: er ist riesig und angeschnitten links — der Text steht in seinem
+   Raum, schmaler und weiter rechts. */
+.journey[data-mode="side"] .station[data-station="systems"] .inner {
+  margin-left: 52%;
+  max-width: 560px;
+}
+
+/* VOLKAN: er ist in die Tiefe zurückgetreten. Der Text stand zentriert —
+   und scrollte damit MITTEN DURCH SEIN GESICHT (Video-Verdikt t=41; dieselbe
+   Fehlerklasse wie die historische Rail-über-Gesicht-Kollision). Ein
+   zurückgetretener Lenox steht bildmittig-rechts (Pose shiftX 0.3), also
+   gehört der Text in eine linke Spalte, durch die er nie hindurchläuft. */
+.journey[data-mode="side"] .station[data-station="volkan"] .inner {
+  margin-left: clamp(28px, 7vw, 120px);
+  max-width: 480px;
+}
+
+.journey[data-mode="side"] .station[data-station="contact"] .inner {
+  margin-left: 46%;
+  max-width: 640px;
+}
+
+/* Auftritt/Abgang: die Bühne führt, CSS spielt. Station 1 ist ausgenommen —
+   ihr Auftritt IST der Build. */
+.station:not([data-station="experience"]) .inner {
+  opacity: 0;
+  transform: translateY(34px);
+  transition:
+    opacity 700ms var(--ease-out-expo),
+    transform 700ms var(--ease-out-expo);
+}
+
+.station:not([data-station="experience"])[data-live="true"] .inner {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Typo-Grammatik (aus dem Workspace übernommen) ───────────────────── */
+
+.ruleLeft {
+  position: absolute;
+  top: 14%;
+  bottom: 14%;
+  left: 38%;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgb(var(--silver-ch) / 0.16) 18%,
+    rgb(var(--silver-ch) / 0.16) 82%,
+    transparent
+  );
+  transform-origin: top center;
+}
+
+.journey[data-mode="banded"] .ruleLeft {
+  display: none;
+}
+
+/* Typo-Gesetz (Rescue): das Display-Face FÜHRT — 96px statt Beischrift.
+   Mono ist ab jetzt ausschliesslich die Maschinen-Stimme (Labels, Status),
+   nie mehr die einzige Stimme einer Station. */
+.heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(44px, 6.4vw, 96px);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: 0.005em;
+  color: var(--bone);
+  min-height: 1.02em;
+}
+
+.lead {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--silver-dim);
+}
+
+/* ── EXPERIENCE: drei Tafeln in echter Tiefe ─────────────────────────────
+   Opake Materie der Signatur (Papier/Stein, nie Glas — AD-Verdikt), eine
+   geritzte Kante oben, gebackener Schatten (statisches ::after-Gradient,
+   NIE animierter box-shadow — Perf-Trap #5). Die Zerlegung liest --sp vom
+   Director: transform-only, eine Quelle. */
+.plateSpace {
+  position: relative;
+  min-height: clamp(300px, 44vh, 460px);
+  perspective: 1400px; /* ≈ Engine-FOV bei 900px Viewport — Perf-Trap #6 */
+  perspective-origin: 30% 42%;
+}
+
+.plate {
+  --i: 0;
+  position: absolute;
+  width: min(340px, 42%);
+  padding: 20px 22px 24px;
+  background: rgb(var(--surface-ch));
+  border-radius: 1px;
+  will-change: transform;
+  transform:
+    translate3d(
+      calc(var(--i) * 17% + var(--sp, 0) * var(--px, 0px)),
+      calc(var(--i) * 13% + var(--sp, 0) * var(--py, 0px)),
+      calc(var(--i) * -110px + var(--sp, 0) * var(--pz, 0px))
+    )
+    rotateY(calc(-5deg + var(--i) * 2deg))
+    rotateX(calc(var(--sp, 0) * var(--prx, 0deg)));
+}
+
+.plate[data-plate="0"] {
+  --i: 0;
+  /* Die vorderste kreuzt beim Übergang den VORDERGRUND. */
+  --px: -180px;
+  --py: 120px;
+  --pz: 420px;
+  --prx: 4deg;
+  z-index: 3;
+}
+
+.plate[data-plate="1"] {
+  --i: 1;
+  /* Die mittlere kippt zur Kante — sie WIRD ein Stratum. */
+  --px: 30px;
+  --py: 30px;
+  --pz: 60px;
+  --prx: 58deg;
+  z-index: 2;
+}
+
+.plate[data-plate="2"] {
+  --i: 2;
+  /* Die hinterste steigt und weicht in die Tiefe. */
+  --px: 90px;
+  --py: -80px;
+  --pz: -260px;
+  --prx: -8deg;
+  z-index: 1;
+}
+
+/* Geritzte Kante statt Border-Box: eine Linie, die MATERIAL sagt. */
+.plateEdge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 18%;
+  height: 2px;
+  background: var(--bone);
+  opacity: 0.85;
+}
+
+/* Gebackener Schatten: statisch, mit der Tafel transformiert — gratis. */
+.plate::after {
+  content: "";
+  position: absolute;
+  inset: auto -6% -14% 8%;
+  height: 22%;
+  background: radial-gradient(
+    60% 100% at 40% 0%,
+    rgb(var(--bone-ch) / 0.22),
+    transparent 70%
+  );
+  z-index: -1;
+  pointer-events: none;
+}
+
+.plateLabel {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.26em;
+  color: var(--cyan);
+}
+
+.plateBody {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  color: var(--bone);
+}
+
+/* ── SYSTEMS: der Kern-Schnitt ───────────────────────────────────────────
+   Drei Strata von der Kante gesehen, getrennt durch Nähte. Kein Diagramm,
+   keine Ziffern — die Schwere der Nähte und die Serif-Worte tragen es.
+   Leichte Gegenläufigkeit der Schichten (--sp) = Parallaxe im Material. */
+.strata {
+  display: flex;
+  flex-direction: column;
+  max-width: 640px;
+}
+
+.stratum {
+  --s: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 26px 0 30px;
+  border-top: 3px solid rgb(var(--bone-ch) / 0.82);
+  will-change: transform;
+  transform: translate3d(calc((var(--sp, 0) - 0.5) * var(--s) * 26px), 0, 0);
+}
+
+.stratum[data-stratum="0"] { --s: 1; }
+.stratum[data-stratum="1"] { --s: -0.6; border-top-width: 2px; }
+.stratum[data-stratum="2"] { --s: 0.3; border-top-width: 1px; }
+
+.stratumTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 2.6vw, 40px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--bone);
+}
+
+.stratumBody {
+  margin: 0;
+  max-width: 52ch;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  letter-spacing: 0.02em;
+  color: rgb(var(--silver-ch) / 0.82);
+}
+
+.pending {
+  margin: 0;
+  max-width: 46ch;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgb(var(--silver-ch) / 0.5);
+  border-left: 1px solid rgba(240, 160, 48, 0.35);
+  padding-left: 16px;
+}
+
+/* ── SYSTEMS: sein Inneres als Register, nicht als Karten ────────────── */
+
+/* ── BANDED ──────────────────────────────────────────────────────────── */
+
+.journey[data-mode="banded"] .rail {
+  top: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 10px;
+  padding: 6px var(--content-pad);
+  touch-action: pan-x;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 14px,
+    #000 calc(100% - 30px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 14px,
+    #000 calc(100% - 30px),
+    transparent
+  );
+}
+
+/* The stage band belongs to LENOX alone. On a phone the scrollport itself starts
+   at the seam, so no DOM content can ever travel through his reserved band. */
+.journey[data-mode="banded"] {
+  top: var(--workspace-top);
+}
+
+.journey[data-mode="banded"] .rail::-webkit-scrollbar {
+  display: none;
+}
+
+.journey[data-mode="banded"] .region {
+  flex: 0 0 auto;
+  min-height: 48px;
+  padding: 0 8px;
+}
+
+.journey[data-mode="banded"] .inner {
+  padding: clamp(18px, 4vh, 28px) var(--content-pad)
+    calc(clamp(24px, 6vh, 48px) + var(--safe-bottom));
+}
+
+/* Later stations can reach the top of the scrollport while the rail is sticky.
+   Reserve its height so headings never resolve underneath the navigation. */
+.journey[data-mode="banded"]
+  .station:not([data-station="experience"])
+  .inner {
+  padding-top: calc(var(--nav-h) + clamp(18px, 4vh, 28px));
+}
+
+/* Die erste Station beginnt unter seinem Stage-Band. */
+.journey[data-mode="banded"] .station[data-station="experience"] {
+  padding-top: 0;
+}
+
+.journey[data-mode="banded"] .heading {
+  font-size: clamp(30px, 9vw, 46px);
+  line-height: 1.06;
+}
+
+/* BANDED: die Tafeln stapeln als Materie-Folge — Tiefe kommt aus dem
+   versetzten Stagger, nicht aus absoluter 3D-Bühne (kein Platz, kein Perf-
+   Budget für promoted layers auf dem Phone — Trap #5). */
+.journey[data-mode="banded"] .plateSpace {
+  min-height: 0;
+  perspective: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.journey[data-mode="banded"] .plate {
+  position: relative;
+  width: min(440px, 92%);
+  transform: rotateY(-3deg) translateZ(calc(var(--i) * -24px));
+}
+
+.journey[data-mode="banded"] .plate[data-plate="1"] {
+  align-self: flex-end;
+}
+
+.journey[data-mode="banded"] .stratumTitle {
+  font-size: clamp(22px, 6.4vw, 30px);
+}
+
+/* ── Reduced Motion: Materie steht, nichts morpht am Scroll ──────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .station:not([data-station="experience"]) .inner {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .plate {
+    transform:
+      translate3d(calc(var(--i) * 17%), calc(var(--i) * 13%), calc(var(--i) * -110px))
+      rotateY(calc(-5deg + var(--i) * 2deg));
+  }
+  .stratum {
+    transform: none;
+  }
+}

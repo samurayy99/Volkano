@@ -1,0 +1,148 @@
+/*
+ * The uplink. One input, one action, three honest outcomes. Amber appears
+ * exactly once in this file, and only the `sent` phase may wear it — the
+ * signal for a result that is real (the same law as his own face).
+ */
+
+.uplink,
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 52ch;
+}
+
+.brief {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+  color: var(--bone-dim);
+}
+
+.form {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* A hairline to write on, not a boxed field. */
+.address {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--silver-ch) / 0.26);
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--bone);
+  transition: border-color 240ms var(--ease-out-expo);
+}
+
+.address::placeholder {
+  color: rgb(var(--silver-ch) / 0.32);
+}
+
+.address:focus {
+  outline: none;
+  border-bottom-color: var(--cyan);
+}
+
+.address[aria-invalid="true"] {
+  border-bottom-color: var(--amber);
+}
+
+/* The same pill grammar as WAKE LENOX — the one primary-action shape. */
+.transmit {
+  appearance: none;
+  min-height: 44px;
+  padding: 0 26px;
+  border: 1px solid var(--cyan-glow);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--cyan);
+  cursor: pointer;
+  transition:
+    border-color 240ms var(--ease-out-expo),
+    background-color 240ms var(--ease-out-expo);
+}
+
+.transmit:hover:not(:disabled),
+.transmit:focus-visible {
+  border-color: var(--cyan);
+  background: var(--cyan-dim);
+  outline: none;
+}
+
+.transmit:disabled {
+  color: var(--silver-dim);
+  border-color: rgb(var(--silver-ch) / 0.18);
+  cursor: default;
+}
+
+/* Reserved line: validation must not reflow the form when it appears. */
+.note {
+  margin: 0;
+  min-height: 1.6em;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--amber);
+}
+
+/* ── Outcomes ───────────────────────────────────────────────────────────── */
+
+.sentTitle {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  color: var(--amber);
+  text-shadow: 0 0 16px var(--amber-glow);
+}
+
+.resultBody {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+  color: var(--bone-dim);
+}
+
+/* What he has not done, said plainly — the `pending` grammar. */
+.honest {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 46ch;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgb(var(--silver-ch) / 0.55);
+  border-left: 1px solid rgba(240, 160, 48, 0.35);
+  padding-left: 16px;
+}
+
+.honestTitle {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: rgba(240, 160, 48, 0.75);
+}
+
+/* ── Banded (phone) ─────────────────────────────────────────────────────── */
+
+:global([data-mode="banded"]) .brief,
+:global([data-mode="banded"]) .resultBody {
+  font-size: 11px;
+}

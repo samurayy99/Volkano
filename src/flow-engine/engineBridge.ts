@@ -3,12 +3,15 @@ import App from "./app.js";
 import { SourceChamberDrive } from "./source-chamber/sourceChamberDrive.js";
 import { LenoxEyesDrive } from "./lenox/lenoxEyesDrive.js";
 import type {
+  CompositionMode,
   ConversationState,
   FlowEngineApi,
   FlowEngineBridgeOptions,
   LenoxEmotion,
+  LenoxJourneyPose,
   LenoxProofState,
   LenoxReaction,
+  LenoxSignatureId,
   PostEnterDebugSnapshot,
   PostEnterStage,
 } from "./types";
@@ -54,6 +57,8 @@ export class FlowEngineBridge implements FlowEngineApi {
   private chamberDrive = new SourceChamberDrive();
   private lenoxDrive: LenoxEyesDrive | null = null;
   private lastLenoxState: LenoxProofState = "idle";
+  /** React usually knows the composition before the GPU is up; hold it until then. */
+  private pendingCompositionMode: CompositionMode = "side";
   /** Rolling engine tick time (ms), exposed as __LENOX_PERF__ in Lenox mode. */
   private engineMsAvg: number | null = null;
   private lastPostEnterStage: PostEnterStage = "none";
@@ -93,6 +98,8 @@ export class FlowEngineBridge implements FlowEngineApi {
     });
     this.app = app;
     await app.init(width, height);
+    // Before the first frame: the engine must never compose from its own guess.
+    app.setCompositionMode?.(this.pendingCompositionMode);
     if (this.options.lenoxMode) {
       this.lenoxDrive = new LenoxEyesDrive({
         reducedMotion: this.options.lenoxReducedMotion,
@@ -200,16 +207,65 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app?.setParticlesVisible?.(visible);
   }
 
-  /** 0 = centred, 1 = left third with room for the console. */
+  /** 0 = centred, 1 = out of the way. WHICH way is the composition's business. */
   setLenoxOperator(target: number, tau?: number): void {
     if (this.disposed) return;
     this.app?.setLenoxOperator?.(target, tau);
+  }
+
+  /** Journey camera pose (scroll director → engine; engine eases). */
+  setJourneyPose(pose: LenoxJourneyPose, tau?: number): void {
+    if (this.disposed) return;
+    this.app?.setLenoxJourneyPose?.(pose, tau);
+  }
+
+  /**
+   * Which way he makes room. React is the single source of this (there is no
+   * second opinion in the engine any more) and pushes it here on mount and on
+   * every resize that is allowed to change it.
+   */
+  setCompositionMode(mode: CompositionMode): void {
+    if (this.disposed) return;
+    this.pendingCompositionMode = mode;
+    this.app?.setCompositionMode?.(mode);
   }
 
   /** A/B what he reflects: the void studio (true) or the legacy meadow HDRI. */
   setLenoxEnvironment(useVoid: boolean): void {
     if (this.disposed) return;
     this.app?.setLenoxEnvironment?.(useVoid);
+  }
+
+  /* ── DER BEGLEITER: signature worlds (lenox mode only) ─────────────── */
+
+  setSignature(id: LenoxSignatureId): void {
+    if (this.disposed) return;
+    this.app?.setLenoxSignature?.(id);
+  }
+
+  setSignatureTarget(id: LenoxSignatureId): void {
+    if (this.disposed) return;
+    this.app?.setLenoxSignatureTarget?.(id);
+  }
+
+  setSignatureScan(t: number): void {
+    if (this.disposed || !Number.isFinite(t)) return;
+    this.app?.setLenoxSignatureScan?.(t);
+  }
+
+  commitSignature(): void {
+    if (this.disposed) return;
+    this.app?.commitLenoxSignature?.();
+  }
+
+  /**
+   * THE transform scalar (0..1, linear). One GSAP clock pushes it; the
+   * engine derives physics beats, front radius, particle flare and the
+   * environment blend from it — one clock, cannot drift.
+   */
+  setTransformProgress(p: number): void {
+    if (this.disposed || !Number.isFinite(p)) return;
+    this.app?.setLenoxTransformProgress?.(p);
   }
 
   setChamberEnergy(level01: number): void {

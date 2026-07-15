@@ -1,10 +1,13 @@
 import * as THREE from "three/webgpu";
 import {
+  atan,
   float,
   Fn,
+  mix,
   mx_fractal_noise_float,
   normalize,
   positionLocal,
+  positionWorld,
   screenCoordinate,
   smoothstep,
   uniform,
@@ -37,18 +40,80 @@ import {
  * capsules destroys the only signal that matters.
  */
 
-/** Near-black lacquer. The panel's own colour; almost never seen directly. */
-const LACQUER = new THREE.Color(0x05070a);
-/** Deep navy: the colour of what the lacquer reflects. Never emitted. */
-const REFLECTION_NAVY = new THREE.Color(0x16243a);
-/** The specular core — cold, restrained, never white. */
-const REFLECTION_SILVER = new THREE.Color(0x3a4450);
-/** Floor base: the liquid surface is black first, reflective second. */
-const FLOOR_GRAPHITE = new THREE.Color(0x030507);
-/** The controlled silver read borrowed from the matcap reference. */
-const FLOOR_SILVER = new THREE.Color(0x8c98a4);
-/** Cyan is only allowed as a faint cognition reflection. */
-const FLOOR_CYAN = new THREE.Color(0x274c55);
+/**
+ * SIGNATURE PALETTE — the six world colours, as uniforms instead of constants
+ * (DER BEGLEITER, Slice 1). Each exists twice: the CURRENT world and the
+ * TARGET world; the scan front mixes between them per fragment. Defaults are
+ * byte-identical to the previous constants (OBSIDIAN).
+ *
+ *   panelLacquer     — near-black lacquer; the panel's own colour
+ *   panelReflection  — what the lacquer reflects (was: deep navy); never emitted
+ *   panelSpecular    — the specular core; cold, restrained, never white
+ *   floorBase        — the liquid surface is base-colour first, reflective second
+ *   floorReflection  — the controlled read under Lenox (dark in bright worlds)
+ *   floorSheen       — the faint cognition reflection on the horizon
+ */
+const createSignatureUniforms = () => ({
+  panelLacquer: uniform(new THREE.Color(0x05070a)),
+  panelReflection: uniform(new THREE.Color(0x16243a)),
+  panelSpecular: uniform(new THREE.Color(0x3a4450)),
+  floorBase: uniform(new THREE.Color(0x030507)),
+  floorReflection: uniform(new THREE.Color(0x8c98a4)),
+  floorSheen: uniform(new THREE.Color(0x274c55)),
+  panelLacquerTo: uniform(new THREE.Color(0x05070a)),
+  panelReflectionTo: uniform(new THREE.Color(0x16243a)),
+  panelSpecularTo: uniform(new THREE.Color(0x3a4450)),
+  floorBaseTo: uniform(new THREE.Color(0x030507)),
+  floorReflectionTo: uniform(new THREE.Color(0x8c98a4)),
+  floorSheenTo: uniform(new THREE.Color(0x274c55)),
+  /** The reconstruction front: world-space origin (Lenox) and radius. */
+  scanOrigin: uniform(new THREE.Vector3(0, 0, 0)),
+  scanR: uniform(0),
+  /** Front edge visibility (0 outside a transform; pulsed by the clock). */
+  rim: uniform(0),
+  rimColor: uniform(new THREE.Color(0x9fe8f6)),
+});
+
+/**
+ * Per-fragment world blend: 0 = current world, 1 = target world (inside the
+ * front). scanR = 0 leaves everything at 0.
+ *
+ * Eine WIPE ändert Farbe entlang einer Linie; eine REKONSTRUKTION ist Materie
+ * mit unebener Kante (AD-Review). Deshalb:
+ *   – Anisotropie: der Radius wobbelt mit dem Azimut (zwei Sinusse, Amplitude
+ *     deutlich unter der Bandbreite — trap #7), die Front ist nie ein Zirkel.
+ *   – Bänder wachsen mit dem Radius, sonst dünnt die Kante beim Expandieren
+ *     zur Haarlinie aus.
+ *   – preGlow: die Front wirft Licht ~1 Band VORAUS auf die alte Welt — die
+ *     Veränderung ist verursacht, nicht gestempelt.
+ */
+const buildScanReads = (sig) => {
+  const rel = positionWorld.sub(sig.scanOrigin).toConst("scanRel");
+  const az = atan(rel.y, rel.x).toConst("scanAz");
+  const wobble = az
+    .mul(3)
+    .add(1.7)
+    .sin()
+    .mul(0.11)
+    .add(az.mul(5).sin().mul(0.06))
+    .mul(sig.scanR.mul(0.4).clamp(0, 1))
+    .toConst("scanWobble");
+  const scanD = rel.length().add(wobble).toConst("scanD");
+
+  const band = float(0.35).add(sig.scanR.mul(0.1)).toConst("scanBand");
+  const scanSig = float(1)
+    .sub(smoothstep(sig.scanR.sub(band), sig.scanR, scanD))
+    .toConst("scanSig");
+  const rimBand = smoothstep(sig.scanR.sub(band.mul(1.4)), sig.scanR.sub(band.mul(0.45)), scanD)
+    .mul(float(1).sub(smoothstep(sig.scanR.sub(band.mul(0.45)), sig.scanR.add(band.mul(0.15)), scanD)))
+    .mul(sig.rim)
+    .toConst("scanRimBand");
+  const preGlow = smoothstep(sig.scanR.add(band.mul(2.2)), sig.scanR.add(band.mul(0.2)), scanD)
+    .mul(float(1).sub(scanSig))
+    .mul(sig.rim)
+    .toConst("scanPreGlow");
+  return { scanSig, rimBand, preGlow };
+};
 
 const seeded = (n) => {
   const x = Math.sin(n * 12.9898) * 43758.5453;
@@ -91,7 +156,7 @@ const createSilverDust = () => {
   return points;
 };
 
-const createLiquidFloor = () => {
+const createLiquidFloor = (sig) => {
   const material = new THREE.MeshBasicNodeMaterial({
     toneMapped: false,
     transparent: true,
@@ -140,9 +205,10 @@ const createLiquidFloor = () => {
       .add(edgeFade.mul(0.38))
       .toConst("floorVignette");
 
-    const graphite = vec3(FLOOR_GRAPHITE.r, FLOOR_GRAPHITE.g, FLOOR_GRAPHITE.b);
-    const silver = vec3(FLOOR_SILVER.r, FLOOR_SILVER.g, FLOOR_SILVER.b);
-    const cyan = vec3(FLOOR_CYAN.r, FLOOR_CYAN.g, FLOOR_CYAN.b);
+    const { scanSig, rimBand, preGlow } = buildScanReads(sig);
+    const graphite = mix(sig.floorBase, sig.floorBaseTo, scanSig);
+    const silver = mix(sig.floorReflection, sig.floorReflectionTo, scanSig);
+    const cyan = mix(sig.floorSheen, sig.floorSheenTo, scanSig);
 
     const hash = screenCoordinate.xy
       .dot(vec2(12.9898, 78.233))
@@ -157,7 +223,22 @@ const createLiquidFloor = () => {
       .add(silver.mul(reflectionCore.mul(0.42).add(ripple)))
       .add(cyan.mul(horizonSheen))
       .mul(vignette)
+      // Die Front wirft ihr Licht voraus auf die alte Fläche, dann die Kante.
+      .add(sig.rimColor.mul(preGlow.mul(0.14)))
+      .add(sig.rimColor.mul(rimBand.mul(0.55)))
       .add(hash);
+  })();
+
+  // The liquid dissolves at its bounds instead of ending as a cut slab. On
+  // OBSIDIAN this was invisible (black fading over black); a bright world
+  // shows the plane's actual edges, so the fade has to live in the alpha.
+  material.opacityNode = Fn(() => {
+    const p = positionLocal.xy.toVar("floorAlphaP");
+    const fade = float(1)
+      .sub(smoothstep(float(0.62), float(1.0), p.x.abs()))
+      .mul(float(1).sub(smoothstep(float(0.7), float(1.02), p.y.abs())))
+      .clamp(0, 1);
+    return fade.mul(0.78);
   })();
 
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -168,6 +249,7 @@ const createLiquidFloor = () => {
 };
 
 export function createLenoxBackdrop() {
+  const signature = createSignatureUniforms();
   const uniforms = {
     /** Light direction, driven by the pointer. Angle only — never intensity. */
     light: uniform(new THREE.Vector3(0.35, 0.4, 1)),
@@ -177,16 +259,30 @@ export function createLenoxBackdrop() {
     center: uniform(new THREE.Vector2(0, 0)),
     /** How deep the pool behind him is. */
     depth: uniform(0.62),
+    ...signature,
   };
 
   const material = new THREE.MeshBasicNodeMaterial({
     toneMapped: false,
     depthWrite: true,
-    side: THREE.FrontSide,
+    /**
+     * DoubleSide, and it is load-bearing: the camera views the sim from -z,
+     * so it looks at this plane's BACK face. As FrontSide the panel was
+     * silently culled since the day it was written — invisible black in
+     * front of visible black, so nobody could tell. ALABASTER made the void
+     * behind it ivory, and the missing panel finally had a colour.
+     */
+    side: THREE.DoubleSide,
   });
 
   material.colorNode = Fn(() => {
     const p = positionLocal.xy.mul(uniforms.extent).toVar("bdP");
+
+    // Die Rekonstruktionskante ist eine DRUCKWELLE im Lack, kein Leuchtstrich:
+    // sie kippt die Oberflächen-Normale entlang der Front (Linseneffekt auf
+    // die Reflexionen) — berechnet VOR der Beleuchtung, damit Spec und
+    // Fresnel physisch reagieren statt übermalt zu werden.
+    const scan = buildScanReads(signature);
 
     // --- the surface: three broad facet bands ------------------------------
     // Sines, because their derivatives are exact and free — a noise-based
@@ -220,9 +316,17 @@ export function createLenoxBackdrop() {
       .add(t3.cos().mul(a3.mul(f3).mul(d3.y)))
       .toConst("bdDhdy");
 
-    const n = normalize(vec3(dhdx.negate(), dhdy.negate(), float(1))).toConst(
-      "bdNormal",
-    );
+    // Druckwellen-Verkippung: radial von der Front weg, Stärke = Kantenband.
+    const rimTilt = scan.rimBand.mul(0.55).toConst("bdRimTilt");
+    const relN = positionWorld.sub(signature.scanOrigin).toConst("bdRelN");
+    const relLen = relN.length().max(0.001).toConst("bdRelLen");
+    const n = normalize(
+      vec3(
+        dhdx.negate().add(relN.x.div(relLen).mul(rimTilt)),
+        dhdy.negate().add(relN.y.div(relLen).mul(rimTilt)),
+        float(1),
+      ),
+    ).toConst("bdNormal");
 
     // --- roughness varies across the panel ---------------------------------
     // Lacquer is never uniform. This is the only noise in the shader, and it
@@ -273,22 +377,26 @@ export function createLenoxBackdrop() {
       .clamp(0, 1)
       .toConst("bdPool");
 
-    const lacquer = vec3(LACQUER.r, LACQUER.g, LACQUER.b);
-    const navy = vec3(
-      REFLECTION_NAVY.r,
-      REFLECTION_NAVY.g,
-      REFLECTION_NAVY.b,
+    const lacquer = mix(signature.panelLacquer, signature.panelLacquerTo, scan.scanSig);
+    const navy = mix(
+      signature.panelReflection,
+      signature.panelReflectionTo,
+      scan.scanSig,
     );
-    const silver = vec3(
-      REFLECTION_SILVER.r,
-      REFLECTION_SILVER.g,
-      REFLECTION_SILVER.b,
+    const silver = mix(
+      signature.panelSpecular,
+      signature.panelSpecularTo,
+      scan.scanSig,
     );
 
     const color = lacquer
       .add(navy.mul(wash.add(fresnel.mul(0.35))))
       .add(silver.mul(spec))
       .mul(pool)
+      // Vorauslicht auf der alten Welt, dann die Kante selbst — die Welle
+      // hat die Reflexionen schon über die Normale verbogen.
+      .add(signature.rimColor.mul(scan.preGlow.mul(0.1)))
+      .add(signature.rimColor.mul(scan.rimBand.mul(0.5)))
       .toConst("bdColor");
 
     // Dither. A panel this dark and this smooth WILL band in 8-bit, and visible
@@ -309,9 +417,25 @@ export function createLenoxBackdrop() {
   mesh.renderOrder = -1000;
   object.add(mesh);
 
-  const floor = createLiquidFloor();
+  const floor = createLiquidFloor(signature);
   const dust = createSilverDust();
   object.add(floor, dust);
+
+  /** panel* / floor* palette keys → the matching uniform pair. */
+  const paletteMap = [
+    ["panel", "lacquer", "panelLacquer"],
+    ["panel", "reflection", "panelReflection"],
+    ["panel", "specular", "panelSpecular"],
+    ["floor", "base", "floorBase"],
+    ["floor", "reflection", "floorReflection"],
+    ["floor", "sheen", "floorSheen"],
+  ];
+  const writePalette = (palette, suffix) => {
+    for (const [group, key, name] of paletteMap) {
+      const hex = palette?.[group]?.[key];
+      if (hex !== undefined) uniforms[name + suffix].value.setHex(hex);
+    }
+  };
 
   return {
     object,
@@ -319,10 +443,37 @@ export function createLenoxBackdrop() {
     floor,
     dust,
     uniforms,
+    /** Instant world (boot / reduced motion): current AND target. */
+    setSignature(palette) {
+      writePalette(palette, "");
+      writePalette(palette, "To");
+      uniforms.scanR.value = 0;
+      uniforms.rim.value = 0;
+    },
+    /** Arm the world behind the front. */
+    setSignatureTarget(palette) {
+      writePalette(palette, "To");
+      if (palette?.rim !== undefined) uniforms.rimColor.value.setHex(palette.rim);
+    },
+    /** Drive the front (world units) and its edge visibility. */
+    setScan(radius, rim) {
+      uniforms.scanR.value = Math.max(radius, 0);
+      uniforms.rim.value = Math.max(Math.min(rim ?? 0, 1), 0);
+    },
+    /** The target world becomes the world. */
+    commitSignature() {
+      for (const [, , name] of paletteMap) {
+        uniforms[name].value.copy(uniforms[name + "To"].value);
+      }
+      uniforms.scanR.value = 0;
+      uniforms.rim.value = 0;
+    },
     configure({ center, panelZ, halfW, halfH, aspect }) {
       mesh.position.set(center.x, center.y, panelZ);
       mesh.scale.set(halfW, halfH, 1);
       uniforms.extent.value.set(halfW, halfH);
+      // The reconstruction front radiates from him.
+      uniforms.scanOrigin.value.copy(center);
 
       const floorY = center.y - halfH * (aspect < 0.85 ? 0.48 : 0.42);
       floor.position.set(center.x, floorY, center.z + 0.34);

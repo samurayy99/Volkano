@@ -34,6 +34,32 @@ export type LenoxEmotion =
  */
 export type LenoxReaction = "laugh" | "startle" | "tired" | "confirm";
 
+/**
+ * How the stage is composed. "side" — he steps aside (desktop). "banded" — he
+ * steps up (phone). Same gesture, different axis. Decided once, in
+ * `src/app/stage/compositionMode.ts`, and pushed here.
+ */
+export type CompositionMode = "side" | "banded";
+
+/**
+ * The signature worlds (DER BEGLEITER). Lenox himself is never themed — a
+ * signature is the room he stands in: backdrop, floor, his reflections, and
+ * the DOM token set on the stage side.
+ */
+export type LenoxSignatureId = "obsidian" | "alabaster";
+
+/**
+ * Journey camera pose (DER BEGLEITER, Slice 2). Frustum-relative units:
+ * zoom multiplies distance; shifts are in half-widths/-heights, so a pose
+ * composes identically on every viewport. The engine eases; the scroll
+ * director owns the values.
+ */
+export type LenoxJourneyPose = {
+  zoom?: number;
+  shiftX?: number;
+  shiftY?: number;
+};
+
 /** Source-chamber conversation states (V2 signal layer). */
 export type ConversationState =
   | "dormant"
@@ -95,6 +121,18 @@ export interface FlowEngineApi {
   setLenoxEmotion: (emotion: LenoxEmotion) => void;
   /** Temporary reaction (laugh/startle/tired). Lenox mode only. */
   setLenoxReaction: (reaction: LenoxReaction) => void;
+  /** Which way he makes room when the page is built. Lenox mode only. */
+  setCompositionMode: (mode: CompositionMode) => void;
+  /** Instant signature world (boot / reduced motion). Lenox mode only. */
+  setSignature: (id: LenoxSignatureId) => void;
+  /** Arm the world behind the reconstruction front. Lenox mode only. */
+  setSignatureTarget: (id: LenoxSignatureId) => void;
+  /** Drive the front, 0..1 — ONE clock outside owns the easing. */
+  setSignatureScan: (t: number) => void;
+  /** The target world becomes the world; front resets. */
+  commitSignature: () => void;
+  /** The one transform scalar: physics, front, flare and env derive from it. */
+  setTransformProgress: (p: number) => void;
   dispose: () => void;
 }
 

@@ -18,7 +18,7 @@
   line-height: 1.6;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(200, 204, 208, 0.62);
+  color: rgb(var(--silver-ch) / 0.62);
   /* The frame belongs to the room, not to the viewport. It arrives with him. */
   opacity: 0;
   transition: opacity 900ms var(--ease-out-expo);
@@ -55,6 +55,99 @@
   bottom: 0;
   right: 0;
   align-items: flex-end;
+}
+
+/* ── BANDED: the four corners become ONE BAR ──────────────────────────────
+ *
+ * At 390px a corner is not a corner, it is the content. The bottom-left readout
+ * was a fixed element sitting on top of a scrolling column: it collided, and
+ * padding cannot fix that — it only delays it until the copy runs a line longer.
+ * Collapsing the frame into a bar does not fix the overlap; it removes the
+ * geometry that made it possible.
+ *
+ * The bar lives ABOVE the stage. It never enters it.
+ */
+.hud[data-mode="banded"] {
+  display: grid;
+  /* max-content, not auto: the brand is `nowrap`, and an `auto` track will happily
+     shrink below it and let the status readout print through the last letters. */
+  grid-template-columns: max-content 1fr max-content;
+  /* ONE source for the safe area, and it is the padding. This row used to be
+     `calc(safe-top + system-bar)` while the box ALSO carried `padding-top:
+     safe-top` — so the notch was paid for twice and the bar sat a full notch too
+     low. Invisible in an emulator, where env() resolves to 0. */
+  grid-template-rows: var(--system-bar) 1fr;
+  align-items: center;
+  column-gap: 12px;
+  padding-inline: var(--content-pad);
+  padding-top: var(--safe-top);
+}
+
+/* The corners stop being corners and become cells. No absolute positioning, so
+   nothing can be placed over anything by accident. The base padding carries its
+   own safe-area insets — they would be the second source, so they go. */
+.hud[data-mode="banded"] .corner {
+  position: static;
+  grid-row: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+}
+
+.hud[data-mode="banded"] .topLeft {
+  grid-column: 1;
+}
+
+/* The pulse sits beside the brand, separated by a hairline — in mono at the same
+   size the two run together into "VOLKAN AI STUDIOONLINE". The entity NAME is
+   redundant next to the brand on a phone; the proof that he runs is not. */
+.hud[data-mode="banded"] .bottomLeft {
+  grid-column: 2;
+  justify-self: start;
+  min-width: 0;
+  padding-left: 14px;
+  border-left: 1px solid rgb(var(--silver-ch) / 0.16);
+}
+
+.hud[data-mode="banded"] .bottomLeft > span:first-child {
+  display: none;
+}
+
+.hud[data-mode="banded"] .bottomLeft .status {
+  margin-top: 0;
+}
+
+.hud[data-mode="banded"] .topRight {
+  grid-column: 3;
+  justify-content: flex-end;
+}
+
+.hud[data-mode="banded"] .bottomRight {
+  display: none;
+}
+
+.hud[data-mode="banded"] .brand {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}
+
+/* A thumb is not a cursor: 48x48. Hit area only — the key looks the same. */
+.hud[data-mode="banded"] .locale {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+/* RECOGNITION: the pulse, and nothing else. He has just spoken — a masthead would
+   turn the moment into the top of a web page. */
+.hud[data-framed="false"] .topLeft,
+.hud[data-framed="false"] .topRight {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* The brand is the one line allowed to be brighter than the instrumentation. */

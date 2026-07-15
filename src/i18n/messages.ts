@@ -41,11 +41,17 @@ export type Messages = {
   entity: string;
   status: Record<EntityStatus, string>;
   /**
-   * First contact. He states what is missing and what he is about to do about
-   * it — and then he does it. He asks nothing here: a visitor who has known him
-   * for four seconds cannot answer a question about a site that does not exist.
+   * First contact. He states what is undecided — and then he asks the ONE
+   * question a stranger can answer in two seconds: who defines the signature.
+   * Not a sales intake, a move in a game (DER BEGLEITER, Akt II).
    */
   greeting: string;
+  /** The question and its two answers on the hairline. */
+  calibration: {
+    question: string;
+    you: string;
+    lenox: string;
+  };
   region: Record<Region, string>;
   /**
    * What each region actually contains. Two rules, and they are the same rule:
@@ -64,6 +70,36 @@ export type Messages = {
       pending?: string;
     }
   >;
+  /**
+   * Chrome of the case stage (WORK). The case content itself lives in
+   * `src/app/stage/cases.ts`, beside its timing — a beat script split across
+   * two files would drift.
+   */
+  caseUi: {
+    run: string;
+    close: string;
+    again: string;
+    index: string;
+  };
+  /**
+   * The CONTACT uplink — the one real action. Three outcomes, three truths:
+   * sent (amber, it happened), unwired (no relay key on this environment),
+   * failed (attempted and did not happen). He never claims a send he did not
+   * make.
+   */
+  uplink: {
+    brief: string;
+    placeholder: string;
+    action: string;
+    sending: string;
+    sentTitle: string;
+    sentBody: string;
+    unwiredTitle: string;
+    unwiredBody: string;
+    failedTitle: string;
+    failedBody: string;
+    invalid: string;
+  };
 };
 
 const de: Messages = {
@@ -76,7 +112,12 @@ const de: Messages = {
     building: "BAUT",
     unavailable: "NICHT VERFÜGBAR",
   },
-  greeting: "Ich bin Lenox. Diese Seite existiert noch nicht. Also baue ich sie.",
+  greeting: "Ich bin Lenox. Diese Welt ist noch nicht entschieden.",
+  calibration: {
+    question: "Bevor ich sie baue — wer bestimmt ihre Handschrift?",
+    you: "DU",
+    lenox: "LENOX",
+  },
   region: {
     experience: "EXPERIENCE",
     systems: "SYSTEMS",
@@ -120,9 +161,8 @@ const de: Messages = {
       ],
     },
     work: {
-      lead: "Arbeiten.",
+      lead: "Drei Fälle. Ich spiele sie dir vor — Schritt für Schritt.",
       modules: [],
-      pending: "Diesen Bereich habe ich noch nicht gebaut.",
     },
     volkan: {
       lead: "Der Mensch dahinter.",
@@ -132,9 +172,29 @@ const de: Messages = {
     contact: {
       lead: "Kontakt.",
       modules: [],
-      pending:
-        "Noch nicht verdrahtet. Ich zeige keinen Weg, den ich nicht wirklich habe.",
     },
+  },
+  caseUi: {
+    run: "REPLAY",
+    close: "SCHLIESSEN",
+    again: "NOCH EINMAL",
+    index: "ALLE FÄLLE",
+  },
+  uplink: {
+    brief:
+      "Eine Adresse genügt. Ich stelle die System-Übersicht zusammen und sende sie — jetzt, während du zusiehst.",
+    placeholder: "name@firma.ch",
+    action: "SENDEN",
+    sending: "ÜBERTRAGUNG LÄUFT",
+    sentTitle: "GESENDET",
+    sentBody:
+      "Wirklich versendet, kein Mock. Prüfe deinen Posteingang — Absender: lenox@volkanaistudio.com.",
+    unwiredTitle: "KEIN RELAY KONFIGURIERT",
+    unwiredBody:
+      "Auf dieser Umgebung fehlt der Versandschlüssel. Ich behaupte keinen Versand, den es nicht gab.",
+    failedTitle: "ÜBERTRAGUNG FEHLGESCHLAGEN",
+    failedBody: "Nichts wurde gesendet. Versuch es gleich noch einmal.",
+    invalid: "Das ist keine gültige Adresse.",
   },
 };
 
@@ -146,7 +206,12 @@ const en: Partial<Messages> = {
     building: "BUILDING",
     unavailable: "UNAVAILABLE",
   },
-  greeting: "I am Lenox. This page does not exist yet. So I will build it.",
+  greeting: "I am Lenox. This world is not decided yet.",
+  calibration: {
+    question: "Before I build it — who defines its signature?",
+    you: "YOU",
+    lenox: "LENOX",
+  },
   content: {
     experience: {
       lead: "What you just watched.",
@@ -183,9 +248,8 @@ const en: Partial<Messages> = {
       ],
     },
     work: {
-      lead: "Work.",
+      lead: "Three cases. I will replay them for you — step by step.",
       modules: [],
-      pending: "I have not built this region yet.",
     },
     volkan: {
       lead: "The human behind it.",
@@ -195,8 +259,29 @@ const en: Partial<Messages> = {
     contact: {
       lead: "Contact.",
       modules: [],
-      pending: "Not wired yet. I do not show a path I do not actually have.",
     },
+  },
+  caseUi: {
+    run: "REPLAY",
+    close: "CLOSE",
+    again: "AGAIN",
+    index: "ALL CASES",
+  },
+  uplink: {
+    brief:
+      "One address is enough. I will assemble the system overview and send it — now, while you watch.",
+    placeholder: "name@company.com",
+    action: "SEND",
+    sending: "TRANSMITTING",
+    sentTitle: "SENT",
+    sentBody:
+      "Actually sent, not mocked. Check your inbox — sender: lenox@volkanaistudio.com.",
+    unwiredTitle: "NO RELAY CONFIGURED",
+    unwiredBody:
+      "This environment has no sending key. I do not claim a send that did not happen.",
+    failedTitle: "TRANSMISSION FAILED",
+    failedBody: "Nothing was sent. Try again in a moment.",
+    invalid: "That is not a valid address.",
   },
 };
 
@@ -217,7 +302,10 @@ export function messagesFor(locale: Locale): Messages {
     entity: partial.entity ?? de.entity,
     status: { ...de.status, ...partial.status },
     greeting: partial.greeting ?? de.greeting,
+    calibration: { ...de.calibration, ...partial.calibration },
     region: { ...de.region, ...partial.region },
     content: { ...de.content, ...partial.content },
+    caseUi: { ...de.caseUi, ...partial.caseUi },
+    uplink: { ...de.uplink, ...partial.uplink },
   };
 }

@@ -15,8 +15,12 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  /* Clear of his silhouette: the line starts at his edge, not on his face. */
-  padding-left: 96px;
+  /* Clear of his silhouette: the line starts at his edge, not on his face.
+     The head's projected radius scales with the viewport HEIGHT (the camera
+     frames the presence by height), so a fixed 96px collided with his cheek
+     in smaller windows — video verdict 2026-07-14, frame_005 caught the
+     sentence churning on his face. */
+  padding-left: max(96px, 23vh);
   pointer-events: none;
 }
 
@@ -36,18 +40,40 @@
   transition: transform 600ms var(--ease-out-expo);
 }
 
+/*
+ * Seine Stimme hat zwei Register (AD-Rescue): "machine" (mono, klein, das
+ * Instrument spricht Status) und "world" (Display-Face, GROSS — wenn er
+ * etwas Entscheidendes sagt, trägt die Typografie es). Beide werden von der
+ * Hairline her AUFGEDECKT (clip-wipe), nie gescrambelt.
+ */
 .speech {
   margin: 0;
-  max-width: 34ch;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.7;
-  letter-spacing: 0.04em;
+  max-width: 18ch;
   color: var(--bone);
-  /* The glyph churn must not reflow the sentence around it. */
-  min-height: 1.7em;
-  opacity: 0;
-  transition: opacity 400ms var(--ease-out-expo);
+  clip-path: inset(0 100% 0 0);
+  animation: speechWipe 900ms var(--ease-out-expo) 120ms forwards;
+}
+
+.speech[data-voice="machine"] {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 0.05em;
+  max-width: 34ch;
+}
+
+.speech[data-voice="world"] {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3vw, 42px);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: 0.005em;
+}
+
+@keyframes speechWipe {
+  to {
+    clip-path: inset(0 -4% 0 0);
+  }
 }
 
 /* The settled sentence, for screen readers only. The visible text is aria-hidden
@@ -68,42 +94,148 @@
   transform: scaleX(1);
 }
 
-.contact[data-drawn="true"] .speech {
-  opacity: 1;
-  transition-delay: 500ms;
+/* Sentence and answers stack on the same line's axis. */
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ── Die Frage: zwei Antworten auf der Hairline ──────────────────────────
+   Keine Pills, kein Chrome — Worte auf der Linie, in seiner Grammatik.
+   44px Ziele, Fokus-Ring cyan (dieselben Gesetze wie überall).
+
+   pointer-events: auto ist tragend — der .contact-Container schaltet Klicks
+   ab (die Linie darf nie den Canvas verdecken), also müssen die Antworten
+   sie hier explizit zurückholen. Ohne das sind sie hübsch und tot. */
+.answers {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  pointer-events: auto;
+  animation: answersIn 600ms var(--ease-out-expo) both;
+}
+
+.answer {
+  appearance: none;
+  border: 0;
+  background: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  justify-content: center;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  /* Die wichtigste Interaktion der Seite spricht nicht in 13px. */
+  font-size: 17px;
+  letter-spacing: 0.24em;
+  color: var(--cyan);
+  cursor: pointer;
+  transition: color 240ms var(--ease-out-expo), text-shadow 240ms ease;
+}
+
+.answer:hover,
+.answer:focus-visible {
+  text-shadow: 0 0 14px var(--cyan-glow);
+  outline: none;
+}
+
+.answer:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: 3px;
+}
+
+.answerDivider {
+  width: 26px;
+  height: 1px;
+  background: var(--bone-faint);
+}
+
+.pickEntry {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+}
+
+/* Der Halbsatz unter einem Signatur-Wort — klein, nie lauter als das Wort. */
+.hint {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: var(--bone-faint);
+}
+
+@keyframes answersIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /*
- * Narrow screens: he fills the frame, so there is no room beside him. The line
- * turns and the sentence sits under him — same grammar, rotated.
+ * BANDED: there is no room beside him, so the line turns and the sentence sits
+ * under him — same grammar, rotated with the composition.
+ *
+ * It is anchored to `--workspace-top`, the seam. That is not decoration: it means
+ * the sentence grows into the space the page is about to occupy, and it is
+ * structurally incapable of entering the stage above it. The old rule anchored it
+ * to `bottom: 26vh` — a number, which is how these things end up on a face.
  */
-@media (max-width: 720px) {
-  .contact {
-    top: auto;
-    bottom: 26vh;
-    left: 0;
-    right: 0;
-    flex-direction: column;
-    gap: 16px;
-    padding: 0 28px;
-  }
+:global(.lenox-stage[data-composition="banded"]) .contact {
+  top: var(--workspace-top);
+  bottom: auto;
+  left: 0;
+  right: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 var(--content-pad);
+}
 
-  .hairline {
-    width: 44px;
-    background: linear-gradient(90deg, transparent, var(--bone-dim), transparent);
-    transform-origin: center;
-  }
+:global(.lenox-stage[data-composition="banded"]) .hairline {
+  width: 44px;
+  background: linear-gradient(90deg, transparent, var(--bone-dim), transparent);
+  transform-origin: center;
+}
 
-  .speech {
-    max-width: 30ch;
-    text-align: center;
-    font-size: 12px;
-  }
+:global(.lenox-stage[data-composition="banded"]) .speech {
+  text-align: center;
+}
+
+:global(.lenox-stage[data-composition="banded"]) .speech[data-voice="machine"] {
+  max-width: 30ch;
+  font-size: 12px;
+}
+
+:global(.lenox-stage[data-composition="banded"]) .speech[data-voice="world"] {
+  max-width: 16ch;
+  font-size: clamp(21px, 6vw, 30px);
+}
+
+:global(.lenox-stage[data-composition="banded"]) .column {
+  align-items: center;
+}
+
+:global(.lenox-stage[data-composition="banded"]) .answer {
+  align-items: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hairline,
-  .speech {
+  .hairline {
     transition: none;
+  }
+  .speech {
+    animation: none;
+    clip-path: none;
+  }
+  .answers {
+    animation: none;
   }
 }
