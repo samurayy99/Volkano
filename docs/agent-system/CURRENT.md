@@ -1,8 +1,8 @@
 # Current Handoff
 
 **Date:** 2026-07-15
-**Writer state:** Codex is executing the approved Design Playground visual gate. It is the only writer.
-**Repository:** rescue checkpoint `5c84922` exists on `codex/lenox-design-playground`; no destructive cleanup is allowed.
+**Writer state:** No writer is active. The Design Playground is waiting at the human visual gate.
+**Repository:** rescue checkpoint `5c84922` and visual-direction checkpoint `473cdb6` exist on `codex/lenox-design-playground`; no destructive cleanup is allowed.
 
 ## Product Direction
 
@@ -25,6 +25,13 @@ They share semantic content and LENOX, but must differ in layout, navigation, ty
 
 No new template runtime code may be written until three independent visual targets have been generated and accepted or refined.
 
+Three desktop candidates now exist under `docs/review/lenox-design-playground-visual-gate/`:
+- `gravity-desktop.png`
+- `atelier-desktop.png`
+- `signal-desktop.png`
+
+They establish distinct composition, navigation, typography, and LENOX roles. They have not received human visual acceptance and do not complete Milestone 1. Mobile keyframes, real-asset PROOF states, reconstruction frames, and the shared six-phase reconstruction storyboard remain open.
+
 The current run may:
 - document the product truth
 - capture and inspect the current visual baseline
@@ -37,6 +44,17 @@ The current run may not:
 - implement GRAVITY, ATELIER, or SIGNAL components
 - migrate signature engine APIs
 - push or deploy
+
+## Visual Gate Checkpoint Verification
+
+Run at visual-direction checkpoint `473cdb6`:
+- `node --test src/app/stage/*.test.ts` -> 16 passed, 0 failed; Node emitted the existing module-type warnings
+- `npx tsc --noEmit` -> passed
+- `npm run build` -> passed; 5/5 pages generated
+- `npm run lint` -> failed on one pre-existing `prefer-const` error in `src/lenox-engine/particleSystem.ts:249`; 56 warnings remain, mostly in bundled skill examples
+- `git status --short --branch` -> clean on `codex/lenox-design-playground`
+
+The visual-gate commit changes documentation and image references only. Runtime code at `473cdb6` is identical to the verified rescue runtime at `5c84922`.
 
 ## Current Code Lines
 
@@ -113,7 +131,7 @@ Legacy or direction-specific:
 - the present LENOX facial acting and some dense/stacked mobile compositions, which still need an approved template-specific art direction
 - the `VOLKAN` branch remains advertised as pending rather than implemented
 
-The next build should extract the reusable contracts into a template registry plus one shared content source before creating any new visual template. It should not treat the current two signatures as two of the required three websites.
+After the full visual gate receives human acceptance, the first runtime slice should extract the reusable contracts into a template registry plus one shared content source before creating any new visual template. It must not treat the current two signatures as two of the required three websites.
 ## Important Files
 
 - `AGENTS.md` - Codex project instructions
