@@ -536,6 +536,11 @@ class mlsMpmSimulator {
       maxParticles,
       "riftFlightTargetData",
     );
+    this.gravityCreationStartBuffer = new StructuredArray(
+      { gravityCreationStart: { type: "vec4" } },
+      maxParticles,
+      "gravityCreationStartData",
+    );
 
     const cellCount = this.gridSize.x * this.gridSize.y * this.gridSize.z;
     const cellStruct = {
@@ -573,6 +578,12 @@ class mlsMpmSimulator {
     this.uniforms.postEnterArrestT = uniform(0);
     this.uniforms.postEnterFlightSec = uniform(0);
     this.uniforms.postEnterFlightDebugFrozen = uniform(0);
+    this.uniforms.gravityCreationP = uniform(0);
+    this.uniforms.gravityScrollP = uniform(0);
+    this.uniforms.gravityPortrait = uniform(0);
+    this.uniforms.gravityEnergy = uniform(0.38);
+    this.uniforms.gravityAttention = uniform(0.7);
+    this.uniforms.gravityTension = uniform(0.12);
     this.uniforms.chamberFlowCenter = uniform(new THREE.Vector3());
     this.uniforms.riftTargetMin = uniform(new THREE.Vector3(32, 5.5, 58));
     this.uniforms.riftTargetMax = uniform(new THREE.Vector3(32, 58.5, 58));
@@ -1592,7 +1603,177 @@ class mlsMpmSimulator {
       particle.get("heat").assign(previousHeat);
       particle.get("dissolveState").assign(vec2(flightActiveT, absorbT));
     })().compute(1);
+
+    this.kernels.initGravityCreation = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+      const start = this.particleBuffer
+        .element(instanceIndex)
+        .get("position")
+        .xyz;
+      this.gravityCreationStartBuffer
+        .element(instanceIndex)
+        .get("gravityCreationStart")
+        .assign(vec4(start, hash01Node(29.731)));
+    })().compute(1);
+
+    /**
+     * Exclusive deterministic flight for THE COLLAPSE. This is authored
+     * kinematics, not a claim of physically balanced orbit: one dispatch
+     * moves current matter through Fall, Accretion and typographic mass.
+     */
+    this.kernels.gravityCreation = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+
+      const particle = this.particleBuffer.element(instanceIndex);
+      const previous = particle.get("position").xyz.toConst("gravityPrevious");
+      const start = this.gravityCreationStartBuffer
+        .element(instanceIndex)
+        .get("gravityCreationStart")
+        .xyz.toConst("gravityStart");
+      const p = this.uniforms.gravityCreationP.clamp(0, 1).toConst("gravityP");
+      const portrait = this.uniforms.gravityPortrait.clamp(0, 1).toConst("gravityPortraitT");
+      const h0 = hash01Node(11.173).toConst("gravityHash0");
+      const h1 = hash01Node(37.911).toConst("gravityHash1");
+      const h2 = hash01Node(73.177).toConst("gravityHash2");
+      const angle = h0.mul(float(TAU)).toConst("gravityAngle");
+      const orbitX = sin(angle.add(float(Math.PI * 0.5)));
+      const orbitY = sin(angle);
+      const radius = float(2.4).add(pow(h1, float(0.58)).mul(22));
+      const locus = mix(vec3(32, 23.5, 35), vec3(32, 25.5, 34), portrait)
+        .toConst("gravityLocus");
+
+      const fallT = smoothstep(float(1.5 / 10.5), float(4 / 10.5), p);
+      const accretionT = smoothstep(float(4 / 10.5), float(6.5 / 10.5), p);
+      const precipitationT = smoothstep(float(6.5 / 10.5), float(9 / 10.5), p);
+      const arrivalT = smoothstep(float(9 / 10.5), float(1), p);
+
+      const fallTarget = vec3(
+        locus.x.add(h0.sub(0.5).mul(7)),
+        locus.y.add(h1.sub(0.5).mul(4)),
+        locus.z.add(h2.sub(0.5).mul(5)),
+      ).toConst("gravityFallTarget");
+
+      const diskDesktop = vec3(
+        locus.x.add(orbitX.mul(radius)),
+        locus.y.add(orbitY.mul(radius).mul(0.28)).add(h2.sub(0.5).mul(1.2)),
+        locus.z.add(orbitY.mul(radius).mul(0.72)),
+      );
+      const diskPortrait = vec3(
+        locus.x.add(orbitX.mul(radius)),
+        locus.y.add(orbitY.mul(radius).mul(0.055)).add(h2.sub(0.5).mul(0.7)),
+        locus.z.add(orbitY.mul(radius).mul(0.34)),
+      );
+      const diskTarget = mix(diskDesktop, diskPortrait, portrait).toConst("gravityDiskTarget");
+
+      const row = int(instanceIndex).mod(int(7));
+      const lineXDesktop = float(5.5).add(h0.mul(25));
+      const lineYDesktop = float(40).sub(float(row).mul(2.45)).add(h2.sub(0.5).mul(0.34));
+      const lineXPortrait = float(9).add(h0.mul(46));
+      const lineYPortrait = float(22).sub(float(row).mul(2.05)).add(h2.sub(0.5).mul(0.3));
+      const typeTarget = vec3(
+        mix(lineXDesktop, lineXPortrait, portrait),
+        mix(lineYDesktop, lineYPortrait, portrait),
+        float(30).add(h1.sub(0.5).mul(2.2)),
+      ).toConst("gravityTypeTarget");
+
+      const dustTarget = vec3(
+        float(4).add(h0.mul(56)),
+        float(5).add(h1.mul(54)),
+        float(18).add(h2.mul(34)),
+      ).toConst("gravityDustTarget");
+
+      const curl = vec3(
+        sin(angle.mul(3).add(p.mul(5.1))),
+        sin(angle.mul(2).add(p.mul(4.3))),
+        sin(angle.mul(4).sub(p.mul(3.7))),
+      )
+        .mul(accretionT)
+        .mul(float(1).sub(precipitationT))
+        .mul(0.85);
+
+      const newPosition = mix(
+        mix(mix(mix(start, fallTarget, fallT), diskTarget, accretionT), typeTarget, precipitationT),
+        dustTarget,
+        arrivalT,
+      )
+        .add(curl)
+        .toConst("gravityCreationPosition");
+      const velocity = newPosition.sub(previous).mul(5).toConst("gravityCreationVelocity");
+      const coreHeat = float(1)
+        .sub(smoothstep(float(1.5), float(13), newPosition.sub(locus).length()))
+        .mul(accretionT.max(arrivalT))
+        .clamp(0, 1);
+      const cold = vec3(0.16, 0.23, 0.3);
+      const signal = vec3(0.18, 0.78, 0.92);
+
+      particle.get("position").assign(newPosition);
+      particle.get("velocity").assign(velocity);
+      particle.get("direction").assign(velocity);
+      particle.get("density").assign(1);
+      particle.get("C").assign(mat3(0));
+      particle.get("color").assign(mix(cold, signal, coreHeat));
+      particle.get("heat").assign(coreHeat);
+      particle.get("dissolveState").assign(vec2(0, 0));
+    })().compute(1);
+
+    /** Arrival budget: one direct dust dispatch, no grid clear/P2G/G2P solver. */
+    this.kernels.gravityLiving = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+      const particle = this.particleBuffer.element(instanceIndex);
+      const h0 = hash01Node(11.173);
+      const h1 = hash01Node(37.911);
+      const h2 = hash01Node(73.177);
+      const scroll = this.uniforms.gravityScrollP.clamp(0, 1);
+      const energy = this.uniforms.gravityEnergy.clamp(0, 1);
+      const attention = this.uniforms.gravityAttention.clamp(0, 1);
+      const tension = this.uniforms.gravityTension.clamp(0, 1);
+      const fall = fract(
+        h1
+          .add(time.mul(float(0.004).add(energy.mul(0.004))))
+          .add(scroll.mul(0.12)),
+      );
+      const sway = sin(time.mul(float(0.16).add(energy.mul(0.14))).add(h0.mul(float(TAU))))
+        .mul(float(0.34).add(energy.mul(0.52)))
+        .mul(float(1).sub(tension.mul(0.34)));
+      const position = vec3(
+        float(4).add(h0.mul(56)).add(sway),
+        float(5).add(fall.mul(54)),
+        float(18)
+          .add(h2.mul(34))
+          .add(scroll.mul(h2.sub(0.5).mul(4)))
+          .add(attention.mul(h0.sub(0.5)).mul(1.4)),
+      );
+      const velocity = vec3(sway.mul(0.04), -0.32, 0);
+      const signalPin = smoothstep(float(0.965), float(0.995), h2)
+        .mul(float(0.35).add(energy.mul(0.65)));
+      particle.get("position").assign(position);
+      particle.get("velocity").assign(velocity);
+      particle.get("direction").assign(velocity);
+      particle.get("density").assign(1);
+      particle.get("C").assign(mat3(0));
+      particle.get("color").assign(
+        mix(vec3(0.16, 0.23, 0.3), vec3(0.18, 0.78, 0.92), signalPin),
+      );
+      particle.get("heat").assign(signalPin.mul(0.58));
+      particle.get("dissolveState").assign(vec2(0, 0));
+    })().compute(1);
     this._postEnterRiftFlightInitPending = false;
+    this._gravityCreationInitPending = false;
   }
 
   /** FORENSIC: schedule a one-shot velocity + C zero on the next update() call. */
@@ -1606,6 +1787,10 @@ class mlsMpmSimulator {
 
   resetPostEnterRiftFlightState() {
     this._postEnterRiftFlightInitPending = false;
+  }
+
+  scheduleGravityCreationInit() {
+    this._gravityCreationInitPending = true;
   }
 
   setMouseRay(origin, direction, pos) {
@@ -1642,6 +1827,12 @@ class mlsMpmSimulator {
       this.kernels.initPostEnterRiftFlight.updateDispatchCount();
       this.kernels.postEnterRiftFlight.count = particles;
       this.kernels.postEnterRiftFlight.updateDispatchCount();
+      this.kernels.initGravityCreation.count = particles;
+      this.kernels.initGravityCreation.updateDispatchCount();
+      this.kernels.gravityCreation.count = particles;
+      this.kernels.gravityCreation.updateDispatchCount();
+      this.kernels.gravityLiving.count = particles;
+      this.kernels.gravityLiving.updateDispatchCount();
     }
 
     // FORENSIC: dispatch one-shot velocity + C zero before main kernels.
@@ -1657,6 +1848,23 @@ class mlsMpmSimulator {
       this.kernels.postEnterArrestDamp.count = this.numParticles;
       this.kernels.postEnterArrestDamp.updateDispatchCount();
       await this.renderer.computeAsync(this.kernels.postEnterArrestDamp);
+      return;
+    }
+
+    if (this.runtime.gravityCreationActive || this.runtime.gravityLivingActive) {
+      this.uniforms.dt.value = Math.max(1 / 240, Math.min(interval, 1 / 60));
+      if (this._gravityCreationInitPending) {
+        this._gravityCreationInitPending = false;
+        this.kernels.initGravityCreation.count = this.numParticles;
+        this.kernels.initGravityCreation.updateDispatchCount();
+        await this.renderer.computeAsync(this.kernels.initGravityCreation);
+      }
+      const kernel = this.runtime.gravityLivingActive
+        ? this.kernels.gravityLiving
+        : this.kernels.gravityCreation;
+      kernel.count = this.numParticles;
+      kernel.updateDispatchCount();
+      await this.renderer.computeAsync(kernel);
       return;
     }
 
@@ -1784,6 +1992,12 @@ class mlsMpmSimulator {
     this.uniforms.postEnterFlightSec.value =
       freezeSec === null ? (runtime.postEnterFlightSec ?? 0) : freezeSec;
     this.uniforms.postEnterFlightDebugFrozen.value = freezeSec === null ? 0 : 1;
+    this.uniforms.gravityCreationP.value = runtime.gravityCreationP ?? 0;
+    this.uniforms.gravityScrollP.value = runtime.gravityScrollP ?? 0;
+    this.uniforms.gravityPortrait.value = runtime.gravityPortrait ?? 0;
+    this.uniforms.gravityEnergy.value = runtime.gravityEnergy ?? 0.38;
+    this.uniforms.gravityAttention.value = runtime.gravityAttention ?? 0.7;
+    this.uniforms.gravityTension.value = runtime.gravityTension ?? 0.12;
     // Conversation-layer spring weights (sourceChamberDrive); default 0 keeps
     // plain source play and every post-enter path byte-identical.
     this.uniforms.returnBodyWeight.value = runtime.returnBodyWeight ?? 0;
@@ -2545,8 +2759,10 @@ class mlsMpmSimulator {
     this.settleTargetBuffer = null;
     this.riftFlightStartBuffer = null;
     this.riftFlightTargetBuffer = null;
+    this.gravityCreationStartBuffer = null;
     this._zeroVelocitiesNextFrame = false;
     this._postEnterRiftFlightInitPending = false;
+    this._gravityCreationInitPending = false;
     this.kernels = {};
     this.uniforms = {};
     this.particleBuffer = null;

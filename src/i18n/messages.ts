@@ -30,6 +30,7 @@ export type EntityStatus =
 export const REGIONS = [
   "experience",
   "systems",
+  "lenox",
   "work",
   "volkan",
   "contact",
@@ -114,13 +115,14 @@ const de: Messages = {
   },
   greeting: "Ich bin Lenox. Diese Welt ist noch nicht entschieden.",
   calibration: {
-    question: "Bevor ich sie baue — wer bestimmt ihre Handschrift?",
+    question: "Bevor ich sie baue: Wer bestimmt ihre Handschrift?",
     you: "DU",
     lenox: "LENOX",
   },
   region: {
     experience: "EXPERIENCE",
     systems: "SYSTEMS",
+    lenox: "LENOX",
     work: "WORK",
     volkan: "VOLKAN",
     contact: "CONTACT",
@@ -156,12 +158,29 @@ const de: Messages = {
         },
         {
           title: "FALLBACK",
-          body: "Diese Experience braucht WebGPU. Ohne WebGPU bleibt eine reduzierte Anzeige — und der klare Hinweis, dass ich nicht da bin.",
+          body: "Diese Experience braucht WebGPU. Ohne WebGPU bleibt eine reduzierte Anzeige und der klare Hinweis, dass ich nicht da bin.",
+        },
+      ],
+    },
+    lenox: {
+      lead: "Der Film ist seine Welt. Er selbst bleibt echt.",
+      modules: [
+        {
+          title: "PERCEPTION",
+          body: "Seine Augen reagieren zuerst. Aufmerksamkeit wird sichtbar, bevor der Körper folgt.",
+        },
+        {
+          title: "BODY",
+          body: "Kern, zwei Führungsarme und vier Begleitarme antworten mit eigener Trägheit.",
+        },
+        {
+          title: "PRESENCE",
+          body: "Die Welt läuft als Film. Lenox lebt darüber im Browser und reagiert auf dich.",
         },
       ],
     },
     work: {
-      lead: "Drei Fälle. Ich spiele sie dir vor — Schritt für Schritt.",
+      lead: "Drei Fälle. Ich spiele sie dir Schritt für Schritt vor.",
       modules: [],
     },
     volkan: {
@@ -182,13 +201,13 @@ const de: Messages = {
   },
   uplink: {
     brief:
-      "Eine Adresse genügt. Ich stelle die System-Übersicht zusammen und sende sie — jetzt, während du zusiehst.",
+      "Eine Adresse genügt. Ich stelle die System-Übersicht zusammen und sende sie jetzt, während du zusiehst.",
     placeholder: "name@firma.ch",
     action: "SENDEN",
     sending: "ÜBERTRAGUNG LÄUFT",
     sentTitle: "GESENDET",
     sentBody:
-      "Wirklich versendet, kein Mock. Prüfe deinen Posteingang — Absender: lenox@volkanaistudio.com.",
+      "Wirklich versendet, kein Mock. Prüfe deinen Posteingang. Absender: lenox@volkanaistudio.com.",
     unwiredTitle: "KEIN RELAY KONFIGURIERT",
     unwiredBody:
       "Auf dieser Umgebung fehlt der Versandschlüssel. Ich behaupte keinen Versand, den es nicht gab.",
@@ -208,7 +227,7 @@ const en: Partial<Messages> = {
   },
   greeting: "I am Lenox. This world is not decided yet.",
   calibration: {
-    question: "Before I build it — who defines its signature?",
+    question: "Before I build it: who defines its signature?",
     you: "YOU",
     lenox: "LENOX",
   },
@@ -243,12 +262,29 @@ const en: Partial<Messages> = {
         },
         {
           title: "FALLBACK",
-          body: "This experience needs WebGPU. Without it, a reduced view remains — and a clear statement that I am not here.",
+          body: "This experience needs WebGPU. Without it, a reduced view remains with a clear statement that I am not here.",
+        },
+      ],
+    },
+    lenox: {
+      lead: "The film is his world. He remains real.",
+      modules: [
+        {
+          title: "PERCEPTION",
+          body: "His eyes respond first. Attention becomes visible before the body follows.",
+        },
+        {
+          title: "BODY",
+          body: "Core, two lead arms and four support arms answer with their own inertia.",
+        },
+        {
+          title: "PRESENCE",
+          body: "The world runs as film. Lenox lives above it in the browser and responds to you.",
         },
       ],
     },
     work: {
-      lead: "Three cases. I will replay them for you — step by step.",
+      lead: "Three cases. I will replay them for you step by step.",
       modules: [],
     },
     volkan: {
@@ -269,13 +305,13 @@ const en: Partial<Messages> = {
   },
   uplink: {
     brief:
-      "One address is enough. I will assemble the system overview and send it — now, while you watch.",
+      "One address is enough. I will assemble the system overview and send it now, while you watch.",
     placeholder: "name@company.com",
     action: "SEND",
     sending: "TRANSMITTING",
     sentTitle: "SENT",
     sentBody:
-      "Actually sent, not mocked. Check your inbox — sender: lenox@volkanaistudio.com.",
+      "Actually sent, not mocked. Check your inbox. Sender: lenox@volkanaistudio.com.",
     unwiredTitle: "NO RELAY CONFIGURED",
     unwiredBody:
       "This environment has no sending key. I do not claim a send that did not happen.",

@@ -16,7 +16,7 @@ The visitor enters a dark, responsive particle field. After the first deliberate
 
 ## The playground
 
-After waking LENOX, the visitor can either direct the design or let LENOX decide. The site supports exactly three launch directions:
+After waking LENOX, the visitor can either direct the design or let LENOX decide. The public launch will contain three complete directions, with more curated directions added later:
 
 - `GRAVITY`: cinematic, spatial, and mass-driven
 - `ATELIER`: editorial, asymmetric, and tactile
@@ -24,11 +24,17 @@ After waking LENOX, the visitor can either direct the design or let LENOX decide
 
 These are complete websites, not themes. Each receives its own layout, navigation, type system, motion grammar, spatial staging, content presentation, and LENOX role. Curated palette and typography choices exist inside each direction.
 
-Switching direction is a visible reconstruction. It can happen mid-journey while preserving the visitor's semantic content context.
+GRAVITY is not one anonymous option among equals. It is LENOX's canonical home and VOLKAN AI STUDIO's signature masterpiece: a permanent living environment behind and around a vertically scrolling website, built to remain exceptional on desktop and mobile. The present creative and implementation focus is exclusively GRAVITY + LENOX. ATELIER and SIGNAL are deferred until GRAVITY establishes the quality bar.
+
+When LENOX decides without stronger visitor context, he opens GRAVITY. When the visitor directs, the launch product will eventually expose all available worlds.
+
+The initial creation and later switching are separate moments. `WAKE -> GRAVITY` is a major authored signature event. Later switching between any number of worlds uses one short, scalable LENOX handoff that does not depend on bespoke source-target pairs. Its final visual language remains open.
+
+A later direction switch preserves the visitor's semantic content context, not necessarily the same pixel scroll position.
 
 ## LENOX
 
-LENOX is the persistent intelligent presence across every direction. The silver sphere, black glass, cyan intelligence signals, and core personality remain constant. Position, scale, staging, and interface role may adapt.
+LENOX is the persistent intelligent presence across every direction. The current runtime vessel is the silver sphere with black glass and cyan intelligence signals; its core personality remains constant while position, scale, staging, and interface role may adapt. Reopening the vessel itself requires an explicit product decision.
 
 LENOX's interface is an instrument attached to his presence, never a chatbot bubble or support window. It ultimately supports design control, text input, opt-in voice interaction, and business demonstrations.
 
@@ -51,10 +57,10 @@ The site is simultaneously a portfolio, design playground, AI demonstration, pro
 3. The visitor experiences his capabilities.
 4. The visitor understands what VOLKAN AI STUDIO can build for their business.
 
-## Launch constraints
+## Current constraints
 
-- Complete German and English only
-- No arbitrary URL analysis, live AI, or voice in the first award-ready release
+- Complete German and English remain the intended launch languages
+- Live AI, text interaction, voice, arbitrary URL analysis, and business demos are separate scopes; none enters the current GRAVITY build without an explicit task
 - No duplicated content or render loop
 - No chat window, generic dashboard, theme gallery, or three-card marketing grammar
 - No OBSIDIAN or ALABASTER promotion as launch templates

@@ -1,8 +1,10 @@
 # LENOX Design Playground Visual Gate
 
-Status: `CANDIDATE DIRECTIONS — HUMAN REVIEW REQUIRED`
+Status: `HISTORICAL CANDIDATE SET — NOT THE ACTIVE GATE`
 
-These three desktop frames are the first visual-direction gate for the launch templates. They are references for art direction, composition, LENOX staging, navigation grammar, and design-instrument integration. They are not implementation screenshots and they do not authorize template runtime work.
+These three desktop frames record an earlier attempt to establish all launch directions at once. They remain useful references for contrast, composition, LENOX staging, and design-range discussion, but they are not approved targets and no longer block focused GRAVITY work.
+
+The current active direction is GRAVITY + LENOX. ATELIER and SIGNAL are deferred until GRAVITY establishes the signature quality bar. See `docs/agent-system/CURRENT.md` and `docs/agent-system/TASK.md`.
 
 ## 1. GRAVITY
 
@@ -52,14 +54,14 @@ Review risk:
 - The lower hardware-console treatment is too literal and must become part of LENOX rather than a separate control desk.
 - The final guided demo must use real VOLKAN-owned source screenshots, not generated interface imagery.
 
-## Gate Decision
+## Historical Decision
 
-The three desktop directions are deliberately different enough to review the product thesis. The full Milestone 1 gate has not passed yet. It still requires, after direction review:
+The three desktop directions were different enough to prove that the product thesis could support real visual range, but they did not receive human approval and are not production targets.
 
-- one approved mobile keyframe per direction;
-- one approved PROOF state per direction using real source assets;
-- one reconstruction frame per direction;
-- the shared six-phase reconstruction storyboard;
-- confirmation that the real LENOX runtime vessel remains identical across all three templates.
+The former requirement to complete mobile, PROOF, reconstruction, and storyboard boards for all three directions before any runtime work is superseded.
 
-Until those items receive human visual acceptance, no template registry, shared-content extraction, template renderer, or engine-profile migration may start.
+Current gate:
+- define GRAVITY as LENOX's living home on desktop and mobile;
+- approve the authored `WAKE -> GRAVITY` creation concept;
+- approve one universal, source-target-independent later world-switch concept;
+- then build a narrow GRAVITY runtime slice before returning to ATELIER or SIGNAL.

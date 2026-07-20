@@ -51,6 +51,10 @@
   --duration-ui:       0.5s;
 }
 
+:root[data-design="signal"] {
+  color-scheme: light;
+}
+
 /* ── ALABASTER (Signatur-Welt, DER BEGLEITER) ─────────────────────────────
    Lenox bleibt kanonisch — das hier ist der RAUM: Elfenbein mit Graphit-Härte.
    Leitplanke aus dem Storyboard: nie SaaS, nie Beige, nie Apple-White.

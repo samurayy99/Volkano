@@ -21,6 +21,8 @@ import { lerpPose, STATIONS, type Station, type StationPose } from "./stations";
  */
 export type DirectorHooks = {
   setPose: (pose: StationPose, tau: number) => void;
+  /** Normalised progress for GRAVITY's cheap dust/parallax field. */
+  onProgress?: (progress: number) => void;
   /** Eine Station hat die Führung übernommen (genau einmal pro Wechsel). */
   onStation: (index: number, station: Station) => void;
 };
@@ -44,6 +46,8 @@ export function createJourneyDirector(
 
   const drive = () => {
     const y = scroller.scrollTop;
+    const maxY = Math.max(scroller.scrollHeight - scroller.clientHeight, 1);
+    hooks.onProgress?.(Math.max(0, Math.min(y / maxY, 1)));
     // Keyframes an den realen Section-Starts; Pose i gilt, wenn Section i
     // die Oberkante erreicht hat.
     let index = 0;
@@ -120,7 +124,7 @@ export function createJourneyDirector(
   drive();
 
   /**
-   * Fraunces lädt mit display:swap NACH dem Mount und reflowt die Sections —
+   * Display fonts can settle after mount and reflow the sections —
    * die ScrollTrigger-GRENZEN (start/end der Bühnen-Toggles) sind dann
    * veraltet, während die Pose live aus offsetTop liest (peer-review trap
    * #4: Grenzen kalt, Posen warm). Ein Refresh, sobald die Fonts stehen.

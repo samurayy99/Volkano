@@ -35,6 +35,28 @@ export type LenoxEmotion =
 export type LenoxReaction = "laugh" | "startle" | "tired" | "confirm";
 
 /**
+ * A discrete body instruction. The engine eases and layers it over the
+ * authored vessel pose; React never owns bones or continuous body motion.
+ */
+export type LenoxIntent =
+  | { kind: "rest" }
+  | { kind: "observe" }
+  | {
+      kind: "guide";
+      targetNdc: { x: number; y: number };
+      arm: "left" | "right";
+      reach?: number;
+    }
+  | { kind: "confirm" };
+
+/** Canonical inner state shared by body material, GRAVITY and DOM tokens. */
+export type LenoxSignals = {
+  energy: number;
+  attention: number;
+  tension: number;
+};
+
+/**
  * How the stage is composed. "side" — he steps aside (desktop). "banded" — he
  * steps up (phone). Same gesture, different axis. Decided once, in
  * `src/app/stage/compositionMode.ts`, and pushed here.
@@ -121,6 +143,10 @@ export interface FlowEngineApi {
   setLenoxEmotion: (emotion: LenoxEmotion) => void;
   /** Temporary reaction (laugh/startle/tired). Lenox mode only. */
   setLenoxReaction: (reaction: LenoxReaction) => void;
+  /** Discrete body intent; continuous easing remains engine-owned. */
+  setLenoxIntent: (intent: LenoxIntent) => void;
+  /** A/B the instrumental eye layer against the current display face. */
+  setLenoxEyeRigEnhanced: (enabled: boolean) => void;
   /** Which way he makes room when the page is built. Lenox mode only. */
   setCompositionMode: (mode: CompositionMode) => void;
   /** Instant signature world (boot / reduced motion). Lenox mode only. */
@@ -133,6 +159,10 @@ export interface FlowEngineApi {
   commitSignature: () => void;
   /** The one transform scalar: physics, front, flare and env derive from it. */
   setTransformProgress: (p: number) => void;
+  /** GRAVITY creation + Arrival scalar. Exclusive GPU flight derives from it. */
+  setGravityCreationProgress: (p: number, reduced?: boolean) => void;
+  /** The one journey director forwards its scroll progression to the living field. */
+  setGravityScrollProgress: (p: number) => void;
   dispose: () => void;
 }
 
@@ -144,6 +174,10 @@ export interface FlowEngineBridgeOptions {
   lenoxReducedMotion?: boolean;
   /** Fires when the effective Lenox state changes (waking auto-advances). */
   onLenoxStateChange?: (state: LenoxProofState) => void;
+  /** Throttled engine-owned state for inherited CSS tokens; never per-frame React state. */
+  onLenoxSignals?: (signals: LenoxSignals) => void;
+  /** WebGPU device was lost after a successful init. Host commits to a static end state. */
+  onDeviceLost?: (info: unknown) => void;
   onPostEnterStageChange?: (stage: PostEnterStage) => void;
   /**
    * Dev-only: throttled (~12 Hz) while post-enter runs. Do not rely on this in production UI.

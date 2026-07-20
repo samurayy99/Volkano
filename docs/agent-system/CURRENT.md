@@ -1,144 +1,129 @@
 # Current Handoff
 
-**Date:** 2026-07-15
-**Writer state:** No writer is active. The Design Playground is waiting at the human visual gate.
-**Repository:** rescue checkpoint `5c84922` and visual-direction checkpoint `473cdb6` exist on `codex/lenox-design-playground`; no destructive cleanup is allowed.
+## ONE-MAIN CONSOLIDATION PACKAGE (2026-07-20, Codex)
 
-## Product Direction
+The working tree is prepared for consolidation onto local `main`. Promotion of
+the curated commits and branch cleanup remains pending because the current
+execution environment cannot write Git metadata. The existing branches therefore
+remain live until that final Git-only step is completed.
+The runtime still loads `lenox-v004.glb`. The complete v005 authored package was
+recovered byte-for-byte from local Git objects and passes its independent GLB
+audit, but remains a non-promoted visual candidate pending human review.
 
-The approved direction has changed since the interrupted run.
-The goal is not an `OBSIDIAN -> ALABASTER` website.
-The goal is a modular engine with three genuinely different website templates sharing one content source, with curated colour and typography controls inside each template.
-LENOX persists across all templates and remains the live interface.
-The existing `PLAY WITH ME -> WAKE LENOX` entry remains the strongest protected foundation.
+Required runtime media, canonical Blender sources and compact inspection packs
+are versioned directly in Git. Browser logs, duplicate encodes, Blender backups,
+third-party example models and reproducible frame dumps are local-only per
+`docs/architecture/repository-asset-policy.md`.
 
-The canonical product truth now lives in `docs/product/lenox-design-playground-manifesto.md`.
+## N-DESIGN REGISTRY ACTIVE (2026-07-19, Codex)
 
-The launch directions are:
-- `GRAVITY`: cinematic spatial website
-- `ATELIER`: asymmetric editorial website
-- `SIGNAL`: precise systemic website
+The Studio build is no longer a hardcoded `reef | signal` switch. `src/app/studio/designRegistry.ts` is the active product registry and derives `DesignId`, valid IDs, labels, world-media behavior, LENOX presence and the optional engine-signature hook from one definition. Those behavior axes are emitted as root data attributes instead of being inferred from a hardcoded design name. The header now exposes a real design picker on desktop and mobile; URLs use `?design=<id>` and session hydration validates registry IDs while accepting the former `reality` field only as a migration fallback. Design changes continue to preserve chapter, local progress, locale, case, audit and project-brief state without reloading. Morph timers use one dedicated cancellable transaction slot so rapid changes cannot complete out of order.
 
-They share semantic content and LENOX, but must differ in layout, navigation, typography, motion grammar, spatial composition, and content staging.
+The older Stage registry was inspected and its data-driven pattern was retained, but its retired OBSIDIAN/ALABASTER contents were not revived. Its scan-front transition controls only the legacy engine backdrop, so it is not wired as the Studio transition until it can coordinate DOM composition and world media as well. The inactive `LenoxExperience.tsx` path remains untouched in the dirty worktree and is explicitly legacy rather than a competing product truth.
 
-## Active Gate
+## CLAUDE AUDIT — NON-VISUAL REMEDIATION COMPLETE (2026-07-19, Codex)
 
-No new template runtime code may be written until three independent visual targets have been generated and accepted or refined.
+Claude's post-sprint code audit has been resolved without making visual-design decisions. The studio journey is now always present in the prerendered HTML while the entry ritual controls only visibility and interaction; the generated homepage contains all eight chapters, all three launch cases, the disclosed Website Intelligence prototype and exactly one `<h1>`. Unverified city claims were removed. Every case now carries visible, conservative provenance and meaningful image alt text.
 
-Three desktop candidates now exist under `docs/review/lenox-design-playground-visual-gate/`:
-- `gravity-desktop.png`
-- `atelier-desktop.png`
-- `signal-desktop.png`
+The runtime no longer uses a hardcoded `0.62` film boundary: Clip A progress is mapped against the measured offset of the semantic `volkan` chapter through a pure tested timeline function. Shared hashes restore the requested chapter after entry; pre-entry navigation stores a semantic target instead of relying on a timing race. Reality morphs and locale changes rebuild the director against current measurements and restore chapter plus local progress. Project-brief visibility, values, audit state and the selected case survive morphs and session re-entry; persistence is debounced, flushed on `pagehide`, and local scroll position is committed at a throttled cadence rather than per frame.
 
-They establish distinct composition, navigation, typography, and LENOX roles. They have not received human visual acceptance and do not complete Milestone 1. Mobile keyframes, real-asset PROOF states, reconstruction frames, and the shared six-phase reconstruction storyboard remain open.
+LENOX's header status is derived from the actual intro phase, engine lifecycle and active prototype/morph/contact operation instead of a chapter-to-label lookup or a second stored state machine. Pointer input is coalesced to one animation-frame sample. Contact mailto values use RFC-safe percent encoding. Work tabs implement the complete tab/tabpanel relationship, roving focus and keyboard navigation. Homepage and `/ai-systems` have canonical URLs, language alternates, Open Graph and Twitter metadata; `NEXT_PUBLIC_SITE_URL` overrides the `https://volkanaistudio.com` brand fallback at launch. Default language remains English because that is explicit in the locked master plan. `lenox@volkanaistudio.com` remains the automated sender identity while `hello@volkano.dev` remains the human contact destination; these are separate mail roles.
 
-The current run may:
-- document the product truth
-- capture and inspect the current visual baseline
-- generate three visual targets and a reconstruction storyboard
-- document the visual verdict
+**Verified after remediation:** `npx tsc --noEmit`; touched-file ESLint; `git diff --check` for the affected surface; 11/11 focused reducer, semantic-mapping, mailto and stage tests; and a clean Next.js production build. Static-output inspection measured eight homepage `data-chapter` sections, exactly one homepage H1, one `/ai-systems` H1, both canonical links, both OG/Twitter sets and complete EN/DE/x-default alternates. No browser or local-server process was started for visual acceptance in this pass. Visual composition, Mobile art direction, Arrival/Clip B media and the authored LENOX asset remain explicitly outside this technical acceptance.
 
-The current run may not:
-- build a template registry
-- extract shared content into production code
-- implement GRAVITY, ATELIER, or SIGNAL components
-- migrate signature engine APIs
-- push or deploy
+## FWA MASTER EXPERIENCE ACTIVE (2026-07-19, Codex)
 
-## Visual Gate Checkpoint Verification
+The public entrypoint now renders the new studio system from `src/app/studio/StudioExperience.tsx`. The isolated `YOU vs LENOX` decision is no longer part of the active homepage. Product contract: `docs/product/volkan-studio-master-experience.md`.
 
-Run at visual-direction checkpoint `473cdb6`:
-- `node --test src/app/stage/*.test.ts` -> 16 passed, 0 failed; Node emitted the existing module-type warnings
-- `npx tsc --noEmit` -> passed
-- `npm run build` -> passed; 5/5 pages generated
-- `npm run lint` -> failed on one pre-existing `prefer-const` error in `src/lenox-engine/particleSystem.ts:249`; 56 warnings remain, mostly in bundled skill examples
-- `git status --short --branch` -> clean on `codex/lenox-design-playground`
+**Implemented, uncommitted:** one bilingual shared content/state kernel; session persistence; semantic chapter registry; approximately 1450svh Gravity Reef journey; early Selected Work; web design, LENOX, AI systems, Volkan, Recompose and Contact chapters; distinct Gravity Reef and Signal Editorial renderers; no-reload morph with chapter/local-progress restoration; deterministic disclosed Website Intelligence prototype; `/ai-systems` route; and a truthful mailto contact handoff. The existing WebGPU engine and film scrubber remain one renderer, one loop and one scroll authority.
 
-The visual-gate commit changes documentation and image references only. Runtime code at `473cdb6` is identical to the verified rescue runtime at `5c84922`.
+**Media behavior:** the locked hero still and Clip A v2 development encode are wired without preloading the heavy film before entry. Mobile deliberately uses the static hero composition after entry. No fake Arrival asset is presented: until Distant Atmosphere and the six-second Arrival exist, WAKE uses a deterministic handoff into the hero. Clip B, portrait assets and the authored Blender GLB remain production gates.
 
-## Current Code Lines
+**Verified this sprint:** TypeScript, touched-file ESLint, six focused tests and production build passed. Browser verification captured the desktop gate and exposed a real director reinitialization loop after SKIP; unstable callback identities were fixed. A final post-fix browser pass was blocked by the Playwright backend timing out, so the complete visual journey is not claimed as accepted. Volkan remains the visual judge. No local web server remains running.
 
-The tree mixes several uncommitted candidates:
-- THE CASES and Contact Uplink
-- signature/world transformation
-- companion scroll Journey
-- Fable's interrupted art-direction rescue
+## CODEX TECH LEAD ACTIVE (2026-07-18, night)
 
-Do not assume all changes belong to one accepted feature.
-Do not revert them merely because the product direction changed; first identify reusable infrastructure versus direction-specific presentation.
-## Fable's Last Changes at Interruption
+Volkan explicitly assigned Codex the Tech Lead role after Fable hit the weekly limit. Codex is the only runtime writer. Volkan owns visual acceptance; Codex no longer spends long tool runs trying to replace Volkan's direct visual judgment.
 
-Fable was in the middle of a rescue pass and changed the following concepts:
-- replaced separate transform beats with one linear `0..1` transform progress scalar
-- derived gather, ignition, scan radius, environment blend, and particle response from that scalar
-- made the reconstruction front irregular, wider, pre-lit, and capable of tilting backdrop normals
-- added particle flare at the scan front
-- reduced Journey camera lag and refreshed ScrollTrigger after fonts load
-- exposed per-section scroll progress through `--sp`
-- replaced EXPERIENCE cards with depth-staged plates
-- replaced the SYSTEMS numbered list with material strata
-- added a dev-only `window.__LENOX_SHOT__` control surface
+**Implemented in the first takeover pass:** Clip A v2 is wired into the existing hybrid harness (`gravity-clip-a-v2-dense.mp4`), but is NOT visually accepted yet. No Clip B generation and no Kling credit spend before Volkan's verdict. The currentTime fallback remains event-driven with one pending seek maximum and no private RAF loop. Film progression is derived from the real start offset of the WORK station, not a hardcoded global percentage, so copy, fonts and viewport changes cannot silently move the Clip A boundary.
 
-Fable stopped before lint, production build, browser verification, keyframes, video, and final report.
-The last visible task state was two tasks in progress and one open. The technical verification gap is superseded by the Codex checkpoint below; visual desirability is still subject to independent review.
+**World Strip v2 is live in code:** six Director stations (`EXPERIENCE`, `SYSTEMS`, `LENOX`, `WORK`, `VOLKAN`, `CONTACT`), about 1420vh total score length, a dedicated LENOX act, large display typography, asymmetric dark content islands, and mobile horizontal navigation. The world is no longer globally dimmed for readability. The real section offsets remain the source of camera, station and film timing.
 
-## Verified After Interruption
+**Verified technically:** production build passes; `npx tsc --noEmit` passes; touched-file ESLint passes; stage suite passes 21/21 including new film-segment tests; live browser reports six stations, zero horizontal document overflow at desktop and 390x844, zero console warnings/errors, and reduced-motion disables the new reveal animation. Visual composition remains intentionally unapproved until Volkan scrolls it.
 
-Run from the repository after Fable stopped:
-- `npx tsc --noEmit` -> passed
-- `node --test src/app/stage/*.test.ts` -> 16 passed, 0 failed
+## HANDOFF TO CODEX (2026-07-18, late evening — Fable at session limit)
 
-## Codex Takeover Checkpoint
+**Clip A v2 is generated and staged, unverified.** Kling v3.0, 10 s, 1080p, i2v from the locked `hero_keyframe_fixed.png`, with the team-corrected prompt (eye-level constant-altitude dolly, LEFT wave proximity pass ≤35 %, nothing spherical near camera, no cloud entry, calm stable end). Files: `public/flow-assets/gravity-clip-a-v2.mp4` (original, 1 keyframe), `gravity-clip-a-v2-dense.mp4` (GOP-12 measurement encode), `~/Downloads/clip_A_v2.mp4` + `clip_A_v2_lastframe.png` (candidate Clip B start frame — only valid if v2 passes).
 
-Run locally on 2026-07-15 without committing, pushing, deploying, adding dependencies, or discarding pre-existing work.
+**Codex takes over. In order:**
+1. Verify v2 in the wired harness: swap `<video src>` in `LenoxExperience.tsx` to `gravity-clip-a-v2-dense.mp4`, run acceptance states **0/25/42/46/50/54/62/75/90/100 %** + slow REAL reverse scrub through 42–62 % (contract: Wiring Status section). The `?shotdev` flow + `[data-creation="complete"]` scroller works for automation; the historical frame dump was archived during repository consolidation.
+2. If v2 passes → its real last frame seeds Clip B (~80 credits, 251 available). If it fails → report why, regenerate with adjusted prompt (do NOT silently change the creative contract).
+3. Build the segmented journey timeline (ChatGPT's mapClamped film bands with hold zones) + World Strip v2 station structure (contract, PROPOSED section — needs Volkan's lock on structure/copy before final wiring).
+4. Blender track: LENOX blockout only, never the world.
 
-Concrete repairs:
-- corrected the Fraunces variable-font configuration so the production build can compile
-- replaced the deprecated Three.js TSL `atan2` alias with the installed r175 `atan` overload
-- made optional build-timeline selectors conditional, eliminating GSAP warnings when a template omits legacy targets
-- made the Journey scroller the authoritative build scope so its navigation rail participates in the same timeline
-- separated the mobile interaction scroller from the fixed LENOX system band and ensured anchored station headings clear the sticky rail
+Kling CLI is logged in; use `--task-trace-id oxyfauaest9h3oaywyuzzzz2fe4qb2iz` for continuity. Film wiring (filmScrubber.ts, video element, one scroll truth) is browser-verified and stays.
 
-Verification from this run:
-- `npx tsc --noEmit` -> passed
-- `node --test src/app/stage/*.test.ts` -> 16 passed, 0 failed
-- touched-file ESLint -> 0 errors; 2 warnings in `src/app/api/send-overview/route.ts`, both confirmed pre-existing in `HEAD`
-- changed JavaScript syntax checks -> passed
-- `npm run build` -> passed; 5/5 static pages generated
-- `git diff --check` -> passed
-- desktop live flow -> `PLAY WITH ME -> WAKE LENOX -> First Contact -> LENOX -> READY` reached with no browser warnings or errors
-- desktop Journey navigation, case replay, case close, and the non-delivery Contact Uplink path were exercised
-- mobile `390x844` flow -> no horizontal overflow; question and Journey content remain below the LENOX band; vertical and anchored navigation worked; no browser warnings or errors
-- reduced-motion browser flow -> reached READY with no browser warnings or errors
+**KILLER NOTES (Fable's last tokens — read before building):**
+1. **iOS black-film trap (fixed, verify on device):** Safari does not present frames of a paused, never-played `<video>` — currentTime scrubbing shows black. The WAKE click now primes the film with `play().then(pause)` inside the user gesture (`wake` in LenoxExperience.tsx). If the iPhone FSV-gate test ever shows a black world layer, check this FIRST before blaming the scrub mechanism.
+2. **mapClamped trap:** ChatGPT's film bands use fixed global percentages (`0.10, 0.38, …`). But director progress is `scrollTop/maxY` over DYNAMIC content heights — any copy/i18n/viewport change silently shifts every band. This is documented trap #4 in journeyDirector.ts ("Grenzen kalt, Posen warm"). Derive band edges from real `section.offsetTop` at refresh time (exactly like the director derives poses); never hardcode scroll percentages.
+3. **`requestVideoFrameCallback`** (Chrome+Safari) tells you when a seeked frame is actually PRESENTED — use it for true scrub-latency measurement in the acceptance run and later to sync engine effects (lattice, light echo) to the displayed film frame instead of the requested one.
+4. **`video.fastSeek()`** on Safari trades precision for speed (nearest keyframe). On the GOP-12 dense encode that's ±0.25 s — a legitimate iPhone fallback lever if exact seeks stutter, and worth measuring in the FSV gate.
+5. The film `<video>` mounts unconditionally, also on the `gpuPath === "fallback"` path — decide deliberately whether the no-WebGPU reduced view should show the scrub world or a static poster (currently: it scrubs).
 
-The checkpoint is technically runnable and safe to continue from. It is not a claim that the interrupted visual direction is approved or production-polished. Representative performance profiling and independent human visual acceptance remain open.
+**Date:** 2026-07-17 (evening)
+**Writer state:** no agent is currently writing. Codex finished the LENOX-Endfassung runtime sprint (~2.5 h, uncommitted); Fable completed the independent acceptance audit the same day. Volkan's joint visual session has NOT happened yet.
+**Historical repository state at capture:** branch `codex/lenox-design-playground`; checkpoints `5c84922` (rescue), `473cdb6` (visual gate), `060f284` (handoff). The later one-main consolidation preserved the Wallow captures in Git and archived the audit and duplicate-agent leftovers outside repository history.
 
-## Multi-template Reuse Boundary
+## Decision of 2026-07-18: LENOX character is FINAL
 
-Reusable foundation:
-- the protected PLAY/WAKE/First Contact state flow and reducer contracts
-- `compositionMode` and its banded/embedded responsive composition boundary
-- one Journey scroller, station registry, director, ScrollTrigger timeline, and engine pose bridge
-- the engine bridge and the single WebGPU render loop
-- the warning-free optional-target build timeline pattern
-- deterministic case timing plus the explicitly simulated/non-delivery uplink behavior
-- the current i18n/content messages as source material for a future shared content model
+Volkan declared the pearl-opal baby-cephalopod (`~/Downloads/ChatGPT Image Jul 18, 2026, 01_50_45 AM.png` — with tiny nose and small mouth) as LENOX. See the CHARACTER DECISION block in `docs/agent-system/TASK.md`. The robot face with display frame is permanently vetoed. Fable's eyes-only counter-proposals are dead. The reference image must be committed into the repo (with Volkan's approval) as the canonical character anchor.
 
-Legacy or direction-specific:
-- `OBSIDIAN`/`ALABASTER` signature IDs, calibration choice, transformation presets, and signature-specific engine materials
-- Fraunces/ivory/obsidian visual tokens and the current reconstructed DOM world
-- the current EXPERIENCE plates, SYSTEMS strata, WORK case staging, Contact composition, copy hierarchy, and station-specific camera poses
-- the present LENOX facial acting and some dense/stacked mobile compositions, which still need an approved template-specific art direction
-- the `VOLKAN` branch remains advertised as pending rather than implemented
+**Same day, evening — FIRST HYBRID WIRING LIVE (historical):** the first locked hero keyframe became scrub Clip A (`gravity-clip-a.mp4`, Kling v3.0, 10 s) and was wired as the world layer through `src/app/stage/filmScrubber.ts`. Browser verification measured proportional progress and a ~51 ms reverse jump. Those v1 encodes and the raw Director Strip were archived after v2 replaced them. The durable lesson remains: Kling clips ship with one keyframe, so raw `currentTime` scrubbing is unsuitable and the dense encode is only the current fallback behind the future FSV interface.
 
-After the full visual gate receives human acceptance, the first runtime slice should extract the reusable contracts into a template registry plus one shared content source before creating any new visual template. It must not treat the current two signatures as two of the required three websites.
+**Same day, second decision — WORLD LOCKED:** LENOX — THE GRAVITY REEF (sunlit sky coral-canyon, NOT underwater) with a five-beat scroll score and one Controlled Chromatophore-Proximity-Pass. Binding contract: `docs/product/gravity-reef-scroll-score.md`. Team consensus Volkan+Fable+ChatGPT+Codex; Gemini's Three.js background-shader proposal rejected (architecture conflict — film scrubbing stays the back layer). Next: final master still approval → scene stills → five beat clips per the score's production rules.
+
+## The Two Decisions of 2026-07-17 (supersede older docs below this file's date)
+
+1. **LOOK — FINAL:** the world is bright and colorful (wonder/awe; reference: Volkan's FPV video). The dark graphite/cyan direction is permanently retired after Volkan's third veto. Any doc or code presenting dark as default is stale.
+2. **ARCHITECTURE — the three-layer hybrid:** scroll-scrubbed pre-rendered wonder-world (back) + live WebGPU LENOX on transparent canvas (middle) + semantic DOM with dark content islands (front); one scroll drives all. Pipeline: Kling → Remotion (skills installed in `.agents/skills/`) → FSV (candidate, iPhone gate pending) → engine overlay. See `CLAUDE.md` / `AGENTS.md` for the full truth, `docs/agent-system/TASK.md` for the assignment.
+
+## Runtime State (Codex sprint, 2026-07-17, uncommitted)
+
+Built on the existing engine (no second renderer/state machine):
+- **Phase-1 procedural body** at the vessel pivot: 2 lead + 4 support arms (`src/flow-engine/lenox/lenoxBody.js`), response hierarchy (face → core → lead → support), incommensurate idle frequencies, scroll-driven curl.
+- **Intent API:** `setLenoxIntent` (rest/observe/guide/confirm) through `engineBridge`; engine owns easing; confirm auto-decays ~1.9 s.
+- **Canonical signals** energy/attention/tension: drive body TSL material, MLS-MPM field uniforms, and CSS tokens (`--lenox-energy/attention/tension`, 12 Hz throttled, no React re-render).
+- **GRAVITY beats** baked in the creation kernel per contract; living field ~3,072 desktop / 2,048 mobile particles after arrival.
+- **Eye-rig A/B** (lids/glint/convergence) as toggle over the control face (key `i`); control face remains the baseline.
+- **Device-loss → static fallback**; mobile banded composition; reduced motion path.
+
+**Fable's independent audit verified:** tsc clean, 19/19 stage tests, production build, console clean (desktop/mobile/reduced), perf probe ~1.1 ms desktop / ~1.55 ms mobile engine submit, flow WAKE → creation → GRAVITY → scroll works, desktop hero composition strong.
+
+**Open audit findings (must be fixed before the joint session):**
+1. Mobile STAGE/FALLBACK section: LENOX head overlaps text (same class as the fixed SYSTEMS/WORK bugs).
+2. Body colors are baked constants in `lenoxBody.js` — must become swappable uniforms (look-decision compliance; current dark values are retired placeholders).
+3. Reduced-motion particle budget measured 3,072 (claimed 2,048) — clarify.
+4. Eye-rig A/B was not independently verified (`__LENOX_SHOT__` was not exposed in the audit run); the former local design-audit dump was archived during repository consolidation.
+
+## What Happens Next (in order)
+
+1. Codex fixes audit findings 1+2, clarifies 3+4 (≈1 h).
+2. Joint test session (Volkan + Fable + Codex): desktop, mobile 390×844, reduced motion, eye A/B — behavior and silhouette judged, NOT the retired dark look.
+3. Look round: Volkan generates master-still variants (prompt delivered in chat 2026-07-17); his pick anchors the creative contract.
+4. Fable delivers the creative contract: World Strip (whole page as one vertical composition), typed Scroll Score, all Kling scene/dive prompts, world-lattice spec.
+5. Kling production → FSV iPhone spike → hybrid wiring.
+
+## Reuse Boundary (condensed)
+
+Reusable: protected PLAY/WAKE/First Contact flow and reducers, `compositionMode`, single Journey scroller + director + engine pose bridge, single WebGPU loop, intent/signal plumbing, i18n content as future shared model.
+Legacy/direction-specific: OBSIDIAN/ALABASTER signature IDs and tokens, dark-world materials and presets (retired by the look decision), current station copy staging pending the bright art direction.
+
 ## Important Files
 
-- `AGENTS.md` - Codex project instructions
-- `CLAUDE.md` - Fable orchestration instructions
-- `.codex/config.toml` - project-local Codex profile
-- `docs/agent-system/TASK.md` - active Codex assignment
-- `docs/concepts/der-begleiter-storyboard.md` - historical concept; parts are now superseded
-- `docs/review/` - visual review material already in the repository
+- `CLAUDE.md` / `AGENTS.md` — refreshed 2026-07-17, both carry the hybrid + look decision + coding discipline
+- `docs/agent-system/TASK.md` — active assignment (LENOX Endfassung; LOOK DECISION block on top)
+- `src/flow-engine/lenox/lenoxBody.js`, `src/flow-engine/engineBridge.ts`, `src/flow-engine/types.ts` — the new body/intent/signal surface
+- `docs/review/wallow-reference-2026-07-15/` — protected reference
+- `docs/product/lenox-design-playground-manifesto.md` — product definition (playground framing still canonical)
 
-Legacy long instruction files were preserved under `docs/agent-system/` before replacement.
+Historical detail from before 2026-07-17 (old gate checkpoints, interrupted rescue notes) was superseded by this handoff; consult git history of this file if needed.

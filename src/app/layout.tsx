@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
-import { Barlow_Condensed, Fraunces, IBM_Plex_Mono } from 'next/font/google';
+import { Barlow_Condensed, IBM_Plex_Mono } from 'next/font/google';
+import { ExperienceProvider } from './studio/ExperienceProvider';
+import { DEFAULT_DESIGN_ID, DESIGN_IDS } from './studio/designRegistry';
 import './globals.css';
 
 /**
@@ -21,25 +23,45 @@ const mono = IBM_Plex_Mono({
   display: 'swap',
 });
 
-/**
- * ALABASTER's editorial voice (Art-Direction-Rescue). A variable optical-size
- * serif — soft-but-severe, graphite on ivory — replacing the earlier
- * "Georgia via CSS variable" placeholder that the review correctly called
- * out as not a typographic decision. Mono stays the machine's voice; this is
- * the world's voice.
- */
-const serif = Fraunces({
-  subsets: ['latin'],
-  weight: 'variable',
-  variable: '--font-serif-loaded',
-  display: 'swap',
-  axes: ['opsz'],
-});
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://volkanaistudio.com';
+const designIds = JSON.stringify(DESIGN_IDS);
 
 export const metadata: Metadata = {
-  title: 'VOLKAN AI STUDIO — Lenox',
+  metadataBase: new URL(siteUrl),
+  title: 'VOLKAN AI STUDIO | Web Design and AI Systems',
   description:
-    'Lenox doesn\'t just answer. Lenox acts. AI Intake Systems for businesses that lose money on missed leads.',
+    'Independent studio for high-end web design, strategic redesign and custom AI systems.',
+  alternates: {
+    canonical: '/',
+    languages: {
+      en: '/',
+      de: '/?lang=de',
+      'x-default': '/',
+    },
+  },
+  openGraph: {
+    type: 'website',
+    url: '/',
+    siteName: 'VOLKAN AI STUDIO',
+    title: 'VOLKAN AI STUDIO | Web Design and AI Systems',
+    description:
+      'Independent studio for high-end web design, strategic redesign and custom AI systems.',
+    images: [
+      {
+        url: '/studio/world/hero-keyframe.jpg',
+        width: 2752,
+        height: 1536,
+        alt: 'VOLKAN AI STUDIO Gravity Reef experience',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'VOLKAN AI STUDIO | Web Design and AI Systems',
+    description:
+      'Independent studio for high-end web design, strategic redesign and custom AI systems.',
+    images: ['/studio/world/hero-keyframe.jpg'],
+  },
 };
 
 export default function RootLayout({
@@ -47,15 +69,21 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // German first — the market is Switzerland. useLocale rewrites this after
-  // hydration if the visitor's browser says otherwise.
   return (
     <html
-      lang="de"
-      className={`${display.variable} ${mono.variable} ${serif.variable}`}
+      lang="en"
+      className={`${display.variable} ${mono.variable}`}
       suppressHydrationWarning
     >
-      <body>{children}</body>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              `try{var s=JSON.parse(sessionStorage.getItem('volkan-studio-experience-v1')||'{}'),p=new URLSearchParams(location.search),l=p.get('lang'),a=${designIds},r=p.get('design')||p.get('reality')||s.design||s.reality,d=a.includes(r)?r:'${DEFAULT_DESIGN_ID}';document.documentElement.dataset.design=d;document.documentElement.lang=l==='de'||(!l&&s.locale==='de')?'de':'en'}catch(e){document.documentElement.dataset.design='${DEFAULT_DESIGN_ID}';document.documentElement.lang='en'}`,
+          }}
+        />
+      </head>
+      <body><ExperienceProvider>{children}</ExperienceProvider></body>
     </html>
   );
 }

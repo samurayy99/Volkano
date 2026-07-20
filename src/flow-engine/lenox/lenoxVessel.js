@@ -1,5 +1,7 @@
 import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { createAuthoredLenox } from "./lenoxAuthoredCharacter.js";
+import { createLenoxBody } from "./lenoxBody.js";
 
 /**
  * Lenox vessel — the sphere-robot body (Sketchfab "360_sphere_robot_Done").
@@ -30,6 +32,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
  */
 
 const VESSEL_URL = "/models/lenox-source/360_sphere_robot_Done.glb";
+const AUTHORED_LENOX_URL = "/models/lenox/lenox-v004.glb";
 
 const stripMaps = (mat) => {
   mat.map = null;
@@ -44,7 +47,14 @@ const stripMaps = (mat) => {
 };
 
 export async function loadLenoxVessel({ parentScale } = {}) {
-  const gltf = await new GLTFLoader().loadAsync(VESSEL_URL);
+  const loader = new GLTFLoader();
+  const [gltf, authoredGltf] = await Promise.all([
+    loader.loadAsync(VESSEL_URL),
+    loader.loadAsync(AUTHORED_LENOX_URL).catch((error) => {
+      console.warn("[lenox] authored GLB load failed — keeping procedural fallback", error);
+      return null;
+    }),
+  ]);
   const robot = gltf.scene;
 
   let displayMesh = null;
@@ -189,12 +199,31 @@ export async function loadLenoxVessel({ parentScale } = {}) {
   /** Display center → sphere center. This is the pivot a head turns around. */
   const centerOffset = modelCenter.clone().sub(displayCenter);
 
+  // Phase-1 final-form body. It lives inside the same uniformly scaled and
+  // oriented vessel as the core, so it inherits gaze, breath and reveal
+  // without creating another scene root or animation authority.
+  const gravityBody = createLenoxBody({ modelSize, modelCenter });
+  orient.add(gravityBody.root);
+
   const root = new THREE.Group();
   root.add(orient);
+
+  const authored = authoredGltf
+    ? createAuthoredLenox({
+        scene: authoredGltf.scene,
+        animations: authoredGltf.animations,
+        parentScale,
+      })
+    : null;
+  if (authored) {
+    authored.root.visible = false;
+    root.add(authored.root);
+  }
 
   const px = parentScale?.x ?? 1;
   const py = parentScale?.y ?? 1;
   const pz = parentScale?.z ?? 1;
+  let authoredMix = 0;
 
   const vessel = {
     root,
@@ -204,6 +233,9 @@ export async function loadLenoxVessel({ parentScale } = {}) {
     displayWidth: Math.max(displaySize.x, 1e-4),
     displayHeight: Math.max(displaySize.y, 1e-4),
     worldScale: 1,
+    gravityBody,
+    authored,
+    hasAuthoredCharacter: !!authored,
 
     /**
      * Fit the robot to a target height in WORLD units. The uniform world
@@ -221,6 +253,7 @@ export async function loadLenoxVessel({ parentScale } = {}) {
         (-displayCenter.z * k) / pz,
       );
       orient.updateMatrixWorld(true);
+      authored?.fitToWorldHeight(targetWorldHeight);
       return k;
     },
 
@@ -241,6 +274,16 @@ export async function loadLenoxVessel({ parentScale } = {}) {
      */
     setReveal(t) {
       const v = Math.max(0, Math.min(t, 1));
+      authoredMix = authored ? THREE.MathUtils.smoothstep(v, 0.94, 0.995) : 0;
+      const fallbackReveal = v * (1 - authoredMix);
+      authored?.setReveal(authoredMix);
+      robot.visible = fallbackReveal > 0.002;
+      // Preserve the protected core materialisation: its sampled shell targets
+      // remain byte-identical. The new limbs resolve only in the final part of
+      // the existing body handoff instead of pulling wake matter off-course.
+      gravityBody.setReveal(
+        THREE.MathUtils.smoothstep(v, 0.72, 0.96) * (1 - authoredMix),
+      );
       // Once the body is fully there it must go OPAQUE again. Leaving the shell
       // permanently transparent changes its sort order and speckles the solid
       // surfaces (the top cap grains visibly). Toggled once per edge, never
@@ -263,10 +306,21 @@ export async function loadLenoxVessel({ parentScale } = {}) {
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const mat of mats) {
           if (!mat) continue;
-          mat.opacity = base * v;
+          mat.opacity = base * fallbackReveal;
         }
-        mesh.visible = v > 0.002;
+        mesh.visible = fallbackReveal > 0.002;
       }
+    },
+
+    isAuthoredVisible() {
+      return authoredMix > 0.98;
+    },
+
+    /** Engine-owned hybrid pose for the procedural fallback and authored GLB. */
+    updateBody(spec) {
+      const state = gravityBody.update(spec);
+      authored?.update(spec);
+      return state;
     },
 
     /**

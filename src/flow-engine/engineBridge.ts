@@ -8,9 +8,11 @@ import type {
   FlowEngineApi,
   FlowEngineBridgeOptions,
   LenoxEmotion,
+  LenoxIntent,
   LenoxJourneyPose,
   LenoxProofState,
   LenoxReaction,
+  LenoxSignals,
   LenoxSignatureId,
   PostEnterDebugSnapshot,
   PostEnterStage,
@@ -61,6 +63,9 @@ export class FlowEngineBridge implements FlowEngineApi {
   private pendingCompositionMode: CompositionMode = "side";
   /** Rolling engine tick time (ms), exposed as __LENOX_PERF__ in Lenox mode. */
   private engineMsAvg: number | null = null;
+  private deviceLossArmed = false;
+  private gravityQualityApplied = false;
+  private lenoxSignalAccum = 0;
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
@@ -91,6 +96,15 @@ export class FlowEngineBridge implements FlowEngineApi {
     }
 
     this.renderer = renderer;
+    const device = (renderer.backend as any)?.device as GPUDevice | undefined;
+    if (device && !this.deviceLossArmed) {
+      this.deviceLossArmed = true;
+      void device.lost.then((info) => {
+        if (!this.disposed && info.reason !== "destroyed") {
+          this.options.onDeviceLost?.(info);
+        }
+      });
+    }
     this.container.appendChild(renderer.domElement);
 
     const app = new App(renderer, {
@@ -199,6 +213,17 @@ export class FlowEngineBridge implements FlowEngineApi {
   setLenoxReaction(reaction: LenoxReaction): void {
     if (this.disposed) return;
     this.lenoxDrive?.triggerReaction(reaction);
+    if (reaction === "confirm") this.app?.setLenoxIntent?.({ kind: "confirm" });
+  }
+
+  setLenoxIntent(intent: LenoxIntent): void {
+    if (this.disposed) return;
+    this.app?.setLenoxIntent?.(intent);
+  }
+
+  setLenoxEyeRigEnhanced(enabled: boolean): void {
+    if (this.disposed) return;
+    this.app?.setLenoxEyeRigEnhanced?.(enabled);
   }
 
   /** Dev (lenox proof): hide particles to verify the gaze rig on its own. */
@@ -266,6 +291,26 @@ export class FlowEngineBridge implements FlowEngineApi {
   setTransformProgress(p: number): void {
     if (this.disposed || !Number.isFinite(p)) return;
     this.app?.setLenoxTransformProgress?.(p);
+  }
+
+  /** GRAVITY owns a separate contract; no legacy signature scan is touched. */
+  setGravityCreationProgress(p: number, reduced = false): void {
+    if (this.disposed || !Number.isFinite(p)) return;
+    if (!this.gravityQualityApplied && p <= 0.001) {
+      this.gravityQualityApplied = true;
+      if (this.renderer && window.innerWidth < 768) {
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        const width = this.container.clientWidth || window.innerWidth;
+        const height = this.container.clientHeight || window.innerHeight;
+        this.renderer.setSize(width, height);
+      }
+    }
+    this.app?.setGravityCreationProgress?.(p, reduced);
+  }
+
+  setGravityScrollProgress(p: number): void {
+    if (this.disposed || !Number.isFinite(p)) return;
+    this.app?.setGravityScrollProgress?.(p);
   }
 
   setChamberEnergy(level01: number): void {
@@ -439,6 +484,18 @@ export class FlowEngineBridge implements FlowEngineApi {
         if (state !== this.lastLenoxState) {
           this.lastLenoxState = state;
           this.options.onLenoxStateChange?.(state);
+        }
+        // The drive still owns LENOX, but GRAVITY exclusively owns the field
+        // after First Contact. Reassert its tier after the drive's present pass.
+        this.app.maintainGravityRuntime?.();
+        if (this.options.onLenoxSignals) {
+          this.lenoxSignalAccum += delta;
+          if (this.lenoxSignalAccum >= 1 / 12) {
+            this.lenoxSignalAccum = 0;
+            this.options.onLenoxSignals(
+              this.app.lenoxSignals as LenoxSignals,
+            );
+          }
         }
       } else {
         if (!this.postEnterActive) {

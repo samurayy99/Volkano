@@ -229,6 +229,17 @@ const createRuntimeState = (width = window.innerWidth) => {
     simSubsteps: 1,
     postEnterActive: false,
 
+    // GRAVITY creation owns the particle buffer exclusively once armed.
+    gravityCreationActive: false,
+    gravityLivingActive: false,
+    gravityCreationP: 0,
+    gravityScrollP: 0,
+    gravityPortrait: width < MOBILE_BREAKPOINT ? 1 : 0,
+    gravityReduced: false,
+    gravityEnergy: 0.38,
+    gravityAttention: 0.7,
+    gravityTension: 0.12,
+
     // Arrest runtime
     solverLocked: false,
     bodyScaleMul: 1,
@@ -353,8 +364,17 @@ class App {
   /** Lenox vessel (sphere-robot body); the signal face renders in its visor. */
   lenoxVessel = null;
   lenoxVesselPromise = null;
+  /** Discrete body instruction; the vessel owns all continuous easing. */
+  lenoxIntent = { kind: "rest" };
+  lenoxIntentElapsed = 0;
+  /** Canonical inner state mirrored to material, field and throttled DOM tokens. */
+  lenoxSignals = { energy: 0.38, attention: 0.7, tension: 0.12 };
+  lenoxEyeRigEnhanced = false;
   /** The lacquer panel behind him. A surface that catches light, not a glow. */
   lenoxBackdrop = null;
+  /** GRAVITY's restrained cyan intelligence source. Amber remains confirm-only. */
+  gravityCoreLight = null;
+  gravityLivingElapsed = 0;
   _backdropLight = new THREE.Vector3(0.35, 0.4, 1);
   /** DER BEGLEITER: which world he stands in, and the one behind the front. */
   lenoxSignatureId = "obsidian";
@@ -387,6 +407,7 @@ class App {
   _lastDrivePostEnterElapsed = 0;
   _arrestFlashApplied = false;
   _postEnterRiftFlightInitScheduled = false;
+  _gravityCreationInitScheduled = false;
 
   /**
    * @param {"chamber"|"void"} [options.visualMode] "void" keeps the vessel
@@ -507,11 +528,11 @@ class App {
   /**
    * LENOX PRIME rig — the display signal layer.
    *
-   * The visor is a screen, not an eye socket. Everything is drawn from four
-   * primitives in soft cyan: a vertical capsule, an arc, a mouth and (for a
-   * confirmed result only) an amber checkmark. There is deliberately no iris,
-   * ring stack, pupil, lid, glint or brow — that vocabulary reads as a
-   * pseudo-eyeball behind glass and is what made Lenox look tired.
+   * The visor is a screen, not an eye socket. The control face is drawn from
+   * four primitives in soft cyan: a vertical capsule, an arc, a mouth and (for
+   * a confirmed result only) an amber checkmark. A toggleable instrumental
+   * experiment adds shallow shutter occlusion, convergence and a restrained
+   * optical glint; it never replaces this control grammar or adds pupils/brows.
    *
    * Coordinates are FACE UNITS: an isotropic 2D space centered on the display
    * with +x = screen right. `face` carries the sim→face mapping, so the
@@ -537,6 +558,8 @@ class App {
     const mouthSlotGeometry = makeSlotGeometry(3);
     const waveGeometry = makeStrokeArcGeometry(0.84, 1, -Math.PI * 0.3, Math.PI * 0.6);
     const checkGeometry = makeCheckGeometry();
+    const shutterGeometry = new THREE.PlaneGeometry(1, 1);
+    const glintGeometry = new THREE.CircleGeometry(1, 18);
 
     const CYAN = 0x7deeff;
     const AMBER = 0xffb457;
@@ -588,6 +611,24 @@ class App {
     const mouthMaterial = signal(CYAN, 1);
     const waveMaterial = signal(CYAN, 0.5);
     const checkMaterial = signal(AMBER, 1);
+    const shutterMaterial = new THREE.MeshBasicMaterial({
+      color: 0x05090c,
+      transparent: true,
+      opacity: 0.985,
+      depthWrite: false,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+    const glintMaterials = [signal(0xe7fcff, 0), signal(0xe7fcff, 0)];
+
+    const eyeShutters = [0, 1].map(() => [
+      make(shutterGeometry, shutterMaterial, 13),
+      make(shutterGeometry, shutterMaterial, 13),
+    ]);
+    const glints = [
+      make(glintGeometry, glintMaterials[0], 14),
+      make(glintGeometry, glintMaterials[1], 14),
+    ];
 
     this.lenoxRig = {
       root,
@@ -611,6 +652,8 @@ class App {
         make(waveGeometry, waveMaterial, 11),
       ],
       check: make(checkGeometry, checkMaterial, 14),
+      eyeShutters,
+      glints,
 
       bloomGain,
       eyeMaterials,
@@ -618,6 +661,8 @@ class App {
       mouthMaterial,
       waveMaterial,
       checkMaterial,
+      shutterMaterial,
+      glintMaterials,
       accentColor: new THREE.Color(CYAN),
 
       geometries: [
@@ -627,6 +672,8 @@ class App {
         mouthSlotGeometry,
         waveGeometry,
         checkGeometry,
+        shutterGeometry,
+        glintGeometry,
       ],
       materials: [
         ...eyeMaterials,
@@ -634,6 +681,8 @@ class App {
         mouthMaterial,
         waveMaterial,
         checkMaterial,
+        shutterMaterial,
+        ...glintMaterials,
       ],
     };
   }
@@ -813,12 +862,38 @@ class App {
       // already there, so it must not also inflate.
       const grow = (0.97 + 0.03 * body) * breath;
       vessel.root.scale.set(grow, grow * squash, grow);
+
+      this.lenoxIntentElapsed += Math.max(pose.dt ?? 0, 0);
+      if (this.lenoxIntent.kind === "confirm" && this.lenoxIntentElapsed > 1.9) {
+        this.lenoxIntent = { kind: "observe" };
+        this.lenoxIntentElapsed = 0;
+      }
+      const bodyState = vessel.updateBody?.({
+        dt: Math.max(pose.dt ?? 0, 0),
+        time: pose.time ?? 0,
+        intent: this.lenoxIntent,
+        signalState: pose.signals ?? this.lenoxSignals,
+        look: pose.look,
+        scroll: this.runtime?.gravityScrollP ?? 0,
+        portrait: this.compositionMode === "banded",
+        reduced: !!pose.reducedMotion,
+      });
+      if (bodyState?.signals) {
+        this.lenoxSignals.energy = bodyState.signals.energy;
+        this.lenoxSignals.attention = bodyState.signals.attention;
+        this.lenoxSignals.tension = bodyState.signals.tension;
+        if (this.runtime) {
+          this.runtime.gravityEnergy = bodyState.signals.energy;
+          this.runtime.gravityAttention = bodyState.signals.attention;
+          this.runtime.gravityTension = bodyState.signals.tension;
+        }
+      }
     }
 
     // Sim +x renders screen-LEFT. The face group is mirrored so the signal
     // grammar can be authored in plain screen space (+x = right); child
     // rotations are negated below to survive that mirror.
-    r.face.visible = on;
+    r.face.visible = on && !vessel?.isAuthoredVisible?.();
     r.face.scale.set(
       -this.lenoxFaceUnit.x,
       this.lenoxFaceUnit.y * squash,
@@ -829,12 +904,23 @@ class App {
     for (const mat of r.eyeMaterials) mat.color.lerp(r.accentColor, 0.06);
     for (const mat of r.arcMaterials) mat.color.lerp(r.accentColor, 0.06);
 
-    if (!on) return;
+    if (!on) {
+      r.eyeShutters.flat().forEach((mesh) => { mesh.visible = false; });
+      r.glints.forEach((mesh) => { mesh.visible = false; });
+      return;
+    }
 
     for (let i = 0; i < 2; i++) {
       const e = pose.eyes[i];
       const arc = Math.max(0, Math.min(e.arc ?? 0, 1));
       const halfH = e.ry * LENOX_SIGNAL_FACE.eyeAspect;
+      const enhanced = this.lenoxEyeRigEnhanced && arc < 0.55;
+      const attention = Math.max(0, Math.min(pose.signals?.attention ?? 0.7, 1));
+      const tension = Math.max(0, Math.min(pose.signals?.tension ?? 0.12, 1));
+      const convergence = enhanced
+        ? (i === 0 ? 1 : -1) * (0.009 + attention * 0.012)
+        : 0;
+      const eyeX = e.x + convergence;
       // Mirrored face group → a child rotation renders inverted.
       const rot = -e.rot;
       const capsuleAlpha = (1 - arc) * cyanFade;
@@ -847,17 +933,41 @@ class App {
       // caught mid-morph, and that in-between has to be a real frame.
       const capsule = r.eyes[i];
       capsule.visible = arc < 0.995;
-      capsule.position.set(e.x, e.y, 0);
+      capsule.position.set(eyeX, e.y, 0);
       capsule.rotation.z = rot;
       capsule.scale.set(e.rx, e.ry, 1);
       this.setSignalOpacity(r.eyeMaterials[i], capsuleAlpha);
 
       const arcMesh = r.arcs[i];
       arcMesh.visible = arc > 0.005;
-      arcMesh.position.set(e.x, arcY, 0);
+      arcMesh.position.set(eyeX, arcY, 0);
       arcMesh.rotation.z = rot;
       arcMesh.scale.set(arcSx, arcSy, 1);
       this.setSignalOpacity(r.arcMaterials[i], arcAlpha);
+
+      const lid = 0.1 + tension * 0.18;
+      const [upper, lower] = r.eyeShutters[i];
+      upper.visible = enhanced && cyanFade > 0.01;
+      lower.visible = enhanced && cyanFade > 0.01;
+      upper.position.set(eyeX, e.y + halfH * (0.93 - lid * 0.42), 0.002);
+      lower.position.set(eyeX, e.y - halfH * (0.97 - lid * 0.25), 0.002);
+      upper.rotation.z = rot;
+      lower.rotation.z = rot;
+      upper.scale.set(e.rx * 2.35, halfH * lid, 1);
+      lower.scale.set(e.rx * 2.35, halfH * lid * 0.55, 1);
+
+      const glint = r.glints[i];
+      glint.visible = enhanced && cyanFade > 0.01;
+      glint.position.set(
+        eyeX - e.rx * 0.27,
+        e.y + halfH * 0.34,
+        0.004,
+      );
+      glint.scale.set(e.rx * 0.16, e.rx * 0.16, 1);
+      this.setSignalOpacity(
+        r.glintMaterials[i],
+        enhanced ? cyanFade * (0.18 + attention * 0.36) : 0,
+      );
 
     }
 
@@ -866,7 +976,12 @@ class App {
     // mouth is always exactly one signal — never a shape stacked on a shape.
     const m = pose.mouth;
     const speak = Math.max(0, Math.min(m.speak ?? 0, 1));
-    const mouthOn = on && m.visible;
+    // Creation is a serious system act. The existing neutral preset carries a
+    // friendly seam, but Decision/Fall/Accretion must read instrument-calm.
+    const creationFocus =
+      !!this.runtime?.gravityCreationActive &&
+      (this.runtime.gravityCreationP ?? 0) < 0.86;
+    const mouthOn = on && m.visible && !creationFocus;
     const mouthAlpha = mouthOn ? (m.alpha ?? 1) * cyanFade : 0;
     const curveMag = Math.max(Math.abs(m.curve), 0.06);
     const mouthRot = m.curve >= 0 ? 0 : Math.PI;
@@ -1061,6 +1176,92 @@ class App {
       const bell = Math.exp(-(((clamped - swapAt) / 0.07) ** 2));
       this.scene.environmentIntensity = 1 - 0.55 * bell;
     }
+  }
+
+  /** React states intent once; body dynamics remain inside the render loop. */
+  setLenoxIntent(intent) {
+    if (!intent || !["rest", "observe", "guide", "confirm"].includes(intent.kind)) {
+      return;
+    }
+    if (intent.kind === "guide") {
+      const x = Math.max(-0.5, Math.min(intent.targetNdc?.x ?? 0, 0.5));
+      const y = Math.max(-0.5, Math.min(intent.targetNdc?.y ?? 0, 0.5));
+      this.lenoxIntent = {
+        kind: "guide",
+        arm: intent.arm === "left" ? "left" : "right",
+        targetNdc: { x, y },
+        reach: Math.max(0, Math.min(intent.reach ?? 0.72, 1)),
+      };
+    } else {
+      this.lenoxIntent = { kind: intent.kind };
+    }
+    this.lenoxIntentElapsed = 0;
+  }
+
+  setLenoxEyeRigEnhanced(enabled) {
+    this.lenoxEyeRigEnhanced = !!enabled;
+  }
+
+  /**
+   * THE COLLAPSE. This is intentionally independent of the retired signature
+   * scan system: a deterministic flight owns the same live particle buffer,
+   * then hands it to the small living-dust kernel at Arrival.
+   */
+  setGravityCreationProgress(p, reduced = false) {
+    if (this.visualMode !== "void" || !this.runtime) return;
+    const clamped = Math.max(0, Math.min(p ?? 0, 1));
+    const firstFrame = !this.runtime.gravityCreationActive && !this.runtime.gravityLivingActive;
+    this.runtime.gravityCreationP = clamped;
+    this.runtime.gravityReduced = !!reduced;
+    this.runtime.gravityPortrait = this.compositionMode === "banded" ? 1 : 0;
+    this.runtime.gravityCreationActive = clamped < 1;
+    this.runtime.gravityLivingActive = clamped >= 1;
+    this.runtime.run = false;
+    this.runtime.solverLocked = true;
+    this.runtime.opacityT = 0;
+    this.runtime.massDimT = 0;
+    this.runtime.lenoxEnergyMul = clamped >= 0.86 ? 0.45 : 0;
+    this.runtime.lenoxSilverGain = clamped >= 0.86 ? 0.94 : 0.82;
+
+    if (firstFrame && !this._gravityCreationInitScheduled) {
+      this._gravityCreationInitScheduled = true;
+      this.mlsMpmSim?.scheduleGravityCreationInit?.();
+      if (!this.gravityCoreLight && this.scene && this.particleRenderer?.object) {
+        this.particleRenderer.object.updateWorldMatrix(true, false);
+        const gravityCoreWorld = this.particleRenderer.object.localToWorld(
+          new THREE.Vector3(32, 24, 35),
+        );
+        this.gravityCoreLight = new THREE.PointLight(0x55dff2, 0, 3.2, 2);
+        this.gravityCoreLight.position.copy(gravityCoreWorld);
+        this.scene.add(this.gravityCoreLight);
+      }
+    }
+
+    const backdropObject = this.lenoxBackdrop?.object ?? this.lenoxBackdrop?.mesh;
+    if (backdropObject) backdropObject.visible = clamped <= 0.001;
+    if (this.gravityCoreLight) {
+      const accretion = THREE.MathUtils.smootherstep(clamped, 4 / 10.5, 6.5 / 10.5);
+      this.gravityCoreLight.intensity = accretion * 2.6;
+    }
+    this.particleRenderer?.setScanFront?.(0, 0);
+    this.maintainGravityRuntime();
+  }
+
+  maintainGravityRuntime() {
+    if (!this.runtime?.gravityCreationActive && !this.runtime?.gravityLivingActive) return;
+    const living = !!this.runtime.gravityLivingActive;
+    const portrait = this.compositionMode === "banded";
+    this.runtime.gravityPortrait = portrait ? 1 : 0;
+    this.runtime.run = false;
+    this.runtime.solverLocked = true;
+    this.runtime.particles = living ? (portrait ? 2048 : 3072) : (portrait ? 4096 : 16384);
+    this.runtime.actualSize = living ? (portrait ? 0.52 : 0.48) : (portrait ? 0.62 : 0.5);
+    this.runtime.lenoxTintT = 1;
+  }
+
+  setGravityScrollProgress(p) {
+    if (!this.runtime) return;
+    this.runtime.gravityScrollP = Math.max(0, Math.min(p ?? 0, 1));
   }
 
   /** Dev: hide/show the particle body (rig must read on its own). */
@@ -1932,6 +2133,14 @@ class App {
     this.mlsMpmSim.applyRuntime(this.runtime);
     this.particleRenderer.applyRuntime(this.runtime);
 
+    if (this.runtime.gravityLivingActive && this.gravityCoreLight) {
+      this.gravityLivingElapsed += Math.min(delta, 1 / 30);
+      this.gravityCoreLight.intensity =
+        1.45 +
+        this.lenoxSignals.energy * 0.72 +
+        Math.sin(this.gravityLivingElapsed * 0.72) * 0.12;
+    }
+
     if (this.visualMode === "void") {
       this.updateLenoxCamera(delta);
     }
@@ -1963,6 +2172,11 @@ class App {
       backdropObject.parent?.remove(backdropObject);
       this.lenoxBackdrop.dispose();
       this.lenoxBackdrop = null;
+    }
+    if (this.gravityCoreLight) {
+      this.gravityCoreLight.parent?.remove(this.gravityCoreLight);
+      this.gravityCoreLight.dispose?.();
+      this.gravityCoreLight = null;
     }
     this.lenoxVesselPromise = null;
     this.particleRenderer?.dispose?.();

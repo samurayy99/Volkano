@@ -13,8 +13,8 @@ export type StageState =
   | "dormant" // the field is loose; nothing has happened yet
   | "waking" // the collapse — drive-owned, we only watch
   | "recognition" // he is here; greeting, the question, and his reason all live here
-  | "transforming" // the world changes: gather → ignition → scan (one clock)
-  | "building" // particles → hairlines → decode
+  | "transforming" // GRAVITY: Decision → Fall → Accretion → Precipitation → Arrival
+  | "building" // final pose + sole scroll director initialise before input release
   | "ready"; // he steps aside; the page he made is standing
 
 /**
@@ -30,8 +30,9 @@ export type StageState =
 export type StageEvent =
   | { type: "ENGINE"; state: LenoxProofState } // the drive reports where it is
   | { type: "SPOKEN" } // the question is answered and his reason spoken; the world changes
-  | { type: "TRANSFORMED" } // the scan has passed; he starts building
-  | { type: "BUILT" }; // the page is standing
+  | { type: "TRANSFORMED" } // Arrival has formed; initialise the journey transaction
+  | { type: "BUILT" } // the page is standing
+  | { type: "STATIC_FALLBACK" }; // device loss after recognition: honest formed GRAVITY
 
 /** Pre-wake engine states. The drive owns these; the stage only reads them. */
 const PRE_WAKE: LenoxProofState[] = [
@@ -88,6 +89,10 @@ export function stageReducer(
       return advance(current, "building");
     case "BUILT":
       return advance(current, "ready");
+    case "STATIC_FALLBACK":
+      return current === "dormant" || current === "waking" || current === "recognition"
+        ? current
+        : "ready";
   }
 }
 

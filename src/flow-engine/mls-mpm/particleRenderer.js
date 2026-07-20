@@ -599,9 +599,14 @@ const buildUnifiedParticleSurfaceNodes = ({
   const lenoxBodyFinal = mix(lenoxBodyLid, lenoxCyan, lenoxFocalT.mul(0.32))
     .toConst("lenoxBody");
 
-  const surfaceColor = mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT).toConst(
-    "surfaceColor",
-  );
+  const gravityT = uniforms.gravityT.clamp(0, 1).toConst("gravityMaterialT");
+  const gravityColor = mix(vec3(0.3, 0.35, 0.42), particleColor, float(0.82))
+    .toConst("gravityParticleColor");
+  const surfaceColor = mix(
+    mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT),
+    gravityColor,
+    gravityT,
+  ).toConst("surfaceColor");
 
   // Die Front streift die Materie: ein schmales Gauss-Band um den Radius
   // lässt genau die Partikel aufleuchten, die die Kante gerade passiert —
@@ -631,10 +636,14 @@ const buildUnifiedParticleSurfaceNodes = ({
         .add(scanFlare.mul(float(0.55))),
     )
     .toConst("lenoxEmissive");
+  const gravityEmissive = particleColor
+    .mul(particleHeat)
+    .mul(float(0.22))
+    .toConst("gravityEmissive");
   const surfaceEmissive = mix(
-    surfaceEmissiveBase,
-    lenoxEmissive,
-    lenoxTintT,
+    mix(surfaceEmissiveBase, lenoxEmissive, lenoxTintT),
+    gravityEmissive,
+    gravityT,
   ).toConst("surfaceEmissive");
 
   const bloomSource = yellowPinEmissive.r
@@ -646,6 +655,7 @@ const buildUnifiedParticleSurfaceNodes = ({
         .add(lenoxFocalT.mul(float(0.4)).mul(uniforms.lenoxFocalBoost))
         .mul(lenoxTintT),
     )
+    .max(particleHeat.mul(float(0.18)).mul(gravityT))
     .toConst("particleBloomSource");
 
   // Premium silver = one coherent sheen: per-particle roughness variation
@@ -1085,6 +1095,8 @@ class ParticleRenderer {
     this.uniforms.lenoxSilverGain = uniform(1);
     /** 0 silences kinetic cyan (wake handoff); 1 = normal energy read. */
     this.uniforms.lenoxEnergyMul = uniform(1);
+    /** GRAVITY owns particle colour after First Contact. */
+    this.uniforms.gravityT = uniform(0);
     /**
      * Rekonstruktions-Front (Rescue): dieselbe Welt-Radius-Prüfung wie im
      * Backdrop, damit die Materie an der Kante aufleuchtet WÄHREND die Kante
@@ -1200,6 +1212,8 @@ class ParticleRenderer {
     this.uniforms.lenoxRoughness.value = this.runtime.lenoxRoughness ?? 0.3;
     this.uniforms.lenoxSilverGain.value = this.runtime.lenoxSilverGain ?? 1;
     this.uniforms.lenoxEnergyMul.value = this.runtime.lenoxEnergyMul ?? 1;
+    this.uniforms.gravityT.value =
+      this.runtime.gravityCreationActive || this.runtime.gravityLivingActive ? 1 : 0;
     // Chamber stays at exactly 0.12; the silver mass needs the HDRI to have
     // something to mirror, so Lenox lerps the env up with lenoxTintT.
     const envLenoxT = Math.min(1, Math.max(0, this.runtime.lenoxTintT ?? 0));

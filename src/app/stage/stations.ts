@@ -49,7 +49,7 @@ export type Station = {
 export const STATIONS: readonly Station[] = [
   {
     id: "experience",
-    lengthVh: 150,
+    lengthVh: 260,
     pose: {
       // Näher als der alte Operator-Stand: er ist Teil der Hero-Komposition,
       // kein Maskottchen neben Karten (Video-Verdikt).
@@ -62,24 +62,37 @@ export const STATIONS: readonly Station[] = [
   },
   {
     id: "systems",
-    lengthVh: 170,
+    lengthVh: 250,
     pose: {
       // Monumental und BEWUSST angeschnitten: gut die Hälfte von ihm bleibt
       // im Bild (0.56/−0.38 schnitt ihn fast vollständig — AD-Verdikt
       // "falsches responsive Framing").
       side: { zoom: 0.6, shiftX: -0.3, shiftY: -0.03 },
-      banded: { zoom: 0.64, shiftX: 0, shiftY: -0.12 },
+      // Portrait still reads as a close inspection, but the six-arm silhouette
+      // clears the semantic band instead of becoming a watermark through it.
+      banded: { zoom: 1.05, shiftX: 0, shiftY: -0.28 },
     },
     presence: "close",
     emotion: "thinking",
     glance: "visitor",
   },
   {
+    id: "lenox",
+    lengthVh: 370,
+    pose: {
+      side: { zoom: 0.72, shiftX: 0.18, shiftY: 0.01 },
+      banded: { zoom: 0.98, shiftX: 0, shiftY: -0.2 },
+    },
+    presence: "front",
+    emotion: "curious",
+    glance: "visitor",
+  },
+  {
     id: "work",
-    lengthVh: 140,
+    lengthVh: 250,
     pose: {
       side: { zoom: 0.95, shiftX: 0.08, shiftY: 0 },
-      banded: { zoom: 0.95, shiftX: 0, shiftY: -0.02 },
+      banded: { zoom: 1.25, shiftX: 0, shiftY: -0.18 },
     },
     presence: "side",
     emotion: "neutral",
@@ -87,7 +100,7 @@ export const STATIONS: readonly Station[] = [
   },
   {
     id: "volkan",
-    lengthVh: 110,
+    lengthVh: 150,
     pose: {
       side: { zoom: 1.75, shiftX: 0.3, shiftY: 0.04 },
       banded: { zoom: 1.6, shiftX: 0, shiftY: 0.06 },
@@ -98,10 +111,10 @@ export const STATIONS: readonly Station[] = [
   },
   {
     id: "contact",
-    lengthVh: 130,
+    lengthVh: 140,
     pose: {
       side: { zoom: 0.82, shiftX: 0.34, shiftY: 0 },
-      banded: { zoom: 0.85, shiftX: 0, shiftY: -0.06 },
+      banded: { zoom: 1.15, shiftX: 0, shiftY: -0.18 },
     },
     presence: "front",
     emotion: "pleased",

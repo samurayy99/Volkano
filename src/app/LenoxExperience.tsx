@@ -6,18 +6,19 @@ import type {
   LenoxEmotion,
   LenoxProofState,
   LenoxReaction,
+  LenoxSignals,
   LenoxSignatureId,
 } from "../flow-engine/types";
 import { useLocale } from "../i18n/useLocale";
 import { FallbackEyes } from "./FallbackEyes";
-import { createPlayMeter, decideSignature } from "./stage/calibration";
+import { createPlayMeter } from "./stage/calibration";
 import { useCompositionMode } from "./stage/compositionMode";
 import { CornerHud } from "./stage/CornerHud";
+import { createFilmScrubber, type FilmScrubber } from "./stage/filmScrubber";
 import { FirstContact } from "./stage/FirstContact";
 import { Journey } from "./stage/Journey";
 import { stageReducer } from "./stage/stageState";
 import type { StationPose } from "./stage/stations";
-import { transformTimeline } from "./stage/transformTimeline";
 
 /** The eight PRIME display states, in character-sheet order. */
 const EMOTIONS: LenoxEmotion[] = [
@@ -66,14 +67,18 @@ const expressionButton = (active = false): React.CSSProperties => ({
  * Ported from the former /lenox-proof harness; engine and drive untouched.
  */
 export function LenoxExperience() {
+  const stageRootRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<FlowEngineBridge | null>(null);
+  const filmRef = useRef<HTMLVideoElement | null>(null);
+  const filmScrubberRef = useRef<FilmScrubber | null>(null);
 
   const [gpuPath, setGpuPath] = useState<"webgpu" | "fallback" | "probing">(
     "probing",
   );
   const [state, setState] = useState<LenoxProofState>("idle");
   const [emotion, setEmotion] = useState<LenoxEmotion>("neutral");
+  const [eyeRigEnhanced, setEyeRigEnhanced] = useState(false);
 
   /**
    * The expression console is a workbench, not part of the experience. It used
@@ -104,17 +109,24 @@ export function LenoxExperience() {
 
   /**
    * How he makes room: aside (desktop) or upward (phone). One source, and it is
-   * FROZEN for the whole of BUILDING — rotating the device mid-build would redraw
-   * the seam while the seam is still animating, which is a guaranteed layout jump
-   * at the exact moment the page is supposed to be assembling itself. The build
-   * finishes in the composition it started in (≤ 4s) and corrects on the first
-   * frame after READY.
+   * FROZEN for the whole creation transaction. Rotating mid-collapse would move
+   * the fall axis and typography targets while matter is still in flight. The
+   * composition corrects after Arrival, once the director owns the settled page.
    */
-  const mode = useCompositionMode(stage === "building");
+  const mode = useCompositionMode(stage === "transforming" || stage === "building");
+  const [creationReduced, setCreationReduced] = useState(false);
 
   const applyLenoxState = useCallback((next: LenoxProofState) => {
     setState(next);
     dispatch({ type: "ENGINE", state: next });
+  }, []);
+
+  const writeLenoxSignals = useCallback((signals: LenoxSignals) => {
+    const root = stageRootRef.current;
+    if (!root) return;
+    root.style.setProperty("--lenox-energy", signals.energy.toFixed(4));
+    root.style.setProperty("--lenox-attention", signals.attention.toFixed(4));
+    root.style.setProperty("--lenox-tension", signals.tension.toFixed(4));
   }, []);
 
   // The engine no longer has an opinion about the composition — it is told.
@@ -137,8 +149,16 @@ export function LenoxExperience() {
         "(prefers-reduced-motion: reduce)",
       ).matches,
       onLenoxStateChange: applyLenoxState,
+      onLenoxSignals: writeLenoxSignals,
       onError: (error) => {
         console.error("[lenox] engine error", error);
+      },
+      onDeviceLost: (info) => {
+        console.warn("[lenox] WebGPU device lost; committing static GRAVITY", info);
+        bridgeRef.current?.dispose();
+        bridgeRef.current = null;
+        setGpuPath("fallback");
+        dispatch({ type: "STATIC_FALLBACK" });
       },
     });
     bridgeRef.current = bridge;
@@ -163,7 +183,17 @@ export function LenoxExperience() {
       bridge.dispose();
       if (bridgeRef.current === bridge) bridgeRef.current = null;
     };
-  }, [applyLenoxState]);
+  }, [applyLenoxState, writeLenoxSignals]);
+
+  // Product phases state intent once. The engine owns every delayed response.
+  useEffect(() => {
+    const bridge = bridgeRef.current;
+    if (!bridge) return;
+    if (stage === "transforming") bridge.setLenoxIntent({ kind: "rest" });
+    else if (stage === "recognition" || stage === "building" || stage === "ready") {
+      bridge.setLenoxIntent({ kind: "observe" });
+    }
+  }, [stage]);
 
   // While he inspects his own work the cursor must not yank his eyes back.
   const gazeScripted = useRef(false);
@@ -243,6 +273,14 @@ export function LenoxExperience() {
         voidEnv = !voidEnv;
         bridge.setLenoxEnvironment(voidEnv);
       }
+
+      if (event.key === "i" || event.key === "I") {
+        setEyeRigEnhanced((current) => {
+          const next = !current;
+          bridge.setLenoxEyeRigEnhanced(next);
+          return next;
+        });
+      }
     };
 
     window.addEventListener("keydown", onKey);
@@ -255,37 +293,45 @@ export function LenoxExperience() {
   const wake = useCallback(() => {
     const bridge = bridgeRef.current;
     if (!bridge) return;
+    // iOS-Unlock für den Welt-Film: Safari rendert Frames eines pausierten,
+    // nie gestarteten <video> nicht — currentTime-Scrubbing zeigt dann eine
+    // schwarze Fläche. Ein play().pause() innerhalb DIESER User-Geste (der
+    // einzigen vor der Journey) schaltet die Frame-Präsentation frei.
+    const film = filmRef.current;
+    film?.play().then(() => film.pause()).catch(() => {});
     bridge.setLenoxState("waking");
     applyLenoxState("waking");
   }, [applyLenoxState]);
 
   const onBuilt = useCallback(() => dispatch({ type: "BUILT" }), []);
 
-  /**
-   * Akt III → IV: die Frage ist beantwortet, sein Satz gesprochen. Die
-   * gewählte Welt liegt im Ref (kein Re-Render nötig — die Verwandlung liest
-   * sie genau einmal), der Reducer schaltet auf `transforming`.
-   */
-  const chosenSignature = useRef<LenoxSignatureId>("obsidian");
-  const onCommitSignature = useCallback((id: LenoxSignatureId) => {
-    chosenSignature.current = id;
+  /** First Contact is complete. Snapshot motion preference for THE COLLAPSE. */
+  const onCommitSignature = useCallback(() => {
+    setCreationReduced(window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches);
     dispatch({ type: "SPOKEN" });
   }, []);
 
-  /**
-   * Weg A: die Kammer hat gemessen; die Wahl ist deterministisch — und sie
-   * wählt NIE die Welt, in der der Besucher schon steht (das Gesetz aus dem
-   * Video-Verdikt: der Signature-Moment muss sichtbar sein).
-   */
-  const resolveLenoxChoice = useCallback(
-    () =>
-      decideSignature(
-        playMeter.current.finish(),
-        new Date().getHours(),
-        chosenSignature.current,
-      ),
-    [],
-  );
+  /** LENOX reads the local play meter, but GRAVITY is his canonical decision. */
+  const resolveLenoxChoice = useCallback(() => {
+    const metrics = playMeter.current.finish();
+    const played = metrics.samples >= 40 && metrics.activeMs >= 1200;
+    return {
+      // First Contact still speaks the historical internal type. GRAVITY
+      // itself never receives or renders a signature id.
+      id: "obsidian" as const,
+      reason: played
+        ? {
+            de: "Du hast die Materie bewegt. Ich gebe ihr Gewicht.",
+            en: "You moved the matter. I will give it weight.",
+          }
+        : {
+            de: "Du hast die Materie ruhen lassen. Ich gebe ihr Gewicht.",
+            en: "You left the matter still. I will give it weight.",
+          },
+    };
+  }, []);
 
   /**
    * Build hooks. None of these own a clock — the timeline calls them at its own
@@ -336,6 +382,12 @@ export function LenoxExperience() {
       pose: (pose: StationPose, tau?: number) =>
         bridgeRef.current?.setJourneyPose(pose, tau),
       operator: (t: number) => bridgeRef.current?.setLenoxOperator(t, 0.4),
+      intent: (intent: Parameters<FlowEngineBridge["setLenoxIntent"]>[0]) =>
+        bridgeRef.current?.setLenoxIntent(intent),
+      eyes: (enhanced: boolean) => {
+        bridgeRef.current?.setLenoxEyeRigEnhanced(enhanced);
+        setEyeRigEnhanced(enhanced);
+      },
     };
     return () => {
       delete g.__LENOX_SHOT__;
@@ -366,6 +418,7 @@ export function LenoxExperience() {
       if (glanceBack.current !== null) window.clearTimeout(glanceBack.current);
 
       if (glance === "visitor") {
+        bridge.setLenoxIntent({ kind: "observe" });
         gazeScripted.current = false;
         bridge.setLenoxGaze(0, 0);
         glanceBack.current = null;
@@ -373,6 +426,12 @@ export function LenoxExperience() {
       }
 
       gazeScripted.current = true;
+      bridge.setLenoxIntent({
+        kind: "guide",
+        arm: _region === "systems" ? "left" : "right",
+        targetNdc: { x: 0.38, y: -0.02 },
+        reach: _region === "work" ? 0.9 : 0.68,
+      });
       bridge.setLenoxGaze(0.38, -0.02);
       glanceBack.current = window.setTimeout(() => {
         bridge.setLenoxGaze(0, 0);
@@ -402,43 +461,39 @@ export function LenoxExperience() {
     [onEmotion],
   );
 
-  /**
-   * AKT IV — die Verwandlung läuft, sobald der Reducer `transforming` sagt.
-   * Eine Uhr (transformTimeline) treibt Drive-Puls, Scan-Uniform und
-   * DOM-Tokens; am Ende meldet sie TRANSFORMED und der Build übernimmt.
-   */
-  useEffect(() => {
-    if (stage !== "transforming") return;
-    const bridge = bridgeRef.current;
-    if (!bridge) {
-      dispatch({ type: "TRANSFORMED" });
-      return;
-    }
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    const tl = transformTimeline(
-      chosenSignature.current,
-      {
-        setSignatureInstant: (id) => bridge.setSignature(id),
-        setSignatureTarget: (id) => bridge.setSignatureTarget(id),
-        setTransformProgress: (p) => bridge.setTransformProgress(p),
-        commitSignature: () => bridge.commitSignature(),
-        onEmotion,
-        onDone: () => dispatch({ type: "TRANSFORMED" }),
-      },
-      reduced,
-    );
-    return () => {
-      tl.kill();
-    };
-  }, [stage, onEmotion]);
-
   const preWake = PRE_WAKE.includes(state);
-  const built = stage === "building" || stage === "ready";
+  const journeyMounted =
+    stage === "recognition" ||
+    stage === "transforming" ||
+    stage === "building" ||
+    stage === "ready";
+  const onCreationProgress = useCallback((progress: number, reduced: boolean) => {
+    bridgeRef.current?.setGravityCreationProgress(progress, reduced);
+  }, []);
+  const onGravityCreated = useCallback(() => dispatch({ type: "TRANSFORMED" }), []);
+  const onScrollProgress = useCallback((progress: number, clipAProgress: number) => {
+    bridgeRef.current?.setGravityScrollProgress(progress);
+    filmScrubberRef.current?.setProgress(clipAProgress);
+  }, []);
+
+  // Der Welt-Film existiert als Scrubber nur, solange die Journey der einzige
+  // Scroller ist; sein Fortschritt kommt aus demselben Director-Callback wie
+  // der der Engine — eine Scroll-Wahrheit, kein zweiter Listener.
+  useEffect(() => {
+    if (stage !== "ready") return;
+    const video = filmRef.current;
+    if (!video) return;
+    const scrubber = createFilmScrubber(video);
+    filmScrubberRef.current = scrubber;
+    return () => {
+      filmScrubberRef.current = null;
+      scrubber.dispose();
+    };
+  }, [stage]);
 
   return (
     <div
+      ref={stageRootRef}
       className="lenox-stage"
       data-composition={mode}
       style={{
@@ -455,6 +510,30 @@ export function LenoxExperience() {
         bridgeRef.current?.setLenoxGaze(0, 0);
       }}
     >
+      {/* WORLD (hinterste Ebene des Hybrids): der scroll-gescrubte Film.
+          LENOX wird NIE ins Video gebacken — er lebt live auf dem Canvas
+          darüber (zIndex 1). Sichtbar erst, wenn die Journey übernommen hat. */}
+      <video
+        ref={filmRef}
+        src="/flow-assets/gravity-clip-a-v2-dense.mp4"
+        muted
+        playsInline
+        preload="auto"
+        disablePictureInPicture
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          zIndex: 0,
+          pointerEvents: "none",
+          opacity: stage === "ready" ? 1 : 0,
+          transition: "opacity 600ms ease",
+        }}
+      />
+
       {gpuPath === "fallback" ? (
         <FallbackEyes state={state} />
       ) : (
@@ -523,15 +602,19 @@ export function LenoxExperience() {
         />
       ) : null}
 
-      {/* Mounted for BUILDING and never unmounted. What he built has to still be
-          standing afterwards, or the build was a cutscene — and from READY on
-          it is a JOURNEY: the page scrolls, the camera travels, he companions. */}
-      {built ? (
+      {/* Mounted invisibly during First Contact for font/layout readiness, then
+          kept alive through creation and the single authoritative journey. */}
+      {journeyMounted ? (
         <Journey
           m={m}
           locale={locale}
           mode={mode}
+          armed={stage === "recognition"}
+          creating={stage === "transforming"}
           building={stage === "building"}
+          reduced={creationReduced}
+          onCreationProgress={onCreationProgress}
+          onCreated={onGravityCreated}
           onOperator={onOperator}
           onGaze={onGaze}
           onEmotion={onEmotion}
@@ -539,6 +622,7 @@ export function LenoxExperience() {
           onPose={onPose}
           onBuilt={onBuilt}
           onStationChange={onStationChange}
+          onScrollProgress={onScrollProgress}
         />
       ) : null}
 
@@ -592,6 +676,18 @@ export function LenoxExperience() {
               {reaction}
             </button>
           ))}
+          <button
+            type="button"
+            aria-pressed={eyeRigEnhanced}
+            style={expressionButton(eyeRigEnhanced)}
+            onClick={() => {
+              const next = !eyeRigEnhanced;
+              bridgeRef.current?.setLenoxEyeRigEnhanced(next);
+              setEyeRigEnhanced(next);
+            }}
+          >
+            eye rig {eyeRigEnhanced ? "enhanced" : "control"}
+          </button>
         </div>
       ) : null}
 

@@ -1,453 +1,368 @@
-/*
- * Die Reise. Der Canvas zeigt durch alles hindurch — dieser Layer hat keinen
- * eigenen Hintergrund, denn der Raum ist der Raum, in dem er steht. DIESES
- * Element ist der einzige Scroller der Seite; die Kamera hängt am Director,
- * nie an einem zweiten Listener.
- */
+@property --lenox-energy {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.38;
+}
+
+@property --lenox-attention {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.7;
+}
+
+@property --lenox-tension {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.12;
+}
 
 .journey {
+  --gravity-cold: 4 10 18;
+  --gravity-silver: 194 207 218;
+  --gravity-signal: 85 223 242;
+  --signal: oklch(
+    calc(0.68 + var(--lenox-energy, 0.38) * 0.1)
+    calc(
+      0.055 +
+      var(--lenox-attention, 0.7) * 0.09 +
+      var(--lenox-tension, 0.12) * 0.02
+    )
+    205
+  );
+  --font-display: var(--font-display-loaded), "Arial Narrow", sans-serif;
   position: fixed;
   inset: 0;
   z-index: 30;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  /* Der Canvas sperrt Touch; hier — und nur hier — darf ein Finger die
-     Seite bewegen. Pointer-Events laufen durch (bubbling) zum Stage-Root,
-     der Gaze und Partikel weiter versorgt. */
   touch-action: pan-y;
+  color: rgb(var(--gravity-silver));
 }
 
-.journey::-webkit-scrollbar {
-  display: none;
-}
+.journey::-webkit-scrollbar { display: none; }
+.journey[data-live="false"] { overflow: hidden; pointer-events: none; }
+.journey[data-armed="true"] { visibility: hidden; }
 
-/* Während er baut, ist es ein Werkstück: kein Scroll, kein Klick. */
-.journey[data-live="false"] {
-  overflow: hidden;
+.worldLight {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   pointer-events: none;
+  overflow: hidden;
+  background: radial-gradient(
+    80% 58% at 28% 36%,
+    rgb(222 250 255 / 0.1),
+    transparent 68%
+  );
 }
 
-/* ── Die Rail: Anker der Strecke ─────────────────────────────────────── */
+.horizon {
+  position: absolute;
+  left: -12%;
+  right: -12%;
+  top: 58%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(108 158 179 / 0.26), rgb(var(--gravity-signal) / 0.6), rgb(108 158 179 / 0.2), transparent);
+  box-shadow: 0 0 42px rgb(var(--gravity-signal) / 0.14);
+  opacity: calc(0.28 + var(--gravity-accretion, 0) * 0.72);
+  transform: rotate(-5deg) scaleX(calc(0.45 + var(--gravity-accretion, 0) * 0.55));
+}
+
+.core {
+  position: absolute;
+  left: 38%;
+  top: 54%;
+  width: clamp(90px, 12vw, 180px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(var(--gravity-signal) / 0.2), rgb(var(--gravity-signal) / 0.07) 34%, transparent 70%);
+  filter: blur(10px);
+  opacity: calc(var(--gravity-accretion, 0) * 0.9);
+}
+
+.creationMass {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: calc(var(--gravity-precipitation, 0) * (1 - var(--gravity-arrival, 0)));
+}
+
+.creationMass span {
+  --mass-line: 0;
+  position: absolute;
+  left: 52%;
+  top: calc(42% + var(--mass-line) * 2.35%);
+  width: calc(4% + (7 - var(--mass-line)) * 2.7%);
+  height: 1px;
+  background: linear-gradient(90deg, rgb(var(--gravity-silver) / 0.76), transparent);
+  transform-origin: left;
+  transform: scaleX(var(--gravity-precipitation, 0));
+}
+
+.arrival {
+  position: fixed;
+  left: 51%;
+  top: 39%;
+  z-index: 3;
+  width: min(42vw, 670px);
+  pointer-events: none;
+  opacity: calc(var(--gravity-arrival, 0) * (1 - var(--arrival-scroll, 0)));
+  transform: translateY(calc((1 - var(--gravity-arrival, 0)) * 24px));
+}
+
+.arrivalIndex,
+.stationIndex,
+.railMark,
+.region {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.arrivalIndex { margin: 0 0 14px; color: var(--signal); }
+.arrival h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(84px, 13vw, 210px);
+  font-weight: 300;
+  line-height: 0.74;
+  letter-spacing: -0.045em;
+  color: rgb(224 232 238);
+}
+.arrivalLine {
+  max-width: 490px;
+  margin: clamp(26px, 4vh, 46px) 0 0;
+  font-family: var(--font-ui);
+  font-size: clamp(14px, 1.2vw, 18px);
+  line-height: 1.55;
+  color: rgb(var(--gravity-silver) / 0.72);
+}
 
 .rail {
   position: sticky;
   top: 0;
-  z-index: 4;
+  z-index: 8;
   display: flex;
-  flex-wrap: wrap;
-  gap: clamp(14px, 2vw, 28px);
-  padding: clamp(18px, 3vh, 30px) clamp(28px, 5vw, 72px)
-    clamp(10px, 1.6vh, 16px);
-  /* Content läuft beim Scrollen unter ihr durch — sie braucht die Scrim-
-     Grammatik der Stage-Grenze (dissolve, nicht Kollision). */
-  background: linear-gradient(
-    180deg,
-    rgb(var(--surface-deep-ch) / 0.82) 62%,
-    rgb(var(--surface-deep-ch) / 0)
-  );
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px clamp(24px, 4vw, 64px);
+  background: linear-gradient(180deg, rgb(2 6 11 / 0.88), transparent);
+  opacity: var(--gravity-arrival, 0);
 }
-
-.journey[data-mode="side"] .rail {
-  padding-left: calc(38% + clamp(24px, 3vw, 44px));
-}
-
-.region {
-  appearance: none;
-  border: 0;
-  background: none;
-  padding: 2px 0;
-  min-height: 34px;
-  color: var(--silver-dim);
-  font: 11px var(--font-mono);
-  letter-spacing: 0.18em;
-  cursor: pointer;
-  transition: color 240ms var(--ease-out-expo);
-}
-
-.journey[data-live="true"] .region:hover,
-.region:focus-visible {
-  color: var(--bone);
-  outline: none;
-}
-
-.region[aria-current="true"] {
-  color: var(--cyan);
-  text-shadow: 0 0 14px var(--cyan-glow);
-}
-
-/* ── Stationen ───────────────────────────────────────────────────────── */
-
-.station {
-  position: relative;
+.railMark { color: var(--signal); }
+.railLinks {
   display: flex;
-  align-items: flex-start;
+  gap: clamp(14px, 2vw, 30px);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.railLinks::-webkit-scrollbar { display: none; }
+.region { min-height: 36px; color: rgb(var(--gravity-silver) / 0.42); transition: color 220ms ease; }
+.region:hover,
+.region:focus-visible,
+.region[aria-current="true"] { color: rgb(var(--gravity-silver)); outline: none; }
+.region[aria-current="true"] { text-decoration: underline; text-decoration-color: var(--signal); text-underline-offset: 7px; }
 
+.station { position: relative; display: flex; align-items: center; }
+.station[data-station="experience"] .inner { padding-top: 108vh; }
 .inner {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: clamp(20px, 3vh, 34px);
-  padding: clamp(28px, 5vh, 56px) clamp(28px, 5vw, 72px)
-    clamp(48px, 8vh, 96px) 0;
+  width: min(58vw, 820px);
+  margin-left: 39%;
+  padding: 18vh clamp(24px, 5vw, 78px) 16vh 0;
 }
-
-/* SIDE: jede Station hat ihre eigene Bühnenhälfte — die Kamera entscheidet,
-   wie viel Raum ER einnimmt; der Content weicht entsprechend. */
-.journey[data-mode="side"] .station[data-station="experience"] .inner,
-.journey[data-mode="side"] .station[data-station="work"] .inner {
-  margin-left: 38%;
-}
-
-/* SYSTEMS: er ist riesig und angeschnitten links — der Text steht in seinem
-   Raum, schmaler und weiter rechts. */
-.journey[data-mode="side"] .station[data-station="systems"] .inner {
-  margin-left: 52%;
-  max-width: 560px;
-}
-
-/* VOLKAN: er ist in die Tiefe zurückgetreten. Der Text stand zentriert —
-   und scrollte damit MITTEN DURCH SEIN GESICHT (Video-Verdikt t=41; dieselbe
-   Fehlerklasse wie die historische Rail-über-Gesicht-Kollision). Ein
-   zurückgetretener Lenox steht bildmittig-rechts (Pose shiftX 0.3), also
-   gehört der Text in eine linke Spalte, durch die er nie hindurchläuft. */
-.journey[data-mode="side"] .station[data-station="volkan"] .inner {
-  margin-left: clamp(28px, 7vw, 120px);
-  max-width: 480px;
-}
-
-.journey[data-mode="side"] .station[data-station="contact"] .inner {
-  margin-left: 46%;
-  max-width: 640px;
-}
-
-/* Auftritt/Abgang: die Bühne führt, CSS spielt. Station 1 ist ausgenommen —
-   ihr Auftritt IST der Build. */
-.station:not([data-station="experience"]) .inner {
-  opacity: 0;
-  transform: translateY(34px);
-  transition:
-    opacity 700ms var(--ease-out-expo),
-    transform 700ms var(--ease-out-expo);
-}
-
-.station:not([data-station="experience"])[data-live="true"] .inner {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* ── Typo-Grammatik (aus dem Workspace übernommen) ───────────────────── */
-
-.ruleLeft {
-  position: absolute;
-  top: 14%;
-  bottom: 14%;
-  left: 38%;
-  width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgb(var(--silver-ch) / 0.16) 18%,
-    rgb(var(--silver-ch) / 0.16) 82%,
-    transparent
-  );
-  transform-origin: top center;
-}
-
-.journey[data-mode="banded"] .ruleLeft {
-  display: none;
-}
-
-/* Typo-Gesetz (Rescue): das Display-Face FÜHRT — 96px statt Beischrift.
-   Mono ist ab jetzt ausschliesslich die Maschinen-Stimme (Labels, Status),
-   nie mehr die einzige Stimme einer Station. */
+.stationIndex { margin: 0 0 22px; color: var(--signal); }
 .heading {
   margin: 0;
+  max-width: 760px;
   font-family: var(--font-display);
-  font-size: clamp(44px, 6.4vw, 96px);
-  font-weight: 400;
-  line-height: 0.98;
-  letter-spacing: 0.005em;
-  color: var(--bone);
-  min-height: 1.02em;
+  font-size: clamp(58px, 7.2vw, 116px);
+  font-weight: 300;
+  line-height: 0.88;
+  letter-spacing: -0.025em;
+  color: rgb(220 229 235);
+  text-shadow: 0 3px 28px rgb(0 9 16 / 0.72);
 }
 
-.lead {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--silver-dim);
+.contentIsland,
+.lenoxSignal {
+  border: 1px solid rgb(226 247 255 / 0.14);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgb(13 27 36 / 0.9), rgb(5 13 20 / 0.82)),
+    rgb(5 13 20 / 0.9);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 24px 80px rgb(3 13 20 / 0.24);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
 }
 
-/* ── EXPERIENCE: drei Tafeln in echter Tiefe ─────────────────────────────
-   Opake Materie der Signatur (Papier/Stein, nie Glas — AD-Verdikt), eine
-   geritzte Kante oben, gebackener Schatten (statisches ::after-Gradient,
-   NIE animierter box-shadow — Perf-Trap #5). Die Zerlegung liest --sp vom
-   Director: transform-only, eine Quelle. */
-.plateSpace {
-  position: relative;
-  min-height: clamp(300px, 44vh, 460px);
-  perspective: 1400px; /* ≈ Engine-FOV bei 900px Viewport — Perf-Trap #6 */
-  perspective-origin: 30% 42%;
+.massLedger {
+  margin-top: clamp(58px, 10vh, 116px);
+  padding: clamp(18px, 3vw, 34px);
 }
-
-.plate {
-  --i: 0;
-  position: absolute;
-  width: min(340px, 42%);
-  padding: 20px 22px 24px;
-  background: rgb(var(--surface-ch));
-  border-radius: 1px;
-  will-change: transform;
-  transform:
-    translate3d(
-      calc(var(--i) * 17% + var(--sp, 0) * var(--px, 0px)),
-      calc(var(--i) * 13% + var(--sp, 0) * var(--py, 0px)),
-      calc(var(--i) * -110px + var(--sp, 0) * var(--pz, 0px))
-    )
-    rotateY(calc(-5deg + var(--i) * 2deg))
-    rotateX(calc(var(--sp, 0) * var(--prx, 0deg)));
+.massEntry {
+  display: grid;
+  grid-template-columns: 42px minmax(120px, 0.5fr) 1fr;
+  gap: 22px;
+  align-items: baseline;
+  padding: 24px 0;
+  border-bottom: 1px solid rgb(var(--gravity-silver) / 0.12);
 }
+.massEntry > span,
+.massEntry h3 { font: 10px var(--font-mono); letter-spacing: 0.18em; color: rgb(var(--gravity-silver) / 0.58); }
+.massEntry h3 { color: rgb(214 226 233); }
+.massEntry p,
+.stratum p,
+.pending { margin: 0; font: 15px/1.65 var(--font-ui); color: rgb(var(--gravity-silver) / 0.68); }
 
-.plate[data-plate="0"] {
-  --i: 0;
-  /* Die vorderste kreuzt beim Übergang den VORDERGRUND. */
-  --px: -180px;
-  --py: 120px;
-  --pz: 420px;
-  --prx: 4deg;
-  z-index: 3;
-}
-
-.plate[data-plate="1"] {
-  --i: 1;
-  /* Die mittlere kippt zur Kante — sie WIRD ein Stratum. */
-  --px: 30px;
-  --py: 30px;
-  --pz: 60px;
-  --prx: 58deg;
-  z-index: 2;
-}
-
-.plate[data-plate="2"] {
-  --i: 2;
-  /* Die hinterste steigt und weicht in die Tiefe. */
-  --px: 90px;
-  --py: -80px;
-  --pz: -260px;
-  --prx: -8deg;
-  z-index: 1;
-}
-
-/* Geritzte Kante statt Border-Box: eine Linie, die MATERIAL sagt. */
-.plateEdge {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 18%;
-  height: 2px;
-  background: var(--bone);
-  opacity: 0.85;
-}
-
-/* Gebackener Schatten: statisch, mit der Tafel transformiert — gratis. */
-.plate::after {
-  content: "";
-  position: absolute;
-  inset: auto -6% -14% 8%;
-  height: 22%;
-  background: radial-gradient(
-    60% 100% at 40% 0%,
-    rgb(var(--bone-ch) / 0.22),
-    transparent 70%
-  );
-  z-index: -1;
-  pointer-events: none;
-}
-
-.plateLabel {
-  margin: 0 0 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.26em;
-  color: var(--cyan);
-}
-
-.plateBody {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 16px;
-  line-height: 1.5;
-  letter-spacing: 0.01em;
-  color: var(--bone);
-}
-
-/* ── SYSTEMS: der Kern-Schnitt ───────────────────────────────────────────
-   Drei Strata von der Kante gesehen, getrennt durch Nähte. Kein Diagramm,
-   keine Ziffern — die Schwere der Nähte und die Serif-Worte tragen es.
-   Leichte Gegenläufigkeit der Schichten (--sp) = Parallaxe im Material. */
 .strata {
-  display: flex;
-  flex-direction: column;
-  max-width: 640px;
+  margin-top: clamp(60px, 11vh, 130px);
+  padding: clamp(20px, 3.5vw, 42px);
 }
-
 .stratum {
-  --s: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 26px 0 30px;
-  border-top: 3px solid rgb(var(--bone-ch) / 0.82);
-  will-change: transform;
-  transform: translate3d(calc((var(--sp, 0) - 0.5) * var(--s) * 26px), 0, 0);
-}
-
-.stratum[data-stratum="0"] { --s: 1; }
-.stratum[data-stratum="1"] { --s: -0.6; border-top-width: 2px; }
-.stratum[data-stratum="2"] { --s: 0.3; border-top-width: 1px; }
-
-.stratumTitle {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(26px, 2.6vw, 40px);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0.01em;
-  color: var(--bone);
-}
-
-.stratumBody {
-  margin: 0;
-  max-width: 52ch;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.65;
-  letter-spacing: 0.02em;
-  color: rgb(var(--silver-ch) / 0.82);
-}
-
-.pending {
-  margin: 0;
-  max-width: 46ch;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.7;
-  color: rgb(var(--silver-ch) / 0.5);
-  border-left: 1px solid rgba(240, 160, 48, 0.35);
-  padding-left: 16px;
-}
-
-/* ── SYSTEMS: sein Inneres als Register, nicht als Karten ────────────── */
-
-/* ── BANDED ──────────────────────────────────────────────────────────── */
-
-.journey[data-mode="banded"] .rail {
-  top: 0;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 10px;
-  padding: 6px var(--content-pad);
-  touch-action: pan-x;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent,
-    #000 14px,
-    #000 calc(100% - 30px),
-    transparent
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent,
-    #000 14px,
-    #000 calc(100% - 30px),
-    transparent
-  );
-}
-
-/* The stage band belongs to LENOX alone. On a phone the scrollport itself starts
-   at the seam, so no DOM content can ever travel through his reserved band. */
-.journey[data-mode="banded"] {
-  top: var(--workspace-top);
-}
-
-.journey[data-mode="banded"] .rail::-webkit-scrollbar {
-  display: none;
-}
-
-.journey[data-mode="banded"] .region {
-  flex: 0 0 auto;
-  min-height: 48px;
-  padding: 0 8px;
-}
-
-.journey[data-mode="banded"] .inner {
-  padding: clamp(18px, 4vh, 28px) var(--content-pad)
-    calc(clamp(24px, 6vh, 48px) + var(--safe-bottom));
-}
-
-/* Later stations can reach the top of the scrollport while the rail is sticky.
-   Reserve its height so headings never resolve underneath the navigation. */
-.journey[data-mode="banded"]
-  .station:not([data-station="experience"])
-  .inner {
-  padding-top: calc(var(--nav-h) + clamp(18px, 4vh, 28px));
-}
-
-/* Die erste Station beginnt unter seinem Stage-Band. */
-.journey[data-mode="banded"] .station[data-station="experience"] {
-  padding-top: 0;
-}
-
-.journey[data-mode="banded"] .heading {
-  font-size: clamp(30px, 9vw, 46px);
-  line-height: 1.06;
-}
-
-/* BANDED: die Tafeln stapeln als Materie-Folge — Tiefe kommt aus dem
-   versetzten Stagger, nicht aus absoluter 3D-Bühne (kein Platz, kein Perf-
-   Budget für promoted layers auf dem Phone — Trap #5). */
-.journey[data-mode="banded"] .plateSpace {
-  min-height: 0;
-  perspective: 900px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.journey[data-mode="banded"] .plate {
   position: relative;
-  width: min(440px, 92%);
-  transform: rotateY(-3deg) translateZ(calc(var(--i) * -24px));
+  padding: 28px 0 28px clamp(22px, 4vw, 56px);
+  border-top: 1px solid rgb(var(--gravity-silver) / 0.16);
+}
+.stratum::before { content: ""; position: absolute; left: 0; top: -1px; width: 14%; height: 2px; background: var(--signal); opacity: 0.72; }
+.stratum h3 { margin: 0 0 14px; font: 500 13px var(--font-mono); letter-spacing: 0.2em; color: rgb(218 228 234); }
+.pending { margin-top: 48px; padding-left: 22px; border-left: 1px solid rgb(var(--gravity-signal) / 0.7); }
+
+.lenoxInner {
+  width: min(72vw, 1080px);
+  margin-left: 24%;
+}
+.lenoxStation { align-items: flex-start; }
+.lenoxStation .lenoxInner { padding-top: 34vh; }
+
+.lenoxName {
+  margin: 0 0 clamp(42px, 8vh, 96px);
+  font-family: var(--font-display);
+  font-size: clamp(132px, 23vw, 360px);
+  font-weight: 300;
+  line-height: 0.68;
+  letter-spacing: -0.07em;
+  color: rgb(229 246 248 / 0.1);
+  -webkit-text-stroke: 1px rgb(235 251 255 / 0.48);
+  text-shadow: 0 12px 60px rgb(0 12 20 / 0.48);
+  transform: translateX(-12%);
 }
 
-.journey[data-mode="banded"] .plate[data-plate="1"] {
-  align-self: flex-end;
+.lenoxHeading { max-width: 720px; }
+
+.lenoxSignals {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: clamp(64px, 12vh, 140px);
 }
 
-.journey[data-mode="banded"] .stratumTitle {
-  font-size: clamp(22px, 6.4vw, 30px);
+.lenoxSignal {
+  padding: clamp(24px, 4vw, 48px);
+}
+.lenoxSignal:nth-child(1) { grid-column: 1 / 8; }
+.lenoxSignal:nth-child(2) { grid-column: 8 / 13; margin-top: 16vh; }
+.lenoxSignal:nth-child(3) { grid-column: 3 / 11; }
+.lenoxSignal h3 {
+  margin: 0 0 24px;
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: 0.2em;
+  color: var(--signal);
+}
+.lenoxSignal p {
+  margin: 0;
+  max-width: 34ch;
+  font: clamp(18px, 2vw, 27px)/1.35 var(--font-ui);
+  color: rgb(226 238 243 / 0.88);
 }
 
-/* ── Reduced Motion: Materie steht, nichts morpht am Scroll ──────────── */
+.station:not([data-station="experience"]) .inner { opacity: 0.18; transform: translateY(28px); transition: opacity 600ms ease, transform 600ms ease; }
+.station[data-live="true"] .inner { opacity: 1; transform: translateY(0); }
+.journey[data-creating="true"] .station .inner { opacity: 0; }
+
+@keyframes gravity-local-reveal {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Local content only. Engine-coupled composition remains owned by --sp and
+   journeyDirector; this never writes camera or world progression. */
+@supports (animation-timeline: view()) {
+  .massEntry,
+  .stratum,
+  .pending,
+  .lenoxSignal {
+    animation: gravity-local-reveal linear both;
+    animation-timeline: view();
+    animation-range: entry 4% cover 28%;
+  }
+}
+
+@media (max-width: 767px) {
+  .worldLight { background: radial-gradient(100% 50% at 50% 28%, rgb(225 250 255 / 0.1), transparent 70%); }
+  .horizon { top: 60%; transform: scaleX(calc(0.4 + var(--gravity-accretion, 0) * 0.6)); }
+  .core { left: 50%; top: 54%; translate: -50% 0; }
+  .creationMass span { left: 12%; top: calc(63% + var(--mass-line) * 2%); width: calc(32% + (7 - var(--mass-line)) * 4%); }
+  .arrival {
+    left: 24px;
+    right: 24px;
+    top: 61%;
+    width: auto;
+  }
+  .arrival h1 { font-size: clamp(78px, 27vw, 124px); line-height: 0.78; }
+  .arrivalLine { margin-top: 24px; font-size: 14px; line-height: 1.45; }
+  .rail { padding: 16px 18px; }
+  .railMark { display: none; }
+  .railLinks { gap: 16px; width: 100%; }
+  .region { flex: 0 0 auto; min-height: 44px; white-space: nowrap; font-size: 8px; letter-spacing: 0.1em; }
+  .inner { width: 100%; margin-left: 0; padding: 18vh 24px 14vh; }
+  .station[data-station="experience"] .inner { padding-top: 112vh; }
+  /* The portrait composition owns the upper band. Content begins below it so
+     the core and all six arms stay present without becoming a watermark over
+     the semantic layer. */
+  .station:not([data-station="experience"]) .inner { padding-top: 70vh; }
+  .heading { font-size: clamp(52px, 18vw, 82px); line-height: 0.9; }
+  .massEntry { grid-template-columns: 30px 1fr; gap: 12px 16px; }
+  .massEntry p { grid-column: 2; }
+  .contentIsland { border-radius: 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .lenoxInner { width: 100%; margin-left: 0; }
+  .lenoxStation .lenoxInner { padding-top: 70vh; }
+  .lenoxName {
+    margin-bottom: 56px;
+    font-size: clamp(94px, 34vw, 150px);
+    line-height: 0.72;
+    transform: none;
+  }
+  .lenoxSignals { display: block; margin-top: 72px; }
+  .lenoxSignal,
+  .lenoxSignal:nth-child(1),
+  .lenoxSignal:nth-child(2),
+  .lenoxSignal:nth-child(3) {
+    margin: 0 0 18px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .contentIsland,
+  .lenoxSignal {
+    background: rgb(7 17 24 / 0.97);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .station:not([data-station="experience"]) .inner {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-  .plate {
-    transform:
-      translate3d(calc(var(--i) * 17%), calc(var(--i) * 13%), calc(var(--i) * -110px))
-      rotateY(calc(-5deg + var(--i) * 2deg));
-  }
-  .stratum {
-    transform: none;
-  }
+  .core { opacity: 0.65; }
+  .station:not([data-station="experience"]) .inner { transition: none; }
+  .arrival { transform: none; }
+  .massEntry,
+  .stratum,
+  .pending,
+  .lenoxSignal { animation: none; opacity: 1; transform: none; }
 }

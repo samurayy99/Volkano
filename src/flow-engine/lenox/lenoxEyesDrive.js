@@ -1430,6 +1430,22 @@ export class LenoxEyesDrive {
         ? Math.sin(this.breathePhase) * 0.5 + 0.5
         : 0;
 
+    const tensionByEmotion =
+      this.emotion === "acting"
+        ? 0.76
+        : this.emotion === "concerned"
+          ? 0.68
+          : this.emotion === "thinking"
+            ? 0.52
+            : this.emotion === "listening"
+              ? 0.34
+              : 0.2;
+    const signalState = {
+      energy: clamp01(this.arousal + this.confirmT * 0.16),
+      attention: clamp01(this.attention),
+      tension: clamp01(tensionByEmotion + this.confirmT * 0.18),
+    };
+
     app.setLenoxRig?.({
       presence: this.rigPresence,
       /** Body envelope — the shell exists before the face does. */
@@ -1441,6 +1457,8 @@ export class LenoxEyesDrive {
       look: { x: lookX, y: lookY },
       /** 0…1 breathing phase; the body swells, the face does not. */
       breath,
+      signals: signalState,
+      reducedMotion: this.reducedMotion,
       dt: Math.max(dt, 0),
       head: {
         x: bobX + head.bounceX,

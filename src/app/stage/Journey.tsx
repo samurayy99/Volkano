@@ -1,46 +1,35 @@
 "use client";
 
 import gsap from "gsap";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import type {
-  CompositionMode,
-  LenoxEmotion,
-  LenoxReaction,
-} from "../../flow-engine/types";
-import type { StationPose } from "./stations";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CompositionMode, LenoxEmotion, LenoxReaction } from "../../flow-engine/types";
 import { REGIONS, type Locale, type Messages, type Region } from "../../i18n/messages";
-import { buildTimeline, primeBuild } from "./buildTimeline";
 import { CaseTheater } from "./CaseTheater";
 import { ContactUplink } from "./ContactUplink";
+import {
+  gravityCreationTimeline,
+  primeGravityCreation,
+} from "./gravityCreationTimeline";
+import { progressWithinSegment } from "./filmScrubber";
 import { createJourneyDirector } from "./journeyDirector";
-import { STATIONS } from "./stations";
-import { useDecode } from "./useDecode";
+import { STATIONS, type StationPose } from "./stations";
 import styles from "./Journey.module.css";
 
 /**
- * DIE REISE (DER BEGLEITER, Slice 2) — ersetzt den statischen Workspace.
- *
- * Der Canvas bleibt fix; DIESES Element ist der einzige Scroller der Seite.
- * Fünf semantische Stationen geben die Strecke vor, der Director (eine
- * ScrollTrigger-Wahrheit) fährt die Kamera, führt Lenox' Zustand und
- * schaltet die Content-Bühnen. Er bleibt immer im Bild — mal begleitend,
- * mal angeschnitten groß (SYSTEMS), mal in die Tiefe zurückgetreten
- * (VOLKAN). Kein statischer Split mit schwebendem Maskottchen.
- *
- * Der Build ist unverändert seine Geste: er baut die ERSTE Station
- * (dieselbe [data-build]-Grammatik), erst mit READY wird gescrollt.
+ * GRAVITY is mounted inert before THE COLLAPSE starts. One creation scalar
+ * drives its readable typography and the engine field; after Arrival this
+ * same element becomes the only vertical scroller on the page.
  */
 export function Journey({
   m,
   locale,
   mode,
+  armed,
+  creating,
   building,
+  reduced,
+  onCreationProgress,
+  onCreated,
   onOperator,
   onGaze,
   onEmotion,
@@ -48,11 +37,17 @@ export function Journey({
   onPose,
   onBuilt,
   onStationChange,
+  onScrollProgress,
 }: {
   m: Messages;
   locale: Locale;
   mode: CompositionMode;
+  armed: boolean;
+  creating: boolean;
   building: boolean;
+  reduced: boolean;
+  onCreationProgress: (progress: number, reduced: boolean) => void;
+  onCreated: () => void;
   onOperator: (target: number) => void;
   onGaze: (x: number, y: number) => void;
   onEmotion: (emotion: LenoxEmotion) => void;
@@ -60,61 +55,113 @@ export function Journey({
   onPose: (pose: StationPose, tau: number) => void;
   onBuilt: () => void;
   onStationChange: (region: Region, glance: "work" | "visitor") => void;
+  onScrollProgress: (progress: number, clipAProgress: number) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const sectionRefs = useRef<(HTMLElement | null)[]>([]);
+  const buildingRef = useRef(building);
   const [activeStation, setActiveStation] = useState<Region>("experience");
-  const [headingLive, setHeadingLive] = useState(false);
+  const hooks = useRef({
+    onCreationProgress,
+    onCreated,
+    onOperator,
+    onGaze,
+    onEmotion,
+    onPose,
+    onBuilt,
+    onStationChange,
+    onScrollProgress,
+  });
 
-  // Hooks in Refs — der Director und die Build-Uhr überleben Parent-Renders.
-  const hooks = useRef({ onOperator, onGaze, onEmotion, onBuilt, onPose, onStationChange });
-  const modeRef = useRef(mode);
   useEffect(() => {
-    hooks.current = { onOperator, onGaze, onEmotion, onBuilt, onPose, onStationChange };
-    modeRef.current = mode;
-  }, [onOperator, onGaze, onEmotion, onBuilt, onPose, onStationChange, mode]);
+    hooks.current = {
+      onCreationProgress,
+      onCreated,
+      onOperator,
+      onGaze,
+      onEmotion,
+      onPose,
+      onBuilt,
+      onStationChange,
+      onScrollProgress,
+    };
+    buildingRef.current = building;
+  }, [
+    building,
+    onCreationProgress,
+    onCreated,
+    onOperator,
+    onGaze,
+    onEmotion,
+    onPose,
+    onBuilt,
+    onStationChange,
+    onScrollProgress,
+  ]);
 
-  /** Der Build — identische Grammatik, Ziel ist Station 1. */
   useLayoutEffect(() => {
-    // The rail is part of the build but sits beside the first section in the
-    // DOM. Scope the timeline to the one authoritative scroller so both the
-    // rail and Station 1 are primed before paint.
     const scope = scrollerRef.current;
-    if (!building || !scope) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const ctx = gsap.context(() => {
-      primeBuild(scope);
-      buildTimeline(
+    if (!creating || !scope) return;
+    primeGravityCreation(scope);
+    let timeline: gsap.core.Timeline | null = null;
+    const frame = requestAnimationFrame(() => {
+      timeline = gravityCreationTimeline(
         scope,
+        mode,
         {
-          onOperator: (t) => hooks.current.onOperator(t),
-          onGaze: (x, y) => hooks.current.onGaze(x, y),
-          onEmotion: (e) => hooks.current.onEmotion(e),
-          onHeadingStart: () => setHeadingLive(true),
-          onBuilt: () => hooks.current.onBuilt(),
+          setProgress: (p) => hooks.current.onCreationProgress(p, reduced),
+          setOperator: (t) => hooks.current.onOperator(t),
+          setGaze: (x, y) => hooks.current.onGaze(x, y),
+          setEmotion: (emotion) => hooks.current.onEmotion(emotion),
+          onDone: () => hooks.current.onCreated(),
         },
         reduced,
-        modeRef.current,
       );
-    }, scope);
-    return () => ctx.revert();
-  }, [building]);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      timeline?.kill();
+    };
+  }, [creating, mode, reduced]);
 
-  /** Der Director — startet erst, wenn die Seite steht (READY). */
+  // Arrival transaction: initialise the sole director first, then release
+  // the reducer to READY on the next frame. There is no scrollable gap.
   useEffect(() => {
-    if (building) return;
+    if (armed || creating) return;
     const scroller = scrollerRef.current;
     const sections = sectionRefs.current.filter(Boolean) as HTMLElement[];
     if (!scroller || sections.length !== STATIONS.length) return;
-
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    return createJourneyDirector(
+    for (const variable of [
+      "--creation-p",
+      "--gravity-fall",
+      "--gravity-accretion",
+      "--gravity-precipitation",
+      "--gravity-arrival",
+    ]) {
+      scroller.style.setProperty(variable, "1");
+    }
+    scroller.dataset.creation = "complete";
+    const dispose = createJourneyDirector(
       scroller,
       sections,
-      modeRef.current,
+      mode,
       {
         setPose: (pose, tau) => hooks.current.onPose(pose, tau),
-        onStation: (index, station) => {
+        onProgress: (progress) => {
+          scroller.style.setProperty(
+            "--arrival-scroll",
+            Math.min(progress * 12, 1).toFixed(4),
+          );
+          const clipAEnd = sections[3]?.offsetTop ?? scroller.scrollHeight;
+          hooks.current.onScrollProgress(
+            progress,
+            progressWithinSegment(scroller.scrollTop, {
+              start: 0,
+              end: clipAEnd,
+            }),
+          );
+        },
+        onStation: (_index, station) => {
           setActiveStation(station.id);
           hooks.current.onEmotion(station.emotion);
           hooks.current.onStationChange(station.id, station.glance);
@@ -122,173 +169,171 @@ export function Journey({
       },
       reduced,
     );
-    // mode ist während BUILDING eingefroren (useCompositionMode) und der
-    // Director startet danach — modeRef genügt, kein Rebuild bei Rotation
-    // mitten in der Fahrt (der nächste READY-Refresh richtet es).
-  }, [building]);
+    const frame = requestAnimationFrame(() => {
+      if (buildingRef.current) hooks.current.onBuilt();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      dispose();
+    };
+  }, [armed, creating, mode, reduced]);
 
   const jumpTo = useCallback((index: number) => {
     const scroller = scrollerRef.current;
     const target = sectionRefs.current[index];
     if (!scroller || !target) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     scroller.scrollTo({
       top: target.offsetTop,
       behavior: reduced ? "auto" : "smooth",
     });
-  }, []);
+  }, [reduced]);
 
-  const heading = (id: Region) => m.region[id];
-  const decodedFirst = useDecode(m.region.experience, headingLive, 620);
+  const arrivalLine =
+    locale === "en"
+      ? "A permanent living interface, formed from the same matter that woke LENOX."
+      : "Eine permanente lebende Oberfläche, geformt aus derselben Materie, die LENOX geweckt hat.";
 
   return (
     <div
       ref={scrollerRef}
       className={styles.journey}
       data-mode={mode}
-      data-live={!building}
-      aria-busy={building}
+      data-live={!armed && !creating && !building}
+      data-armed={armed}
+      data-creating={creating}
+      aria-busy={armed || creating || building}
     >
-      {/* Die Rail — jetzt Anker der Reise: Klick fährt die Strecke. */}
-      <nav className={styles.rail} aria-label="Journey">
-        {REGIONS.map((id, i) => (
-          <button
-            key={id}
-            type="button"
-            data-build="region"
-            className={styles.region}
-            aria-current={id === activeStation}
-            tabIndex={building ? -1 : 0}
-            onClick={() => jumpTo(i)}
-          >
-            {m.region[id]}
-          </button>
+      <div className={styles.worldLight} aria-hidden>
+        <span className={styles.horizon} />
+        <span className={styles.core} />
+      </div>
+
+      <div className={styles.creationMass} aria-hidden>
+        {Array.from({ length: 7 }, (_, index) => (
+          <span key={index} style={{ "--mass-line": index } as React.CSSProperties} />
         ))}
+      </div>
+
+      <header className={styles.arrival} data-gravity-line>
+        <p className={styles.arrivalIndex}>{m.brand}</p>
+        <h1>GRAVITY</h1>
+        <p className={styles.arrivalLine}>{arrivalLine}</p>
+      </header>
+
+      <nav className={styles.rail} aria-label="Journey">
+        <span className={styles.railMark}>GRAVITY</span>
+        <div className={styles.railLinks}>
+          {REGIONS.map((id, index) => (
+            <button
+              key={id}
+              type="button"
+              className={styles.region}
+              aria-current={id === activeStation}
+              tabIndex={armed || creating || building ? -1 : 0}
+              onClick={() => jumpTo(index)}
+            >
+              {m.region[id]}
+            </button>
+          ))}
+        </div>
       </nav>
 
-      {/* ── Station 1: EXPERIENCE — drei Tafeln im Raum, sein Bauwerk ─────
-          Keine Border-Cards (Verdikt): drei OPAKE Tafeln — Papier/Stein-
-          Materie der Signatur — gestaffelt in echter Tiefe (CSS-Perspektive,
-          transform-only). Beim Weiterscrollen zerlegen sie sich kausal in
-          Schichten: die vorderste kreuzt den Vordergrund, die hinterste
-          kippt zur Kante — aus dem Bauwerk wird sein Inneres (SYSTEMS). */}
       <section
         ref={(el) => { sectionRefs.current[0] = el; }}
         className={styles.station}
         data-station="experience"
-        data-presence="side"
         style={{ minHeight: `${STATIONS[0].lengthVh}vh` }}
       >
-        <span className={styles.ruleLeft} data-build-rule="v" aria-hidden />
         <div className={styles.inner}>
-          <h2 className={styles.heading} data-build="heading">
-            {building ? decodedFirst : heading("experience")}
-          </h2>
-          <p className={styles.lead} data-build="content">
-            {m.content.experience.lead}
-          </p>
-          {/* Tafeln tragen data-build="content" (Opacity-Fade), NICHT
-              "module": der Build schriebe sonst ein Inline-y-Transform, das
-              die 3D-Staffelung überschreibt und bei revert() zurückschnappt. */}
-          <div className={styles.plateSpace}>
-            {m.content.experience.modules.map((mod, i) => (
-              <article
-                key={mod.title}
-                className={styles.plate}
-                data-plate={i}
-                data-build="content"
-              >
-                <span className={styles.plateEdge} aria-hidden />
-                <h3 className={styles.plateLabel}>{mod.title}</h3>
-                <p className={styles.plateBody}>{mod.body}</p>
+          <p className={styles.stationIndex}>{m.region.experience}</p>
+          <h2 className={styles.heading}>{m.content.experience.lead}</h2>
+          <div className={`${styles.massLedger} ${styles.contentIsland}`}>
+            {m.content.experience.modules.map((module, index) => (
+              <article key={module.title} className={styles.massEntry}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <h3>{module.title}</h3>
+                <p>{module.body}</p>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Station 2: SYSTEMS — der Kern-Schnitt ─────────────────────────
-          Kein Explosions-Diagramm, keine 01/02/03-Liste (Verdikt): sein
-          Inneres als Schichten-Schnitt von der Kante gesehen — drei Strata
-          mit Nähten, wie ein Bohrkern. Er selbst steht monumental
-          angeschnitten links: das Ding, aus dem der Schnitt stammt. */}
       <section
         ref={(el) => { sectionRefs.current[1] = el; }}
         className={styles.station}
         data-station="systems"
-        data-presence="close"
         style={{ minHeight: `${STATIONS[1].lengthVh}vh` }}
       >
         <div className={styles.inner}>
-          <p className={styles.lead}>{m.content.systems.lead}</p>
-          <h2 className={styles.heading}>{heading("systems")}</h2>
-          <div className={styles.strata}>
-            {m.content.systems.modules.map((mod, i) => (
-              <article key={mod.title} className={styles.stratum} data-stratum={i}>
-                <h3 className={styles.stratumTitle}>{mod.title}</h3>
-                <p className={styles.stratumBody}>{mod.body}</p>
+          <h2 className={styles.heading}>{m.content.systems.lead}</h2>
+          <div className={`${styles.strata} ${styles.contentIsland}`}>
+            {m.content.systems.modules.map((module) => (
+              <article key={module.title} className={styles.stratum}>
+                <h3>{module.title}</h3>
+                <p>{module.body}</p>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Station 3: WORK — verdrahtet (Cases), nicht poliert ─────────── */}
       <section
         ref={(el) => { sectionRefs.current[2] = el; }}
-        className={styles.station}
-        data-station="work"
-        data-presence="side"
+        className={`${styles.station} ${styles.lenoxStation}`}
+        data-station="lenox"
         style={{ minHeight: `${STATIONS[2].lengthVh}vh` }}
       >
-        <div className={styles.inner}>
-          <h2 className={styles.heading}>{heading("work")}</h2>
-          <p className={styles.lead}>{m.content.work.lead}</p>
-          <CaseTheater
-            locale={locale}
-            mode={mode}
-            ui={m.caseUi}
-            onEmotion={onEmotion}
-            onGaze={onGaze}
-          />
+        <div className={`${styles.inner} ${styles.lenoxInner}`}>
+          <p className={styles.stationIndex}>{m.region.lenox}</p>
+          <p className={styles.lenoxName} aria-hidden>LENOX</p>
+          <h2 className={`${styles.heading} ${styles.lenoxHeading}`}>
+            {m.content.lenox.lead}
+          </h2>
+          <div className={styles.lenoxSignals}>
+            {m.content.lenox.modules.map((module) => (
+              <article key={module.title} className={styles.lenoxSignal}>
+                <h3>{module.title}</h3>
+                <p>{module.body}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* ── Station 4: VOLKAN — er tritt zurück; ehrlich unfertig ───────── */}
       <section
         ref={(el) => { sectionRefs.current[3] = el; }}
         className={styles.station}
-        data-station="volkan"
-        data-presence="deep"
+        data-station="work"
         style={{ minHeight: `${STATIONS[3].lengthVh}vh` }}
       >
         <div className={styles.inner}>
-          <h2 className={styles.heading}>{heading("volkan")}</h2>
-          <p className={styles.lead}>{m.content.volkan.lead}</p>
-          {m.content.volkan.pending ? (
-            <p className={styles.pending}>{m.content.volkan.pending}</p>
-          ) : null}
+          <h2 className={styles.heading}>{m.content.work.lead}</h2>
+          <CaseTheater locale={locale} mode={mode} ui={m.caseUi} onEmotion={onEmotion} onGaze={onGaze} />
         </div>
       </section>
 
-      {/* ── Station 5: CONTACT — die Klammer; der echte Knopf ───────────── */}
       <section
         ref={(el) => { sectionRefs.current[4] = el; }}
         className={styles.station}
-        data-station="contact"
-        data-presence="front"
+        data-station="volkan"
         style={{ minHeight: `${STATIONS[4].lengthVh}vh` }}
       >
         <div className={styles.inner}>
-          <h2 className={styles.heading}>{heading("contact")}</h2>
-          <p className={styles.lead}>{m.content.contact.lead}</p>
-          <ContactUplink
-            mode={mode}
-            ui={m.uplink}
-            onEmotion={onEmotion}
-            onGaze={onGaze}
-            onReaction={onReaction}
-          />
+          <h2 className={styles.heading}>{m.content.volkan.lead}</h2>
+          {m.content.volkan.pending ? <p className={styles.pending}>{m.content.volkan.pending}</p> : null}
+        </div>
+      </section>
+
+      <section
+        ref={(el) => { sectionRefs.current[5] = el; }}
+        className={styles.station}
+        data-station="contact"
+        style={{ minHeight: `${STATIONS[5].lengthVh}vh` }}
+      >
+        <div className={styles.inner}>
+          <h2 className={styles.heading}>{m.content.contact.lead}</h2>
+          <ContactUplink mode={mode} ui={m.uplink} onEmotion={onEmotion} onGaze={onGaze} onReaction={onReaction} />
         </div>
       </section>
     </div>

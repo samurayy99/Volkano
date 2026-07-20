@@ -1,6 +1,5 @@
-import { LenoxExperience } from "./LenoxExperience";
+import { StudioExperience } from "./studio/StudioExperience";
 
-/** Single main path: particle play → WAKE LENOX → present Lenox. */
 export default function Home() {
-  return <LenoxExperience />;
+  return <StudioExperience />;
 }

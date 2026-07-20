@@ -1,8 +1,8 @@
 # DER BEGLEITER — Sekunden-Storyboard
 
-> Historical concept source. Superseded as product direction by `docs/product/lenox-design-playground-manifesto.md`. Reuse interaction and engine insights only after they are reconciled with the three-template visual targets.
+> Historical concept source. Superseded by `docs/product/lenox-design-playground-manifesto.md` and the current GRAVITY focus in `docs/agent-system/CURRENT.md`. OBSIDIAN/ALABASTER, three-signature calibration, and its slice plan are not active direction. Reuse only proven interaction, presence, and engine insights after reconciling them with GRAVITY as LENOX's living home.
 
-**Status:** Rev. 2 — Berater-Review (Codex + ChatGPT) eingearbeitet, Machbarkeits-Check bestanden · wartet auf Volkans finales Go
+**Status:** Historical Rev. 2 — preserved for reference; no longer awaiting execution approval
 **Datum:** 2026-07-14
 **Synthese aus:** Volkans Begleiter-/Look-Wahl-Konzept · noth.in-Dramaturgie · Codex (Auto-Kalibrierung, Zustandspalette) · ChatGPT (Signal-Membran, Scan, Vertical-Slice-Strategie) · 8 CodePen-Mechaniken (siehe Referenz-Memory)
 
