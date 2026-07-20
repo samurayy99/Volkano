@@ -62,7 +62,32 @@ Screenshot *.png
 
 # local runs / captures
 /.playwright-cli/
+/.playwright-mcp/
 /output/
 *.mov
 
+# local recovery and duplicate agent installs
+/.recovery/
+/agent/
+
+# Python / Blender local state
+**/__pycache__/
+*.py[cod]
+*.blend1
+
+# reproducible review artifacts kept out of repository history
+/artifacts/clip-a-review/
+/artifacts/design-audit/
+/artifacts/scrub-test/
+/artifacts/lenox-blender/lenox-blockout-v001.png
+/artifacts/lenox-blender/v002/
+/artifacts/lenox-blender/v003/
+/docs/lenox-examples/
+
+# superseded generated LENOX intermediates
+/assets/lenox/lenox-blockout-v001.blend
+/assets/lenox/lenox-v002.blend
+/assets/lenox/lenox-v003.blend
+/public/models/lenox/lenox-v002.glb
+/public/models/lenox/lenox-v003.glb
 
