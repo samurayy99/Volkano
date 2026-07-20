@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "scope": "static form only; no visual approval",
+  "canonical_report": "/Users/lenox27/my_project/artifacts/lenox-blender/v005/static-form/static-form-report.json",
+  "isolated_rebuild": "not requested",
+  "image_comparison": {},
+  "failures": []
+}

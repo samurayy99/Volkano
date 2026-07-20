@@ -1,0 +1,36 @@
+{
+  "pass": true,
+  "failures": [],
+  "glb_bytes": 1336016,
+  "exported_triangles": 28632,
+  "mesh_count": 40,
+  "material_count": 7,
+  "texture_count": 2,
+  "texture_dimensions": [
+    [
+      256,
+      256
+    ],
+    [
+      256,
+      256
+    ]
+  ],
+  "skin_count": 1,
+  "animation_count": 8,
+  "morph_targets": [
+    "Concerned",
+    "Confirm",
+    "Thinking"
+  ],
+  "primary_chain_prefixes": [
+    "Arm_Lead_L_",
+    "Arm_Lead_R_",
+    "Arm_Support_Front_L_",
+    "Arm_Support_Front_R_",
+    "Arm_Support_Side_L_",
+    "Arm_Support_Side_R_"
+  ],
+  "forbidden_compression_extensions_present": [],
+  "non_finite_float_accessors": []
+}

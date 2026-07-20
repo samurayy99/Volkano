@@ -1,0 +1,21 @@
+{
+  "version": "v005-static-form-gate",
+  "authority": "docs/character/lenox-canonical-reference.png",
+  "reference_sha256": "98347ebc13d9e7ab5acb4ab74bca5d2875a088e3bbe93c0603b49cde48a9c480",
+  "bound_to_reference": [
+    "front silhouette",
+    "front head/body ratio",
+    "visible eye position and spacing",
+    "visible fin width and attachment",
+    "visible eight-arm distribution"
+  ],
+  "controlled_interpretation": [
+    "side and rear head volume",
+    "back anatomy",
+    "fin rear surfaces",
+    "spatial depth and rear-arm staging",
+    "all forms not visible in the single canonical front view"
+  ],
+  "measurement_contract": "Landmarks, ratios and overlays are diagnostic only and never grant visual approval.",
+  "gate_contract": "One human static-form decision before retopo, rig, morphs, materials or runtime work."
+}

@@ -1,0 +1,66 @@
+{
+  "stage": "v005 static-form gate only",
+  "promotion": "blocked pending Volkan static-form decision",
+  "v004_anchor": {
+    "blend_sha256": "6f6df45a268066b58bbd118643c711696dac5c771d45e291c9c9a1abb0077aa6",
+    "glb_sha256": "0427e499cc9b38c85bb6e55a9ccf6251fc2034e118b88539beb2cca851289e60"
+  },
+  "toolchain": {
+    "binary": "/private/tmp/blender-3.6.23-extract/Blender/Blender.app/Contents/MacOS/Blender",
+    "binary_sha256": "8168cbf7474bb7a16185cec69ba660b1b0f6c1c3854ca21df5cf46c863f47d01",
+    "blender": "3.6.23",
+    "python": "3.10.13",
+    "generator_sha256": "453458702e9a5c46aad130b77c52ca02252b990e7714d9bc6ea7a12c8e64dce8",
+    "reference_sha256": "98347ebc13d9e7ab5acb4ab74bca5d2875a088e3bbe93c0603b49cde48a9c480",
+    "command": "/private/tmp/blender-3.6.23-extract/Blender/Blender.app/Contents/MacOS/Blender --background --factory-startup --gpu-backend opengl --python /Users/lenox27/my_project/tools/blender/generate_lenox_v005.py",
+    "status": "documented reference environment; canonical reproducibility requires isolated double rebuild"
+  },
+  "scene": {
+    "visible_meshes": 46,
+    "visible_vertices": 44632,
+    "visible_triangles": 88460,
+    "visible_arms": 8
+  },
+  "forms": {
+    "head_body": "single authored continuous surface with cheeks, eye sockets, brow plane, muzzle and organic body transition",
+    "fins": "compact ribbed fans with broad roots and camera-forward sweep",
+    "arms": "eight visible asymmetric arms; two lead, four support, two secondary rear",
+    "future_retopology": "hidden deterministic cage is provisional and must not be finalized before gate"
+  },
+  "excluded_until_gate": [
+    "final retopology",
+    "rig",
+    "weights",
+    "morph targets",
+    "textures",
+    "animation",
+    "GLB",
+    "runtime"
+  ],
+  "renders": {
+    "front": {
+      "path": "artifacts/lenox-blender/v005/static-form/clay-front-neutral.png",
+      "sha256": "61e9924e742a13d5246b66ddbf5da6735e46c6aaa903b4e3f4546d1130cab5a5"
+    },
+    "three_quarter": {
+      "path": "artifacts/lenox-blender/v005/static-form/clay-three-quarter.png",
+      "sha256": "ded0de229e698ef3b570abfcb24aa369e13e285e3135c6c4435c03d2ad4f1408"
+    },
+    "silhouette_96": {
+      "path": "artifacts/lenox-blender/v005/static-form/clay-silhouette-96px.png",
+      "sha256": "9a0203f542aa84e90bbeae90aa6291815b727d9e19165df4ac6a2634fd1ec8e2"
+    },
+    "silhouette_64": {
+      "path": "artifacts/lenox-blender/v005/static-form/clay-silhouette-64px.png",
+      "sha256": "478555f232a38ddb163a4144c23ea729be03b93bc54714624cfd6bc499417926"
+    },
+    "reference_overlay": {
+      "path": "artifacts/lenox-blender/v005/static-form/clay-reference-overlay.png",
+      "sha256": "4710438089a5eab89461b8da2698165bdf1718896ac5471c5ed9a48d5a84df12"
+    }
+  },
+  "blend": {
+    "path": "assets/lenox/lenox-v005-clay.blend",
+    "sha256": "10403c1bd7b9d5faab443bee88d52043ba47a14ecf613580ed3375f993578a52"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "version": "v005",
+  "canonical_reference": "docs/character/lenox-canonical-reference.png",
+  "blender_file": "assets/lenox/lenox-v005.blend",
+  "glb_file": "public/models/lenox/lenox-v005.glb",
+  "glb_bytes": 2333288,
+  "glb_megabytes_decimal": 2.333,
+  "triangle_count_evaluated": 39112,
+  "vertex_count_evaluated": 19921,
+  "mesh_count_blender": 20,
+  "gltf_mesh_count": 20,
+  "gltf_material_count": 5,
+  "gltf_texture_count": 4,
+  "gltf_animation_count": 1,
+  "gltf_skin_count": 1,
+  "primary_control_chains": 6,
+  "lead_chains": 2,
+  "support_chains": 4,
+  "visible_arms": 8,
+  "secondary_arm_mapping": {
+    "Secondary_Rear_L": "Support_Side_L",
+    "Secondary_Rear_R": "Support_Side_R"
+  },
+  "shape_keys": [
+    "Concerned",
+    "Confirm",
+    "Thinking"
+  ],
+  "texture_dimensions": {
+    "lenox-v005-basecolor.png": [
+      512,
+      512
+    ],
+    "lenox-v005-normal.png": [
+      512,
+      512
+    ],
+    "lenox-v005-roughness.png": [
+      512,
+      512
+    ],
+    "lenox-v005-iris.png": [
+      512,
+      512
+    ]
+  },
+  "normal_map": "assets/lenox/textures/lenox-v005-normal.png",
+  "roughness_map": "assets/lenox/textures/lenox-v005-roughness.png",
+  "ao_map": null,
+  "ao_note": "Omitted: neutral inspection and compact web asset do not need a dedicated AO texture.",
+  "silhouette_self_checks": [
+    "selfcheck-body-64px.png",
+    "selfcheck-body-96px.png",
+    "selfcheck-face-fins-64px.png",
+    "selfcheck-face-fins-96px.png",
+    "silhouette-v005-64px.png",
+    "silhouette-v005-96px.png"
+  ],
+  "budget": {
+    "target_glb_bytes": 3000000,
+    "target_triangles": 60000,
+    "glb_pass": true,
+    "triangles_pass": true
+  },
+  "focused_delta": [
+    "fin_ears",
+    "head_dome",
+    "eye_placement",
+    "integrated_brow_ridges",
+    "pearl_crown_distribution"
+  ],
+  "frozen_v004": {
+    "blend_sha256": "6f6df45a268066b58bbd118643c711696dac5c771d45e291c9c9a1abb0077aa6",
+    "glb_sha256": "0427e499cc9b38c85bb6e55a9ccf6251fc2034e118b88539beb2cca851289e60"
+  },
+  "toolchain": {
+    "blender_binary": "/private/tmp/blender-3.6.23-extract/Blender/Blender.app/Contents/MacOS/Blender",
+    "blender_version": "3.6.23",
+    "blender_python": "3.10.13",
+    "generator_sha256": "c3c8d61effd83a48e61ed60e310ceae93204f58650b4b6c7b629726f566d0c04",
+    "canonical_reference_sha256": "98347ebc13d9e7ab5acb4ab74bca5d2875a088e3bbe93c0603b49cde48a9c480",
+    "canonical_command": "blender --background --factory-startup --gpu-backend opengl --python tools/blender/generate_lenox_v005.py"
+  },
+  "output_sha256": {
+    "blend": "ff17a092c5f349dd2fe33ae0402d7e5ab6d7a9d74050edbea1ac4aa31304c3b0",
+    "glb": "30c8c96c0502c6c35393cefa0570136557ff043eb0caef94e705385b3149cd5b"
+  },
+  "gltf_primitive_count": 20,
+  "inspection_renders": [
+    "inspection-front-neutral.png",
+    "inspection-three-quarter.png",
+    "expression-neutral.png",
+    "expression-observe.png",
+    "expression-concerned.png",
+    "expression-confirm.png"
+  ],
+  "landmark_manifest": "artifacts/lenox-blender/v005/lenox-v005-landmarks.json",
+  "model_form_state": "v005_visual_candidate_human_review_required",
+  "visual_self_approval": false,
+  "internal_targets": {
+    "triangles": 52000,
+    "primitives": 20,
+    "materials": 8,
+    "textures": 4
+  }
+}

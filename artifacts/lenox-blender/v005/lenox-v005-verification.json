@@ -1,0 +1,59 @@
+{
+  "pass": true,
+  "failures": [],
+  "glb_bytes": 2333288,
+  "exported_triangles": 39112,
+  "node_count": 49,
+  "mesh_count": 20,
+  "primitive_draw_call_estimate": 20,
+  "material_count": 5,
+  "texture_count": 4,
+  "texture_dimensions": [
+    [
+      512,
+      512
+    ],
+    [
+      512,
+      512
+    ],
+    [
+      512,
+      512
+    ],
+    [
+      512,
+      512
+    ]
+  ],
+  "skin_count": 1,
+  "animation_count": 1,
+  "animation_names": [
+    "LENOX_v005_MotionExpression_Test"
+  ],
+  "morph_targets": [
+    "Concerned",
+    "Confirm",
+    "Thinking"
+  ],
+  "visible_arm_meshes": [
+    "LENOX_Arm_Lead_L_Curve.001",
+    "LENOX_Arm_Lead_R_Curve.001",
+    "LENOX_Arm_Secondary_Rear_L_Curve.001",
+    "LENOX_Arm_Secondary_Rear_R_Curve.001",
+    "LENOX_Arm_Support_Front_L_Curve.001",
+    "LENOX_Arm_Support_Front_R_Curve.001",
+    "LENOX_Arm_Support_Side_L_Curve.001",
+    "LENOX_Arm_Support_Side_R_Curve.001"
+  ],
+  "primary_chain_prefixes": [
+    "Arm_Lead_L_",
+    "Arm_Lead_R_",
+    "Arm_Support_Front_L_",
+    "Arm_Support_Front_R_",
+    "Arm_Support_Side_L_",
+    "Arm_Support_Side_R_"
+  ],
+  "forbidden_compression_extensions_present": [],
+  "non_finite_float_accessors": []
+}

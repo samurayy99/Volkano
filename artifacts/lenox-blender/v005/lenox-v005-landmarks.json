@@ -1,0 +1,50 @@
+{
+  "authority": "docs/character/lenox-canonical-reference.png",
+  "coordinate_space": "normalized canonical character envelope; diagnostic only",
+  "visual_approval": false,
+  "points": {
+    "crown_top": [
+      0.5,
+      0.0
+    ],
+    "head_chin": [
+      0.5,
+      0.57
+    ],
+    "left_fin_tip": [
+      0.0,
+      0.34
+    ],
+    "right_fin_tip": [
+      1.0,
+      0.34
+    ],
+    "left_eye_center": [
+      0.34,
+      0.4
+    ],
+    "right_eye_center": [
+      0.66,
+      0.4
+    ],
+    "left_outer_arm": [
+      0.03,
+      0.77
+    ],
+    "right_outer_arm": [
+      0.97,
+      0.77
+    ],
+    "body_bottom": [
+      0.5,
+      1.0
+    ]
+  },
+  "checks": [
+    "head_body_ratio",
+    "fin_span",
+    "eye_spacing",
+    "arm_mass",
+    "eight_arm_readability"
+  ]
+}

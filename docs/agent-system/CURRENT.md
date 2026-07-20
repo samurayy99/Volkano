@@ -1,11 +1,11 @@
 # Current Handoff
 
-## ONE-MAIN CONSOLIDATION PACKAGE (2026-07-20, Codex)
+## ONE-MAIN CONSOLIDATION (2026-07-20, Codex)
 
-The working tree is prepared for consolidation onto local `main`. Promotion of
-the curated commits and branch cleanup remains pending because the current
-execution environment cannot write Git metadata. The existing branches therefore
-remain live until that final Git-only step is completed.
+The repository is consolidated on local `main`. All local side branches and the
+magnetic worktree were removed after the curated commits and verification gates
+passed. `origin/main` remains intentionally unchanged and is six commits behind
+the local branch pending separate push approval.
 The runtime still loads `lenox-v004.glb`. The complete v005 authored package was
 recovered byte-for-byte from local Git objects and passes its independent GLB
 audit, but remains a non-promoted visual candidate pending human review.

@@ -1,0 +1,59 @@
+{
+  "version": "v004",
+  "canonical_reference": "docs/character/lenox-canonical-reference.png",
+  "blender_file": "assets/lenox/lenox-v004.blend",
+  "glb_file": "public/models/lenox/lenox-v004.glb",
+  "glb_bytes": 1336016,
+  "glb_megabytes_decimal": 1.336,
+  "triangle_count_evaluated": 28632,
+  "vertex_count_evaluated": 14608,
+  "mesh_count_blender": 40,
+  "gltf_mesh_count": 40,
+  "gltf_material_count": 7,
+  "gltf_texture_count": 2,
+  "gltf_animation_count": 8,
+  "gltf_skin_count": 1,
+  "primary_control_chains": 6,
+  "lead_chains": 2,
+  "support_chains": 4,
+  "visible_arms": 8,
+  "secondary_arm_mapping": {
+    "Secondary_Rear_L": "Support_Side_L",
+    "Secondary_Rear_R": "Support_Side_R"
+  },
+  "shape_keys": [
+    "Concerned",
+    "Confirm",
+    "Thinking"
+  ],
+  "texture_dimensions": {
+    "lenox-pearl-normal.png": [
+      256,
+      256
+    ],
+    "lenox-pearl-roughness.png": [
+      256,
+      256
+    ]
+  },
+  "normal_map": "assets/lenox/textures/lenox-pearl-normal.png",
+  "roughness_map": "assets/lenox/textures/lenox-pearl-roughness.png",
+  "ao_map": null,
+  "ao_note": "Omitted: neutral inspection and compact web asset do not need a dedicated AO texture.",
+  "silhouette_self_checks": [
+    "silhouette-v004-64px.png",
+    "silhouette-v004-96px.png"
+  ],
+  "budget": {
+    "target_glb_bytes": 3000000,
+    "target_triangles": 60000,
+    "glb_pass": true,
+    "triangles_pass": true
+  },
+  "focused_delta": [
+    "neutral_brow_alignment",
+    "compact_fin_ears",
+    "reduced_eye_surrounds"
+  ],
+  "model_form_state": "frozen_after_v004"
+}
