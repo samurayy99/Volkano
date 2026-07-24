@@ -2,7 +2,7 @@
 
 ## Status
 
-`REMEDIATION ACTIVE · NO-GO`
+`TECHNICAL REMEDIATION COMPLETE · VISUAL GO PENDING`
 
 The implementation must prove four things inside the existing Studio architecture:
 
@@ -33,3 +33,5 @@ No `/lab`, live AI, crawler, simulator, scheduling, outreach, final GRAVITY pale
 Technical acceptance requires tests, TypeScript, touched-file ESLint, production build, the two-stage homepage bundle guard and `git diff --check`. These checks do not prove visual quality.
 
 Volkan alone reviews `/?proof=realities` on desktop, 390×844, reduced motion and WebGPU-off. Agents do not run browser automation, screenshots or visual acceptance.
+
+Manual review procedure: `docs/review/reality-proof-manual-checklist.md`.

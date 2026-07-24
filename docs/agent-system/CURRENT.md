@@ -1,6 +1,6 @@
 # Current Handoff
 
-## REALITY PROOF REMEDIATION ACTIVE — PHASE 1 NO-GO (2026-07-24, Codex)
+## REALITY PROOF TECHNICALLY REMEDIATED — VISUAL GO PENDING (2026-07-24, Codex)
 
 Volkan approved `/PRODUCT_CONTRACT.md` v1.2 for implementation. SIGNAL is now
 the public default; the homepage has no mandatory gate; the three canonical
@@ -15,20 +15,25 @@ current assignment is the isolated development Reality Proof Slice in
 `docs/agent-system/TASK.md`. Volkan owns all visual checks; agents run no browser
 automation or screenshot acceptance for this phase.
 
-The first proof implementation at `4788bf4` is not accepted. Independent audit
-confirmed four blockers: the root contract was shortened, homepage hydration
-destroyed the historical intro-state contract, GRAVITY's declared field mode
-started the full character runtime, and the visual transition remained a
-cover/swap curtain. ATELIER, locale, accessibility and active-bundle isolation
-also require remediation.
+The first proof implementation at `4788bf4` remains unaccepted. Independent
+audit confirmed four blockers: the root contract was shortened, homepage
+hydration destroyed the historical intro-state contract, GRAVITY's declared
+field mode started the full character runtime, and the visual transition
+remained a cover/swap curtain. Commits `0af3224`, `3d645b7` and `8d61570`
+remediate those technical failures without rewriting the protected legacy
+runtime.
 
 The exact v1.1 source is archived under `docs/product-contract/`; the active
-technical contract is `docs/implementation/phase-1-reality-proof.md`. Current
-work must deliver a field-only dynamic runtime, first-rendered-frame gate,
-route-effective entry state, concurrent source/target Cut, bilingual proof and
-two-stage bundle guard. Build and unit checks remain necessary but do not close
-Phase 1. Volkan remains the sole visual judge and agents run no browser or
-screenshot acceptance.
+technical brief is `docs/implementation/phase-1-reality-proof.md`. The proof now
+has a field-only dynamic runtime, first-rendered-frame gate, route-effective
+entry state, concurrent source/target Cut, bilingual content, artifact-led
+ATELIER and a two-stage bundle guard. `npm test`, TypeScript, touched-file
+ESLint, the production build, `git diff --check` and the bundle guard pass. The
+guard reports 15 statically reachable homepage modules and 8 initial SIGNAL JS
+chunks totalling 604075 bytes, with none of the forbidden legacy asset
+references. These facts do not prove visual quality. The manual gate is
+`docs/review/reality-proof-manual-checklist.md`; Volkan remains the sole visual
+judge and agents ran no browser or screenshot acceptance.
 
 Everything below this block predates v1.2 and is retained as implementation
 history. Where it conflicts with `/PRODUCT_CONTRACT.md`, the root contract wins.

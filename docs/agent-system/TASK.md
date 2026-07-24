@@ -68,13 +68,15 @@ decides the visual Go/No-Go.
 - [x] Canonical SIGNAL, GRAVITY and ATELIER registry with engine modes.
 - [x] Development proof at `?proof=realities` inside `StudioExperience`.
 - [x] Shared input and disclosed analysis fixture survive all three switches.
-- [ ] Concurrent source/target Cut with last-request-wins commit semantics.
+- [x] Concurrent source/target Cut with last-request-wins commit semantics.
 - [x] Keyboard `1`, `2`, `3`, `L` and transparent LENOX selection logic.
-- [ ] GRAVITY uses an isolated field-only runtime without character, vessel, HDRI or film imports.
-- [ ] Static GRAVITY composition remains when WebGPU is unavailable or misses the first-frame deadline.
-- [ ] Contract, entry persistence, locale, accessibility and active bundle graph remediated.
-- [ ] Tests, TypeScript, touched-file ESLint, diff check, production build and bundle guard.
+- [x] GRAVITY uses an isolated field-only runtime without character, vessel, HDRI or film imports.
+- [x] Static GRAVITY composition remains when WebGPU is unavailable or misses the first-frame deadline.
+- [x] Contract, entry persistence, locale, accessibility and active bundle graph remediated.
+- [x] Tests, TypeScript, touched-file ESLint, diff check, production build and bundle guard.
 - [ ] Volkan desktop, 390x844, hammering, reduced-motion and WebGPU-off review.
 - [ ] Volkan Go/No-Go.
 
-No browser automation or agent visual acceptance was performed.
+Technical remediation is complete. Phase 1 remains open until Volkan completes
+the two unchecked visual gates. No browser automation or agent visual acceptance
+was performed.
