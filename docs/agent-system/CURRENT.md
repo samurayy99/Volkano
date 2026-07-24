@@ -1,6 +1,6 @@
 # Current Handoff
 
-## LIVING AGENCY v1.2 ACTIVE (2026-07-24, Codex)
+## REALITY PROOF REMEDIATION ACTIVE — PHASE 1 NO-GO (2026-07-24, Codex)
 
 Volkan approved `/PRODUCT_CONTRACT.md` v1.2 for implementation. SIGNAL is now
 the public default; the homepage has no mandatory gate; the three canonical
@@ -15,20 +15,20 @@ current assignment is the isolated development Reality Proof Slice in
 `docs/agent-system/TASK.md`. Volkan owns all visual checks; agents run no browser
 automation or screenshot acceptance for this phase.
 
-**Phase 1 technical implementation complete, visual Go pending:** the registry
-now exposes only `signal`, `gravity` and `atelier`; v1 sessions and legacy
-`reef` inputs migrate centrally; `/` always hydrates as entered. The isolated
-development surface is `/?proof=realities`. It renders one canonical proof
-dataset through three independent compositions, preserves its input and open
-analysis fixture, and switches with a cancel-safe two-phase Cut. GRAVITY starts
-the existing WebGPU field without film or persistent v006; its DOM composition
-is the fallback when WebGPU is absent. SIGNAL and ATELIER do not initialize the
-engine.
+The first proof implementation at `4788bf4` is not accepted. Independent audit
+confirmed four blockers: the root contract was shortened, homepage hydration
+destroyed the historical intro-state contract, GRAVITY's declared field mode
+started the full character runtime, and the visual transition remained a
+cover/swap curtain. ATELIER, locale, accessibility and active-bundle isolation
+also require remediation.
 
-Technical evidence: 35/35 tests passed; `npx tsc --noEmit`; touched-file
-ESLint; `git diff --check`; and `npm run build`. No browser, screenshot or
-Playwright checks were run. Volkan's desktop/mobile/reduced/WebGPU-off judgment
-remains the only open Phase 1 gate.
+The exact v1.1 source is archived under `docs/product-contract/`; the active
+technical contract is `docs/implementation/phase-1-reality-proof.md`. Current
+work must deliver a field-only dynamic runtime, first-rendered-frame gate,
+route-effective entry state, concurrent source/target Cut, bilingual proof and
+two-stage bundle guard. Build and unit checks remain necessary but do not close
+Phase 1. Volkan remains the sole visual judge and agents run no browser or
+screenshot acceptance.
 
 Everything below this block predates v1.2 and is retained as implementation
 history. Where it conflicts with `/PRODUCT_CONTRACT.md`, the root contract wins.

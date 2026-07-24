@@ -1,4 +1,8 @@
-# Active Task — Phase 1 Reality Proof Slice
+# Active Task — Phase 1 Reality Proof Remediation
+
+Binding implementation brief: `docs/implementation/phase-1-reality-proof.md`.
+This file retains the original scope and history; the remediation brief wins
+where the previous completion claims or mechanics conflict.
 
 ## Objective
 
@@ -58,17 +62,18 @@ switch through one signature Cut without losing interaction state.
 The task stops after technical evidence and the manual review checklist. Volkan
 decides the visual Go/No-Go.
 
-## Implementation status (2026-07-24)
+## Implementation status (2026-07-24, post-audit)
 
 - [x] SIGNAL default and v1 session migration.
 - [x] Canonical SIGNAL, GRAVITY and ATELIER registry with engine modes.
 - [x] Development proof at `?proof=realities` inside `StudioExperience`.
 - [x] Shared input and disclosed analysis fixture survive all three switches.
-- [x] Two-phase Cut with last-request-wins transaction guard.
+- [ ] Concurrent source/target Cut with last-request-wins commit semantics.
 - [x] Keyboard `1`, `2`, `3`, `L` and transparent LENOX selection logic.
-- [x] GRAVITY uses the existing WebGPU path without film or persistent v006.
-- [x] Static GRAVITY composition remains when WebGPU is unavailable.
-- [x] Tests, TypeScript, touched-file ESLint, diff check and production build.
+- [ ] GRAVITY uses an isolated field-only runtime without character, vessel, HDRI or film imports.
+- [ ] Static GRAVITY composition remains when WebGPU is unavailable or misses the first-frame deadline.
+- [ ] Contract, entry persistence, locale, accessibility and active bundle graph remediated.
+- [ ] Tests, TypeScript, touched-file ESLint, diff check, production build and bundle guard.
 - [ ] Volkan desktop, 390x844, hammering, reduced-motion and WebGPU-off review.
 - [ ] Volkan Go/No-Go.
 
