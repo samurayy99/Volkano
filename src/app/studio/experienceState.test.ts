@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   chapterFromHash,
   createInitialExperienceState,
   experienceReducer,
+  serializeExperienceState,
   semanticScrollTarget,
 } from "./experienceState.ts";
 import { migratePersistedExperience } from "./designRegistry.ts";
@@ -40,11 +42,7 @@ test("morph preserves semantic position and interaction state", () => {
     proofSlice: {
       input: "example.ch",
       analysisOpen: true,
-      analysisResult: {
-        findings: ["Finding"],
-        priorities: ["Priority"],
-        direction: "Direction",
-      },
+      analysisResult: { fixtureId: "reality-proof-v1" },
     },
   });
   for (const design of ["gravity", "atelier", "signal"] as const) {
@@ -59,11 +57,11 @@ test("morph preserves semantic position and interaction state", () => {
     assert.equal(state.projectBrief.message, "A persistent project brief");
     assert.equal(state.proofSlice.input, "example.ch");
     assert.equal(state.proofSlice.analysisOpen, true);
-    assert.equal(state.proofSlice.analysisResult?.direction, "Direction");
+    assert.equal(state.proofSlice.analysisResult?.fixtureId, "reality-proof-v1");
   }
 });
 
-test("v1 sessions migrate reef and gate phases without losing shared state", () => {
+test("v1 sessions migrate shared state without rewriting the historical intro phase", () => {
   const migrated = migratePersistedExperience({
     design: "reef",
     locale: "de",
@@ -81,12 +79,25 @@ test("v1 sessions migrate reef and gate phases without losing shared state", () 
   });
 
   assert.equal(migrated.design, "gravity");
-  assert.equal(migrated.introPhase, "entered");
+  assert.equal("introPhase" in migrated, false);
   assert.equal(migrated.locale, "de");
   assert.equal(migrated.activeChapter, "ai-systems");
   assert.equal(migrated.localProgress, 0.42);
   assert.equal(migrated.selectedCase, "klein-paris");
   assert.equal(migrated.projectBrief?.message, "Keep this brief");
+});
+
+test("v2 persistence omits route-local intro state", () => {
+  const state = { ...initialExperienceState, introPhase: "gate" as const };
+  const persisted = serializeExperienceState(state);
+  assert.equal("introPhase" in persisted, false);
+  assert.equal(persisted.design, "signal");
+  assert.equal(persisted.proofSlice.analysisResult?.fixtureId, "reality-proof-v1");
+});
+
+test("provider never deletes the historical v1 session", () => {
+  const provider = readFileSync(new URL("./ExperienceProvider.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(provider, /removeItem\(LEGACY_STORAGE_KEY\)/);
 });
 
 test("invalid persisted ids fall back to the SIGNAL initial state", () => {

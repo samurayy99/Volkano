@@ -17,13 +17,11 @@ export const metadata: Metadata = {
     url: "/ai-systems",
     title: "AI Systems | VOLKAN AI STUDIO",
     description: "Transparent previews of custom AI systems for websites, project intake and communication.",
-    images: ["/studio/world/hero-keyframe.jpg"],
   },
   twitter: {
     card: "summary_large_image",
     title: "AI Systems | VOLKAN AI STUDIO",
     description: "Transparent previews of custom AI systems for websites, project intake and communication.",
-    images: ["/studio/world/hero-keyframe.jpg"],
   },
 };
 

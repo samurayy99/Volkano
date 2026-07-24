@@ -223,10 +223,10 @@ export const cases: readonly CaseStudy[] = [
     discipline: { en: "Living interface and spatial web", de: "Living Interface und räumliches Web" },
     provenance: { en: "INTERNAL R&D · ACTIVE PROTOTYPE", de: "INTERNES R&D · AKTIVER PROTOTYP" },
     imageAlt: {
-      en: "Gravity Reef world created for the LENOX living-interface prototype",
-      de: "Gravity-Reef-Welt für den LENOX-Living-Interface-Prototyp",
+      en: "Historical VOLKAN AI STUDIO interface study documented as an internal prototype",
+      de: "Historische VOLKAN-AI-STUDIO-Interfacestudie, dokumentiert als interner Prototyp",
     },
-    image: "/studio/world/hero-keyframe.jpg",
+    image: "/studio/proof/atelier-historical-study.png",
     color: "#69d7c3",
     evidence: [
       {
@@ -239,15 +239,15 @@ export const cases: readonly CaseStudy[] = [
       {
         label: "THE DECISION",
         text: {
-          en: "Make the website itself the demonstration and let one persistent character connect cinema, code and action.",
-          de: "Die Website selbst wird zur Demonstration und eine persistente Figur verbindet Film, Code und Handlung.",
+          en: "Make the website itself the demonstration, then preserve failed and retired directions as visible research evidence.",
+          de: "Die Website selbst wird zur Demonstration; verworfene Richtungen bleiben als sichtbare Forschungsevidenz erhalten.",
         },
       },
       {
         label: "THE BUILD",
         text: {
-          en: "One scroll authority drives a scrubbed world film, a live WebGPU presence and semantic content layers.",
-          de: "Eine Scroll-Autorität steuert Weltfilm, Live-WebGPU-Präsenz und semantische Inhaltsebenen.",
+          en: "One semantic content and state kernel drives independent presentation systems and an isolated live WebGPU field.",
+          de: "Ein semantischer Inhalts- und State-Kern steuert eigenständige Präsentationssysteme und ein isoliertes Live-WebGPU-Feld.",
         },
       },
       {

@@ -2,10 +2,61 @@
   position: absolute;
   inset: 0;
   z-index: 3;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   color: #151613;
   background: transparent;
+}
+
+.realityStage,
+.realityLayer {
+  position: absolute;
+  inset: 0;
+}
+
+.realityStage {
+  z-index: 1;
+  overflow: hidden;
+}
+
+.realityLayer {
+  z-index: var(--layer-order);
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #eeeee9;
+  will-change: clip-path, opacity, transform;
+}
+
+.targetLayer {
+  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  pointer-events: none;
+}
+
+.realityStage[data-transition="running"] .sourceLayer {
+  pointer-events: none;
+}
+
+.cutEdge {
+  position: fixed;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 44px;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgb(224 240 239 / 46%) 42%, rgb(32 38 37 / 72%) 50%, transparent);
+  box-shadow: 12px 0 34px rgb(8 12 12 / 18%);
+  will-change: transform, opacity;
+}
+
+.morphAnnouncement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .sharedControls {
@@ -89,6 +140,18 @@
 .decision h2 {
   font: 500 12px/1.2 var(--font-mono);
   letter-spacing: 0.08em;
+}
+
+.decision > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.decision > header button {
+  min-height: 28px;
+  padding: 0 10px;
 }
 
 .decision div {
@@ -315,7 +378,7 @@
   color: #e6e4dc;
   background:
     radial-gradient(circle at 66% 44%, rgb(119 134 136 / 16%), transparent 30%),
-    rgb(18 21 20 / 84%);
+    rgb(18 21 20 / 58%);
 }
 
 .gravity .realityStatement {
@@ -377,8 +440,7 @@
   align-self: end;
   padding: 22px;
   border: 1px solid rgb(230 228 220 / 28%);
-  background: rgb(18 21 20 / 70%);
-  backdrop-filter: blur(14px);
+  background: rgb(18 21 20 / 72%);
 }
 
 .gravity .artifact p {
@@ -391,8 +453,7 @@
   margin-top: 5vh;
   padding: 24px;
   border: 1px solid rgb(230 228 220 / 28%);
-  background: rgb(18 21 20 / 82%);
-  backdrop-filter: blur(18px);
+  background: rgb(18 21 20 / 76%);
 }
 
 .gravity .analysis {
@@ -488,6 +549,59 @@
   border-bottom: 1px solid rgb(231 223 208 / 20%);
 }
 
+.artifactStudy {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.5fr);
+  gap: 28px;
+  margin-top: 5vh;
+}
+
+.artifactImage {
+  position: relative;
+  align-self: start;
+  padding: 10px;
+  background: #201f19;
+  box-shadow: 0 28px 70px rgb(66 45 37 / 20%);
+}
+
+.artifactImage img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.artifactImage figcaption {
+  padding: 10px 4px 2px;
+  color: #e7dfd0;
+  font: 500 8px/1.3 var(--font-mono);
+  letter-spacing: 0.09em;
+}
+
+.artifactNotes h2 {
+  margin-bottom: 24px;
+  font: italic 400 clamp(34px, 4vw, 62px)/0.92 var(--font-display);
+  letter-spacing: -0.035em;
+}
+
+.artifactNotes article {
+  padding: 16px 0;
+  border-top: 1px solid rgb(32 32 25 / 32%);
+}
+
+.artifactNotes strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #713f41;
+  font: 500 8px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+.artifactNotes p {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 @media (max-width: 980px) {
   .sharedControls {
     right: 10px;
@@ -508,10 +622,6 @@
 
   .switcher button {
     padding-inline: 11px;
-  }
-
-  .switcher button:last-child {
-    display: none;
   }
 
   .primaryCta {
@@ -573,7 +683,7 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    background: rgb(18 21 20 / 88%);
+    background: rgb(18 21 20 / 64%);
   }
 
   .gravity .heroCopy {
@@ -642,10 +752,19 @@
 
   .atelier .inputBlock,
   .atelier .analysis,
-  .atelier .artifact {
+  .atelier .artifact,
+  .artifactStudy {
     grid-column: 2;
     grid-row: auto;
     width: 100%;
+  }
+
+  .artifactStudy {
+    display: block;
+  }
+
+  .artifactNotes {
+    margin-top: 24px;
   }
 
   .atelier .analysis {
@@ -684,8 +803,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .reality,
-  .proof[data-morph-phase="compress"] .reality,
-  .proof[data-morph-phase="release"] .reality {
+  .realityLayer {
     opacity: 1;
     transform: none;
     transition-duration: 1ms;

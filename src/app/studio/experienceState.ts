@@ -25,26 +25,11 @@ export type CaseId = "klein-paris" | "manaleaf" | "lenox-rnd";
 export type Locale = "en" | "de";
 
 export type ProofAnalysisFixture = {
-  findings: string[];
-  priorities: string[];
-  direction: string;
+  fixtureId: "reality-proof-v1";
 };
 
 export const PROOF_ANALYSIS_FIXTURE: ProofAnalysisFixture = {
-  findings: [
-    "The offer competes with the visual system for first attention.",
-    "The primary action is visible but not yet supported by proof.",
-    "Responsibility is stated later than a trust-first buyer expects.",
-    "The design system has enough range to support distinct market positions.",
-    "AI capability is described before a live result establishes credibility.",
-  ],
-  priorities: [
-    "Make the commercial promise legible before the signature interaction.",
-    "Connect every AI claim to a visible input, output and approval boundary.",
-    "Use the reality switch as evidence of design range, not as decoration.",
-  ],
-  direction:
-    "Lead with accountable clarity, then let the interface prove range and operational intelligence.",
+  fixtureId: "reality-proof-v1",
 };
 
 export type ProofSliceState = {
@@ -169,6 +154,16 @@ export type PersistedExperienceInput = Omit<
   reality?: unknown;
   introPhase?: unknown;
 };
+
+export type PersistedExperienceState = Omit<ExperienceState, "introPhase">;
+
+export function serializeExperienceState(
+  state: ExperienceState,
+): PersistedExperienceState {
+  const { introPhase: _introPhase, ...persisted } = state;
+  void _introPhase;
+  return persisted;
+}
 
 export function chapterFromHash(hash: string): ChapterId | null {
   const value = hash.replace(/^#/, "") as ChapterId;

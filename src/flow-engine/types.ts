@@ -100,6 +100,16 @@ export type PostEnterStage =
   | "page_lock"
   | "hero";
 
+export type StudioEngineMode = "field" | "chamber" | "character";
+export type RuntimeState =
+  | "cold"
+  | "initializing"
+  | "running"
+  | "suspended"
+  | "failed"
+  | "disposed";
+export type RuntimePauseReason = "reality" | "document-hidden";
+
 /** Dev / tooling: full post-enter channel + truth snapshot (throttled in bridge). */
 export type PostEnterDebugSnapshot = {
   stage: PostEnterStage;
@@ -165,11 +175,14 @@ export interface FlowEngineApi {
   setGravityCreationProgress: (p: number, reduced?: boolean) => void;
   /** The one journey director forwards its scroll progression to the living field. */
   setGravityScrollProgress: (p: number) => void;
+  suspend: (reason?: RuntimePauseReason) => void;
+  resume: (reason?: RuntimePauseReason) => void;
   dispose: () => void;
 }
 
 export interface FlowEngineBridgeOptions {
   onError?: (error: unknown) => void;
+  engineMode?: StudioEngineMode;
   /** Lenox proof: void visual (no vessel), LenoxEyesDrive owns the runtime. */
   lenoxMode?: boolean;
   /** Compresses the awakening timeline and calms all motion. */

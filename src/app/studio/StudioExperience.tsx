@@ -11,17 +11,9 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { FlowEngineBridge } from "../../flow-engine/engineBridge";
 import type {
-  LenoxEmotion,
-  LenoxIntent,
-  LenoxJourneyPose,
-  LenoxProofState,
-  LenoxReaction,
-  LenoxSignals,
+  FlowEngineApi,
 } from "../../flow-engine/types";
-import { FallbackEyes } from "../FallbackEyes";
-import { createFilmScrubber, type FilmScrubber } from "../stage/filmScrubber";
 import { useCompositionMode } from "../stage/compositionMode";
 import type { StationPose } from "../stage/stations";
 import { aiModules, cases, chapters, copy, type CaseStudy } from "./content";
@@ -47,14 +39,8 @@ import {
   type StudioStation,
 } from "./studioDirector";
 import { buildMailtoHref } from "./studioLinks";
-import { createMorphTransactionGate, getMorphTimings } from "./morphTransaction";
 import { WebsiteIntelligence } from "./WebsiteIntelligence";
 import styles from "./StudioExperience.module.css";
-
-const HERO_POSTER = "/studio/world/hero-keyframe.jpg";
-const CLIP_A = "/flow-assets/gravity-clip-a-v2-dense.mp4";
-const ARRIVAL_SOURCE: string | null = null;
-const MASTER_ENTRY_GATE_ENABLED = false;
 
 function readReducedMotionPreference() {
   if (typeof window === "undefined") return false;
@@ -71,28 +57,6 @@ function readRealityProofMode() {
 
 const subscribeRealityProofMode = () => () => {};
 
-type LenoxReviewApi = {
-  go: (chapter: ChapterId, localProgress?: number) => void;
-  intent: (intent: LenoxIntent) => void;
-  emotion: (emotion: LenoxEmotion) => void;
-  reaction: (reaction: LenoxReaction) => void;
-  gaze: (x: number, y: number) => void;
-  pose: (pose: LenoxJourneyPose, tau?: number) => void;
-  snapshot: () => {
-    design: DesignId;
-    chapter: ChapterId;
-    localProgress: number;
-    composition: "side" | "banded";
-    engineState: LenoxProofState;
-  };
-};
-
-declare global {
-  interface Window {
-    __LENOX_REVIEW__?: LenoxReviewApi;
-  }
-}
-
 const statusLabel: Record<LenoxStatus, string> = {
   dormant: "DORMANT",
   arriving: "ARRIVING",
@@ -106,7 +70,7 @@ const statusLabel: Record<LenoxStatus, string> = {
 
 function deriveLenoxStatus(
   phase: IntroPhase,
-  engineState: LenoxProofState,
+  engineState: "dormant",
   auditPhase: "idle" | "validating" | "previewing" | "complete",
   morphing: boolean,
   briefOpen: boolean,
@@ -199,6 +163,8 @@ function StudioHeader({
   onNavigate,
   onLocale,
   onDesign,
+  designs,
+  announceStatus,
 }: {
   locale: Locale;
   design: DesignId;
@@ -206,6 +172,8 @@ function StudioHeader({
   onNavigate: (chapter: ChapterId) => void;
   onLocale: (locale: Locale) => void;
   onDesign: (design: DesignId) => void;
+  designs: readonly DesignId[];
+  announceStatus: boolean;
 }) {
   return (
     <header className={styles.header}>
@@ -228,63 +196,25 @@ function StudioHeader({
         <button type="button" onClick={() => onLocale(locale === "en" ? "de" : "en")}>
           {locale.toUpperCase()}
         </button>
-        <select
-          className={styles.designPicker}
-          value={design}
-          aria-label={locale === "en" ? "Select design" : "Design wählen"}
-          onChange={(event) => {
-            if (isDesignId(event.target.value)) onDesign(event.target.value);
-          }}
-        >
-          {DESIGN_IDS.map((id) => (
-            <option key={id} value={id}>{getDesign(id).shortLabel}</option>
-          ))}
-        </select>
-        <span className={styles.status} data-status={status} aria-live="polite">
+        {designs.length > 1 ? (
+          <select
+            className={styles.designPicker}
+            value={design}
+            aria-label={locale === "en" ? "Select design" : "Design wählen"}
+            onChange={(event) => {
+              if (isDesignId(event.target.value)) onDesign(event.target.value);
+            }}
+          >
+            {designs.map((id) => (
+              <option key={id} value={id}>{getDesign(id).shortLabel}</option>
+            ))}
+          </select>
+        ) : null}
+        <span className={styles.status} data-status={status} aria-live={announceStatus ? "polite" : "off"}>
           <i /> LENOX / {statusLabel[status]}
         </span>
       </div>
     </header>
-  );
-}
-
-function EntryGate({
-  locale,
-  phase,
-  onWake,
-  onSkip,
-}: {
-  locale: Locale;
-  phase: IntroPhase;
-  onWake: () => void;
-  onSkip: () => void;
-}) {
-  if (phase === "entered") return null;
-  return (
-    <div className={styles.entry} data-phase={phase}>
-      <div className={styles.distantAtmosphere} />
-      <div className={styles.entryCopy}>
-        <p>{copy.gateEyebrow[locale]}</p>
-        <p className={styles.entryTitle}>{copy.gateTitle[locale]}</p>
-        <span>{copy.gateBody[locale]}</span>
-        {phase === "gate" ? (
-          <div className={styles.entryActions}>
-            <button type="button" onClick={onWake}>{copy.wake[locale]}</button>
-            <button type="button" onClick={onSkip}>{copy.skip[locale]}</button>
-          </div>
-        ) : (
-          <div className={styles.arrivalReadout}>
-            <span>{phase === "arrival" ? "DESCENT / 06 SEC" : "HANDOFF / LENOX"}</span>
-            <i />
-          </div>
-        )}
-      </div>
-      {phase !== "gate" ? (
-        <button type="button" className={styles.skipArrival} onClick={onSkip}>
-          {copy.skip[locale]} · ESC
-        </button>
-      ) : null}
-    </div>
   );
 }
 
@@ -662,37 +592,30 @@ function createNavigationEvent(chapter: ChapterId, scroller: HTMLElement | null)
 }
 
 export function StudioExperience() {
-  const { state, dispatch, markIntroSeen } = useExperience();
+  const { state, dispatch } = useExperience();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const worldVideoRef = useRef<HTMLVideoElement | null>(null);
-  const arrivalVideoRef = useRef<HTMLVideoElement | null>(null);
-  const bridgeRef = useRef<FlowEngineBridge | null>(null);
-  const scrubberRef = useRef<FilmScrubber | null>(null);
+  const bridgeRef = useRef<(FlowEngineApi & { readyAfterFirstFrame?: Promise<void> }) | null>(null);
+  const bridgeInitRef = useRef<Promise<"webgpu" | "fallback"> | null>(null);
+  const gravityFailedRef = useRef(false);
   const directorRef = useRef<StudioDirector | null>(null);
   const semanticRef = useRef<SemanticPosition>({ chapter: "hero", localProgress: 0 });
   const restoreRef = useRef<SemanticPosition | null>(null);
-  const wakeInFlightRef = useRef(false);
-  const presenceCommittedRef = useRef(false);
   const pointerFrameRef = useRef<number | null>(null);
   const pointerSampleRef = useRef({ x: 0, y: 0 });
   const positionCommitRef = useRef<number | null>(null);
-  const timers = useRef<number[]>([]);
-  const morphTimers = useRef<number[]>([]);
-  const morphTransactionRef = useRef(createMorphTransactionGate());
-  const [gpuPath, setGpuPath] = useState<"probing" | "webgpu" | "fallback">("probing");
-  const [engineState, setEngineState] = useState<LenoxProofState>("dormant");
-  const [morphTarget, setMorphTarget] = useState<DesignId | null>(null);
-  const [morphPhase, setMorphPhase] = useState<"idle" | "compress" | "release">("idle");
+  const [gpuPath, setGpuPath] = useState<"idle" | "probing" | "webgpu" | "fallback">("idle");
+  const [proofVisualDesign, setProofVisualDesign] = useState<DesignId>(state.design);
+  const [proofPendingTarget, setProofPendingTarget] = useState<DesignId | null>(null);
   const [reduced, setReduced] = useState(readReducedMotionPreference);
   const mode = useCompositionMode(false);
-  const activeDesign = getDesign(state.design);
-  const engineEnabled = activeDesign.engineMode !== "off";
   const proofMode = useSyncExternalStore(
     subscribeRealityProofMode,
     readRealityProofMode,
     () => false,
   );
+  const displayDesign = proofMode ? proofVisualDesign : state.design;
+  const activeDesign = getDesign(displayDesign);
 
   useEffect(() => {
     if (!directorRef.current) {
@@ -702,14 +625,6 @@ export function StudioExperience() {
       };
     }
   }, [state.activeChapter, state.localProgress]);
-
-  const writeSignals = useCallback((signals: LenoxSignals) => {
-    const root = rootRef.current;
-    if (!root) return;
-    root.style.setProperty("--lenox-energy", signals.energy.toFixed(4));
-    root.style.setProperty("--lenox-attention", signals.attention.toFixed(4));
-    root.style.setProperty("--lenox-tension", signals.tension.toFixed(4));
-  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -722,253 +637,94 @@ export function StudioExperience() {
     return () => media.removeEventListener("change", read);
   }, []);
 
-  useEffect(() => {
-    if (!engineEnabled) return;
+  const ensureGravityRuntime = useCallback((): Promise<"webgpu" | "fallback"> => {
+    if (gravityFailedRef.current || !navigator.gpu) {
+      gravityFailedRef.current = true;
+      setGpuPath("fallback");
+      return Promise.resolve("fallback");
+    }
+    if (bridgeInitRef.current) return bridgeInitRef.current;
     const host = hostRef.current;
-    if (!host || !navigator.gpu) {
-      const fallbackTimer = window.setTimeout(() => setGpuPath("fallback"), 0);
-      return () => window.clearTimeout(fallbackTimer);
-    }
-    const bridge = new FlowEngineBridge(host, {
-      lenoxMode: true,
-      lenoxReducedMotion: reduced,
-      onLenoxStateChange: setEngineState,
-      onLenoxSignals: writeSignals,
-      onDeviceLost: () => setGpuPath("fallback"),
-      onError: (error) => console.error("[lenox] engine error", error),
-    });
-    bridgeRef.current = bridge;
-    let cancelled = false;
-    bridge.init().then(() => {
-      if (!cancelled) setGpuPath("webgpu");
-    }).catch((error) => {
-      console.warn("[lenox] WebGPU unavailable, using static fallback", error);
-      if (!cancelled) setGpuPath("fallback");
-    });
-    return () => {
-      cancelled = true;
-      bridge.dispose();
-      if (bridgeRef.current === bridge) bridgeRef.current = null;
-    };
-  }, [engineEnabled, reduced, writeSignals]);
-
-  useEffect(() => {
-    bridgeRef.current?.setCompositionMode(mode);
-  }, [mode]);
-
-  useEffect(() => {
-    const opacity = state.introPhase === "gate"
-      ? 1
-      : getDesign(state.design).worldMedia === "film"
-        ? 0.16
-        : 1;
-    bridgeRef.current?.setLenoxBackdropOpacity(opacity);
-  }, [gpuPath, state.design, state.introPhase]);
-
-  useEffect(() => {
-    if (activeDesign.engineMode === "field") {
-      bridgeRef.current?.setLenoxParticlesVisible(true);
-      if (engineState !== "dormant") bridgeRef.current?.setLenoxState("dormant");
-      return;
-    }
-    if (activeDesign.engineMode !== "character") return;
-    if (engineState === "present") {
-      wakeInFlightRef.current = false;
-      presenceCommittedRef.current = true;
-      return;
-    }
-    if (
-      gpuPath !== "webgpu" ||
-      state.introPhase !== "entered" ||
-      wakeInFlightRef.current
-    ) return;
-    if (
-      !presenceCommittedRef.current ||
-      engineState === "dormant" ||
-      engineState === "idle"
-    ) {
-      bridgeRef.current?.setLenoxState("present");
-    }
-  }, [activeDesign.engineMode, engineState, gpuPath, state.introPhase]);
-
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "development") return;
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has("lenox-review")) return;
-
-    const review: LenoxReviewApi = {
-      go(chapter, localProgress = 0) {
-        directorRef.current?.restore({
-          chapter,
-          localProgress: Math.min(1, Math.max(0, localProgress)),
+    if (!host) return Promise.resolve("fallback");
+    setGpuPath("probing");
+    bridgeInitRef.current = import("../../flow-engine/engineBridge")
+      .then(({ FlowEngineBridge }) => {
+        const bridge = new FlowEngineBridge(host, {
+          engineMode: "field",
+          lenoxReducedMotion: reduced,
+          onDeviceLost: () => {
+            gravityFailedRef.current = true;
+            setGpuPath("fallback");
+          },
+          onError: (error) => {
+            if (process.env.NODE_ENV === "development") {
+              console.warn("[gravity-field] static fallback", error);
+            }
+          },
         });
-      },
-      intent: (intent) => bridgeRef.current?.setLenoxIntent(intent),
-      emotion: (emotion) => bridgeRef.current?.setLenoxEmotion(emotion),
-      reaction: (reaction) => bridgeRef.current?.setLenoxReaction(reaction),
-      gaze: (x, y) => bridgeRef.current?.setLenoxGaze(x, y),
-      pose: (pose, tau) => bridgeRef.current?.setJourneyPose(pose, tau),
-      snapshot() {
-        const position = directorRef.current?.getPosition() ?? semanticRef.current;
-        return {
-          design: state.design,
-          chapter: position.chapter,
-          localProgress: position.localProgress,
-          composition: mode,
-          engineState,
-        };
-      },
-    };
-    window.__LENOX_REVIEW__ = review;
-
-    const preset = params.get("lenox-preset");
-    const forcePresent = params.has("lenox-force-present") || preset !== null;
-    const presetTimer = forcePresent
-      ? window.setTimeout(() => {
-          bridgeRef.current?.setLenoxState("present");
-          if (!preset) return;
-          review.go("lenox", 0.35);
-          if (preset === "neutral") {
-            review.emotion("neutral");
-            review.intent({ kind: "rest" });
-          } else if (preset === "thinking") {
-            review.emotion("thinking");
-            review.intent({ kind: "observe" });
-          } else if (preset === "concerned") {
-            review.emotion("concerned");
-            review.intent({ kind: "observe" });
-          } else if (preset === "confirm") {
-            review.emotion("pleased");
-            review.intent({ kind: "confirm" });
-            review.reaction("confirm");
-          } else if (preset === "guide-left" || preset === "guide-right") {
-            review.emotion("curious");
-            review.intent({
-              kind: "guide",
-              arm: preset === "guide-left" ? "left" : "right",
-              targetNdc: { x: preset === "guide-left" ? -0.34 : 0.34, y: 0 },
-              reach: 0.78,
-            });
-          }
-        }, 0)
-      : null;
-    return () => {
-      if (presetTimer !== null) window.clearTimeout(presetTimer);
-      if (window.__LENOX_REVIEW__ === review) delete window.__LENOX_REVIEW__;
-    };
-  }, [engineState, gpuPath, mode, state.activeChapter, state.design, state.introPhase]);
+        bridgeRef.current = bridge;
+        return bridge.init().then(() => {
+          setGpuPath("webgpu");
+          return "webgpu" as const;
+        });
+      })
+      .catch(() => {
+        gravityFailedRef.current = true;
+        setGpuPath("fallback");
+        return "fallback" as const;
+      });
+    return bridgeInitRef.current;
+  }, [reduced]);
 
   useEffect(() => {
-    const signature = getDesign(state.design).engineSignature;
-    if (signature) bridgeRef.current?.setSignature(signature);
-  }, [gpuPath, state.design]);
-
-  useEffect(() => {
-    const design = getDesign(state.design);
-    if (state.introPhase !== "entered" || mode === "banded" || design.worldMedia !== "film") return;
-    const video = worldVideoRef.current;
-    if (!video) return;
-    video.load();
-    const scrubber = createFilmScrubber(video);
-    scrubberRef.current = scrubber;
-    return () => {
-      scrubber.dispose();
-      if (scrubberRef.current === scrubber) scrubberRef.current = null;
-    };
-  }, [mode, state.design, state.introPhase]);
-
-  useEffect(() => {
-    if (reduced && state.introPhase !== "entered") markIntroSeen();
-  }, [markIntroSeen, reduced, state.introPhase]);
-
-  const finishIntro = useCallback(() => {
-    timers.current.forEach(window.clearTimeout);
-    timers.current = [];
-    wakeInFlightRef.current = true;
-    dispatch({ type: "SET_INTRO", phase: "handoff" });
-    bridgeRef.current?.setLenoxState("waking");
-    timers.current.push(window.setTimeout(markIntroSeen, reduced ? 0 : 900));
-  }, [dispatch, markIntroSeen, reduced]);
-
-  useEffect(() => {
-    if (state.introPhase !== "arrival") return;
-    if (!ARRIVAL_SOURCE) {
-      timers.current.push(window.setTimeout(finishIntro, reduced ? 0 : 700));
+    if (displayDesign === "gravity" || proofPendingTarget === "gravity") {
+      void ensureGravityRuntime().then((path) => {
+        if (path === "webgpu") bridgeRef.current?.resume("reality");
+      });
+    } else {
+      bridgeRef.current?.suspend("reality");
     }
-  }, [finishIntro, reduced, state.introPhase]);
+  }, [displayDesign, ensureGravityRuntime, gpuPath, proofPendingTarget]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && state.introPhase !== "entered") finishIntro();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [finishIntro, state.introPhase]);
+  const prepareDesign = useCallback(async (design: DesignId): Promise<void> => {
+    if (design !== "gravity") return;
+    let timeoutId = 0;
+    const timeout = new Promise<"fallback">((resolve) => {
+      timeoutId = window.setTimeout(() => resolve("fallback"), 1500);
+    });
+    const result = await Promise.race([ensureGravityRuntime(), timeout]);
+    window.clearTimeout(timeoutId);
+    if (result === "fallback") setGpuPath("fallback");
+  }, [ensureGravityRuntime]);
+
+  useEffect(() => () => {
+    bridgeRef.current?.dispose();
+    bridgeRef.current = null;
+    bridgeInitRef.current = null;
+  }, []);
 
   useEffect(
     () => () => {
-      timers.current.forEach(window.clearTimeout);
-      morphTimers.current.forEach(window.clearTimeout);
-      morphTransactionRef.current.cancel();
       if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
       if (positionCommitRef.current !== null) window.clearTimeout(positionCommitRef.current);
     },
     [],
   );
 
-  const wake = useCallback(() => {
-    worldVideoRef.current?.load();
-    const unlock = worldVideoRef.current?.play();
-    unlock?.then(() => worldVideoRef.current?.pause()).catch(() => {});
-    dispatch({ type: "SET_INTRO", phase: "arrival" });
-    if (ARRIVAL_SOURCE) void arrivalVideoRef.current?.play().catch(finishIntro);
-  }, [dispatch, finishIntro]);
-
   const navigate = useCallback((chapter: ChapterId) => {
-    if (state.introPhase !== "entered") {
-      const position = { chapter, localProgress: 0 };
-      semanticRef.current = position;
-      restoreRef.current = position;
-      dispatch({ type: "SET_POSITION", ...position });
-      finishIntro();
-      return;
-    }
     directorRef.current?.scrollToChapter(chapter);
-  }, [dispatch, finishIntro, state.introPhase]);
+  }, []);
 
-  const morph = useCallback((targetDesign: DesignId) => {
-    const transaction = morphTransactionRef.current.begin();
-    const timings = getMorphTimings(reduced);
-    morphTimers.current.forEach(window.clearTimeout);
-    morphTimers.current = [];
-    if (targetDesign === state.design) {
-      setMorphTarget(null);
-      setMorphPhase("idle");
-      return;
-    }
-    const position = { ...(directorRef.current?.getPosition() ?? semanticRef.current) };
-    semanticRef.current = position;
-    restoreRef.current = position;
-    dispatch({ type: "SET_POSITION", chapter: position.chapter, localProgress: position.localProgress });
-    setMorphTarget(targetDesign);
-    setMorphPhase("compress");
-    morphTimers.current.push(
-      window.setTimeout(() => {
-        if (!morphTransactionRef.current.isCurrent(transaction)) return;
-        dispatch({ type: "SET_DESIGN", design: targetDesign });
-        setMorphPhase("release");
-        const url = writeDesignToUrl(new URL(window.location.href), targetDesign);
-        window.history.replaceState(null, "", `${url.pathname}${url.search}#${position.chapter}`);
-      }, timings.commitMs),
-      window.setTimeout(() => {
-        if (!morphTransactionRef.current.isCurrent(transaction)) return;
-        directorRef.current?.restore(position);
-        restoreRef.current = null;
-        setMorphTarget(null);
-        setMorphPhase("idle");
-      }, timings.finishMs),
-    );
-  }, [dispatch, reduced, state.design]);
+  const commitProofDesign = useCallback((design: DesignId) => {
+    dispatch({ type: "SET_DESIGN", design });
+    const url = writeDesignToUrl(new URL(window.location.href), design);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [dispatch]);
+
+  const updateProofVisualState = useCallback((visual: DesignId, pending: DesignId | null) => {
+    setProofVisualDesign(visual);
+    setProofPendingTarget(pending);
+  }, []);
 
   const onPosition = useCallback((position: SemanticPosition, changed: boolean) => {
     semanticRef.current = position;
@@ -986,24 +742,15 @@ export function StudioExperience() {
       }, 180);
     }
     if (!changed) return;
-    const intent = position.chapter === "work" || position.chapter === "ai-systems"
-      ? { kind: "guide" as const, arm: "right" as const, targetNdc: { x: 0.34, y: 0 }, reach: 0.78 }
-      : { kind: "observe" as const };
-    bridgeRef.current?.setLenoxIntent(intent);
-    bridgeRef.current?.setLenoxEmotion(
-      position.chapter === "ai-systems" || position.chapter === "recompose" ? "thinking" : "curious",
-    );
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${position.chapter}`);
   }, [dispatch]);
 
   const onProgress = useCallback((progress: number, clipAProgress: number) => {
     bridgeRef.current?.setGravityScrollProgress(progress);
-    scrubberRef.current?.setProgress(clipAProgress);
+    void clipAProgress;
   }, []);
 
-  const onPose = useCallback((pose: StationPose, tau: number) => {
-    bridgeRef.current?.setJourneyPose(pose, tau);
-  }, []);
+  const onPose = useCallback(() => {}, []);
 
   const onDirector = useCallback((director: StudioDirector | null) => {
     directorRef.current = director;
@@ -1027,7 +774,6 @@ export function StudioExperience() {
       if (!bridge) return;
       const { x, y } = pointerSampleRef.current;
       bridge.setPointer(x, y, false);
-      bridge.setLenoxGaze(x / window.innerWidth - 0.5, 0.5 - y / window.innerHeight);
     });
   }, []);
 
@@ -1037,7 +783,6 @@ export function StudioExperience() {
       pointerFrameRef.current = null;
     }
     bridgeRef.current?.clearPointer();
-    bridgeRef.current?.setLenoxGaze(0, 0);
   }, []);
 
   const changeLocale = useCallback((locale: Locale) => {
@@ -1048,22 +793,16 @@ export function StudioExperience() {
   }, [dispatch]);
 
   const requestDesign = useCallback((design: DesignId) => {
-    if (design === state.design) return;
-    if (state.introPhase === "entered") {
-      morph(design);
-      return;
-    }
-    dispatch({ type: "SET_DESIGN", design });
-    const url = writeDesignToUrl(new URL(window.location.href), design);
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-    finishIntro();
-  }, [dispatch, finishIntro, morph, state.design, state.introPhase]);
+    if (!proofMode || design === state.design) return;
+    commitProofDesign(design);
+    setProofVisualDesign(design);
+  }, [commitProofDesign, proofMode, state.design]);
 
   const headerStatus = deriveLenoxStatus(
     state.introPhase,
-    engineState,
+    "dormant",
     state.audit.phase,
-    morphTarget !== null,
+    proofPendingTarget !== null,
     state.projectBrief.open,
   );
 
@@ -1071,7 +810,7 @@ export function StudioExperience() {
     <div
       ref={rootRef}
       className={styles.root}
-      data-design={state.design}
+      data-design={displayDesign}
       data-world-media={activeDesign.worldMedia}
       data-lenox-presence={activeDesign.lenoxPresence}
       data-engine-mode={activeDesign.engineMode}
@@ -1082,58 +821,33 @@ export function StudioExperience() {
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
     >
-      <div className={styles.world} aria-hidden>
-        <div className={styles.worldPoster} />
-        {activeDesign.worldMedia === "film" ? (
-          <video
-            ref={worldVideoRef}
-            className={styles.worldFilm}
-            src={CLIP_A}
-            poster={HERO_POSTER}
-            muted
-            playsInline
-            preload="none"
-            disablePictureInPicture
-          />
-        ) : null}
-      </div>
       <div
         className={styles.lenoxLayer}
-        data-visible={engineEnabled && gpuPath !== "fallback"}
+        data-visible={(displayDesign === "gravity" || proofPendingTarget === "gravity") && gpuPath === "webgpu"}
       >
         <div ref={hostRef} className={styles.engineHost} />
-        {gpuPath === "fallback" && activeDesign.engineMode === "character" ? (
-          <FallbackEyes state={engineState} />
-        ) : null}
       </div>
-      {ARRIVAL_SOURCE ? (
-        <video
-          ref={arrivalVideoRef}
-          className={styles.arrivalFilm}
-          src={ARRIVAL_SOURCE}
-          muted
-          playsInline
-          preload="metadata"
-          onEnded={finishIntro}
-          onError={finishIntro}
-        />
-      ) : null}
       <StudioHeader
         locale={state.locale}
-        design={state.design}
+        design={displayDesign}
         status={headerStatus}
         onNavigate={navigate}
         onLocale={changeLocale}
         onDesign={requestDesign}
+        designs={proofMode ? [] : ["signal"]}
+        announceStatus={!proofMode}
       />
       {proofMode ? (
         <RealityProofSlice
-          design={state.design}
+          committedDesign={state.design}
           locale={state.locale}
           proofSlice={state.proofSlice}
-          morphPhase={morphPhase}
+          gpuPath={gpuPath}
+          reduced={reduced}
           onProofSlice={(proofSlice) => dispatch({ type: "SET_PROOF_SLICE", proofSlice })}
-          onDesign={morph}
+          prepareDesign={prepareDesign}
+          onCommitDesign={commitProofDesign}
+          onVisualState={updateProofVisualState}
         />
       ) : (
         <StudioJourney
@@ -1147,20 +861,9 @@ export function StudioExperience() {
           onPose={onPose}
           onPosition={onPosition}
           onDirector={onDirector}
-          onMorph={morph}
+          onMorph={requestDesign}
         />
       )}
-      {MASTER_ENTRY_GATE_ENABLED ? (
-        <EntryGate locale={state.locale} phase={state.introPhase} onWake={wake} onSkip={finishIntro} />
-      ) : null}
-      <div
-        className={styles.morphCurtain}
-        data-active={morphTarget !== null}
-        data-phase={morphPhase}
-        aria-hidden
-      >
-        <span>{morphTarget ? getDesign(morphTarget).label : getDesign(state.design).label}</span>
-      </div>
     </div>
   );
 }

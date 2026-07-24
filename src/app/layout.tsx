@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Barlow_Condensed, IBM_Plex_Mono } from 'next/font/google';
 import { ExperienceProvider } from './studio/ExperienceProvider';
-import { DEFAULT_DESIGN_ID, DESIGN_IDS } from './studio/designRegistry';
+import { buildDesignBootstrapScript } from './studio/designRegistry';
 import './globals.css';
 
 /**
@@ -24,7 +24,7 @@ const mono = IBM_Plex_Mono({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://volkanaistudio.com';
-const designIds = JSON.stringify(DESIGN_IDS);
+const designBootstrapScript = buildDesignBootstrapScript(process.env.NODE_ENV);
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -46,21 +46,12 @@ export const metadata: Metadata = {
     title: 'VOLKAN AI STUDIO | Web Design and AI Systems',
     description:
       'Independent studio for high-end web design, strategic redesign and custom AI systems.',
-    images: [
-      {
-        url: '/studio/world/hero-keyframe.jpg',
-        width: 2752,
-        height: 1536,
-        alt: 'VOLKAN AI STUDIO digital experience',
-      },
-    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'VOLKAN AI STUDIO | Web Design and AI Systems',
     description:
       'Independent studio for high-end web design, strategic redesign and custom AI systems.',
-    images: ['/studio/world/hero-keyframe.jpg'],
   },
 };
 
@@ -78,8 +69,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html:
-              `try{var v=sessionStorage.getItem('volkan-studio-experience-v2')||sessionStorage.getItem('volkan-studio-experience-v1')||'{}',s=JSON.parse(v),p=new URLSearchParams(location.search),l=p.get('lang'),a=${designIds},n=function(x){return x==='reef'?'gravity':a.includes(x)?x:null},d=n(p.get('design'))||n(p.get('reality'))||n(s.design)||n(s.reality)||'${DEFAULT_DESIGN_ID}';document.documentElement.dataset.design=d;document.documentElement.lang=l==='de'||(!l&&s.locale==='de')?'de':'en'}catch(e){document.documentElement.dataset.design='${DEFAULT_DESIGN_ID}';document.documentElement.lang='en'}`,
+            __html: designBootstrapScript,
           }}
         />
       </head>
