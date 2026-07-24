@@ -24,6 +24,35 @@ export type IntroPhase = "gate" | "arrival" | "handoff" | "entered";
 export type CaseId = "klein-paris" | "manaleaf" | "lenox-rnd";
 export type Locale = "en" | "de";
 
+export type ProofAnalysisFixture = {
+  findings: string[];
+  priorities: string[];
+  direction: string;
+};
+
+export const PROOF_ANALYSIS_FIXTURE: ProofAnalysisFixture = {
+  findings: [
+    "The offer competes with the visual system for first attention.",
+    "The primary action is visible but not yet supported by proof.",
+    "Responsibility is stated later than a trust-first buyer expects.",
+    "The design system has enough range to support distinct market positions.",
+    "AI capability is described before a live result establishes credibility.",
+  ],
+  priorities: [
+    "Make the commercial promise legible before the signature interaction.",
+    "Connect every AI claim to a visible input, output and approval boundary.",
+    "Use the reality switch as evidence of design range, not as decoration.",
+  ],
+  direction:
+    "Lead with accountable clarity, then let the interface prove range and operational intelligence.",
+};
+
+export type ProofSliceState = {
+  input: string;
+  analysisOpen: boolean;
+  analysisResult: ProofAnalysisFixture | null;
+};
+
 export interface ExperienceState {
   design: DesignId;
   locale: Locale;
@@ -42,6 +71,7 @@ export interface ExperienceState {
     company: string;
     message: string;
   };
+  proofSlice: ProofSliceState;
 }
 
 export type ExperienceAction =
@@ -52,6 +82,7 @@ export type ExperienceAction =
   | { type: "SELECT_CASE"; selectedCase: CaseId | null }
   | { type: "SET_AUDIT"; audit: ExperienceState["audit"] }
   | { type: "SET_PROJECT_BRIEF"; brief: ExperienceState["projectBrief"] }
+  | { type: "SET_PROOF_SLICE"; proofSlice: ProofSliceState }
   | { type: "HYDRATE"; state: Partial<ExperienceState> };
 
 export const CHAPTER_IDS: readonly ChapterId[] = [
@@ -69,12 +100,17 @@ export function createInitialExperienceState(design: DesignId): ExperienceState 
   return {
     design,
     locale: "en",
-    introPhase: "gate",
+    introPhase: "entered",
     activeChapter: "hero",
     localProgress: 0,
     selectedCase: null,
     audit: { phase: "idle", url: "" },
     projectBrief: { open: false, name: "", email: "", company: "", message: "" },
+    proofSlice: {
+      input: "",
+      analysisOpen: true,
+      analysisResult: PROOF_ANALYSIS_FIXTURE,
+    },
   };
 }
 
@@ -103,6 +139,8 @@ export function experienceReducer(
       return { ...state, audit: action.audit };
     case "SET_PROJECT_BRIEF":
       return { ...state, projectBrief: action.brief };
+    case "SET_PROOF_SLICE":
+      return { ...state, proofSlice: action.proofSlice };
     case "HYDRATE":
       return {
         design: action.state.design ?? state.design,
@@ -116,11 +154,21 @@ export function experienceReducer(
             : action.state.selectedCase,
         audit: { ...state.audit, ...action.state.audit },
         projectBrief: { ...state.projectBrief, ...action.state.projectBrief },
+        proofSlice: { ...state.proofSlice, ...action.state.proofSlice },
       };
     default:
       return state;
   }
 }
+
+export type PersistedExperienceInput = Omit<
+  Partial<ExperienceState>,
+  "design" | "introPhase"
+> & {
+  design?: unknown;
+  reality?: unknown;
+  introPhase?: unknown;
+};
 
 export function chapterFromHash(hash: string): ChapterId | null {
   const value = hash.replace(/^#/, "") as ChapterId;

@@ -15,6 +15,21 @@ current assignment is the isolated development Reality Proof Slice in
 `docs/agent-system/TASK.md`. Volkan owns all visual checks; agents run no browser
 automation or screenshot acceptance for this phase.
 
+**Phase 1 technical implementation complete, visual Go pending:** the registry
+now exposes only `signal`, `gravity` and `atelier`; v1 sessions and legacy
+`reef` inputs migrate centrally; `/` always hydrates as entered. The isolated
+development surface is `/?proof=realities`. It renders one canonical proof
+dataset through three independent compositions, preserves its input and open
+analysis fixture, and switches with a cancel-safe two-phase Cut. GRAVITY starts
+the existing WebGPU field without film or persistent v006; its DOM composition
+is the fallback when WebGPU is absent. SIGNAL and ATELIER do not initialize the
+engine.
+
+Technical evidence: 35/35 tests passed; `npx tsc --noEmit`; touched-file
+ESLint; `git diff --check`; and `npm run build`. No browser, screenshot or
+Playwright checks were run. Volkan's desktop/mobile/reduced/WebGPU-off judgment
+remains the only open Phase 1 gate.
+
 Everything below this block predates v1.2 and is retained as implementation
 history. Where it conflicts with `/PRODUCT_CONTRACT.md`, the root contract wins.
 

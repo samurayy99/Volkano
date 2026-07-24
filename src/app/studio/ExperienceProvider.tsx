@@ -17,10 +17,16 @@ import {
   experienceReducer,
   type ExperienceAction,
   type ExperienceState,
+  type PersistedExperienceInput,
 } from "./experienceState";
-import { DEFAULT_DESIGN_ID, isDesignId } from "./designRegistry";
+import {
+  DEFAULT_DESIGN_ID,
+  migratePersistedExperience,
+  normalizeDesignId,
+} from "./designRegistry";
 
-const STORAGE_KEY = "volkan-studio-experience-v1";
+const STORAGE_KEY = "volkan-studio-experience-v2";
+const LEGACY_STORAGE_KEY = "volkan-studio-experience-v1";
 
 type ExperienceContextValue = {
   state: ExperienceState;
@@ -29,8 +35,6 @@ type ExperienceContextValue = {
 };
 
 const ExperienceContext = createContext<ExperienceContextValue | null>(null);
-
-type PersistedExperience = Partial<ExperienceState> & { reality?: unknown };
 
 export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(
@@ -47,39 +51,35 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const stored = window.sessionStorage.getItem(STORAGE_KEY);
-    let persisted: PersistedExperience = {};
+    const stored =
+      window.sessionStorage.getItem(STORAGE_KEY) ??
+      window.sessionStorage.getItem(LEGACY_STORAGE_KEY);
+    let persisted: PersistedExperienceInput = {};
     if (stored) {
       try {
-        persisted = JSON.parse(stored) as PersistedExperience;
+        persisted = JSON.parse(stored) as PersistedExperienceInput;
       } catch {
         window.sessionStorage.removeItem(STORAGE_KEY);
+        window.sessionStorage.removeItem(LEGACY_STORAGE_KEY);
       }
     }
-    const requestedDesign = params.get("design") ?? params.get("reality");
-    const design = isDesignId(requestedDesign)
-      ? requestedDesign
-      : isDesignId(persisted.design)
-        ? persisted.design
-        : isDesignId(persisted.reality)
-          ? persisted.reality
-          : undefined;
-    const persistedState = { ...persisted } as Partial<ExperienceState>;
-    delete persistedState.design;
+    const requested =
+      normalizeDesignId(params.get("design")) ??
+      normalizeDesignId(params.get("reality"));
+    const persistedState = migratePersistedExperience(persisted) as Partial<ExperienceState>;
     const locale = params.get("lang");
     const chapter = chapterFromHash(window.location.hash);
     dispatch({
       type: "HYDRATE",
       state: {
         ...persistedState,
-        ...(design ? { design } : {}),
+        ...(requested ? { design: requested } : {}),
         ...(locale === "en" || locale === "de" ? { locale } : {}),
         ...(chapter ? { activeChapter: chapter } : {}),
-        ...(persisted.introPhase && persisted.introPhase !== "gate"
-          ? { introPhase: "entered" }
-          : {}),
+        introPhase: "entered",
       },
     });
+    window.sessionStorage.removeItem(LEGACY_STORAGE_KEY);
     hydrated.current = true;
   }, []);
 

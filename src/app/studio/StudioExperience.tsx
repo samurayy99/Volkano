@@ -7,6 +7,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -28,9 +29,11 @@ import {
   DESIGN_IDS,
   getDesign,
   isDesignId,
+  writeDesignToUrl,
   type DesignId,
 } from "./designRegistry";
 import { useExperience } from "./ExperienceProvider";
+import { RealityProofSlice } from "./RealityProofSlice";
 import type {
   ChapterId,
   IntroPhase,
@@ -44,12 +47,14 @@ import {
   type StudioStation,
 } from "./studioDirector";
 import { buildMailtoHref } from "./studioLinks";
+import { createMorphTransactionGate, getMorphTimings } from "./morphTransaction";
 import { WebsiteIntelligence } from "./WebsiteIntelligence";
 import styles from "./StudioExperience.module.css";
 
 const HERO_POSTER = "/studio/world/hero-keyframe.jpg";
 const CLIP_A = "/flow-assets/gravity-clip-a-v2-dense.mp4";
 const ARRIVAL_SOURCE: string | null = null;
+const MASTER_ENTRY_GATE_ENABLED = false;
 
 function readReducedMotionPreference() {
   if (typeof window === "undefined") return false;
@@ -58,6 +63,13 @@ function readReducedMotionPreference() {
     new URLSearchParams(window.location.search).has("lenox-reduced");
   return forceReduced || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
+
+function readRealityProofMode() {
+  if (typeof window === "undefined" || process.env.NODE_ENV !== "development") return false;
+  return new URLSearchParams(window.location.search).get("proof") === "realities";
+}
+
+const subscribeRealityProofMode = () => () => {};
 
 type LenoxReviewApi = {
   go: (chapter: ChapterId, localProgress?: number) => void;
@@ -667,11 +679,20 @@ export function StudioExperience() {
   const positionCommitRef = useRef<number | null>(null);
   const timers = useRef<number[]>([]);
   const morphTimers = useRef<number[]>([]);
+  const morphTransactionRef = useRef(createMorphTransactionGate());
   const [gpuPath, setGpuPath] = useState<"probing" | "webgpu" | "fallback">("probing");
   const [engineState, setEngineState] = useState<LenoxProofState>("dormant");
   const [morphTarget, setMorphTarget] = useState<DesignId | null>(null);
+  const [morphPhase, setMorphPhase] = useState<"idle" | "compress" | "release">("idle");
   const [reduced, setReduced] = useState(readReducedMotionPreference);
   const mode = useCompositionMode(false);
+  const activeDesign = getDesign(state.design);
+  const engineEnabled = activeDesign.engineMode !== "off";
+  const proofMode = useSyncExternalStore(
+    subscribeRealityProofMode,
+    readRealityProofMode,
+    () => false,
+  );
 
   useEffect(() => {
     if (!directorRef.current) {
@@ -702,6 +723,7 @@ export function StudioExperience() {
   }, []);
 
   useEffect(() => {
+    if (!engineEnabled) return;
     const host = hostRef.current;
     if (!host || !navigator.gpu) {
       const fallbackTimer = window.setTimeout(() => setGpuPath("fallback"), 0);
@@ -728,7 +750,7 @@ export function StudioExperience() {
       bridge.dispose();
       if (bridgeRef.current === bridge) bridgeRef.current = null;
     };
-  }, [reduced, writeSignals]);
+  }, [engineEnabled, reduced, writeSignals]);
 
   useEffect(() => {
     bridgeRef.current?.setCompositionMode(mode);
@@ -744,6 +766,12 @@ export function StudioExperience() {
   }, [gpuPath, state.design, state.introPhase]);
 
   useEffect(() => {
+    if (activeDesign.engineMode === "field") {
+      bridgeRef.current?.setLenoxParticlesVisible(true);
+      if (engineState !== "dormant") bridgeRef.current?.setLenoxState("dormant");
+      return;
+    }
+    if (activeDesign.engineMode !== "character") return;
     if (engineState === "present") {
       wakeInFlightRef.current = false;
       presenceCommittedRef.current = true;
@@ -761,7 +789,7 @@ export function StudioExperience() {
     ) {
       bridgeRef.current?.setLenoxState("present");
     }
-  }, [engineState, gpuPath, state.introPhase]);
+  }, [activeDesign.engineMode, engineState, gpuPath, state.introPhase]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
@@ -881,6 +909,7 @@ export function StudioExperience() {
     () => () => {
       timers.current.forEach(window.clearTimeout);
       morphTimers.current.forEach(window.clearTimeout);
+      morphTransactionRef.current.cancel();
       if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
       if (positionCommitRef.current !== null) window.clearTimeout(positionCommitRef.current);
     },
@@ -908,10 +937,13 @@ export function StudioExperience() {
   }, [dispatch, finishIntro, state.introPhase]);
 
   const morph = useCallback((targetDesign: DesignId) => {
+    const transaction = morphTransactionRef.current.begin();
+    const timings = getMorphTimings(reduced);
     morphTimers.current.forEach(window.clearTimeout);
     morphTimers.current = [];
     if (targetDesign === state.design) {
       setMorphTarget(null);
+      setMorphPhase("idle");
       return;
     }
     const position = { ...(directorRef.current?.getPosition() ?? semanticRef.current) };
@@ -919,19 +951,22 @@ export function StudioExperience() {
     restoreRef.current = position;
     dispatch({ type: "SET_POSITION", chapter: position.chapter, localProgress: position.localProgress });
     setMorphTarget(targetDesign);
+    setMorphPhase("compress");
     morphTimers.current.push(
       window.setTimeout(() => {
+        if (!morphTransactionRef.current.isCurrent(transaction)) return;
         dispatch({ type: "SET_DESIGN", design: targetDesign });
-        const url = new URL(window.location.href);
-        url.searchParams.set("design", targetDesign);
-        url.searchParams.delete("reality");
+        setMorphPhase("release");
+        const url = writeDesignToUrl(new URL(window.location.href), targetDesign);
         window.history.replaceState(null, "", `${url.pathname}${url.search}#${position.chapter}`);
-      }, reduced ? 60 : 420),
+      }, timings.commitMs),
       window.setTimeout(() => {
+        if (!morphTransactionRef.current.isCurrent(transaction)) return;
         directorRef.current?.restore(position);
         restoreRef.current = null;
         setMorphTarget(null);
-      }, reduced ? 120 : 720),
+        setMorphPhase("idle");
+      }, timings.finishMs),
     );
   }, [dispatch, reduced, state.design]);
 
@@ -1019,14 +1054,11 @@ export function StudioExperience() {
       return;
     }
     dispatch({ type: "SET_DESIGN", design });
-    const url = new URL(window.location.href);
-    url.searchParams.set("design", design);
-    url.searchParams.delete("reality");
+    const url = writeDesignToUrl(new URL(window.location.href), design);
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     finishIntro();
   }, [dispatch, finishIntro, morph, state.design, state.introPhase]);
 
-  const activeDesign = getDesign(state.design);
   const headerStatus = deriveLenoxStatus(
     state.introPhase,
     engineState,
@@ -1042,30 +1074,37 @@ export function StudioExperience() {
       data-design={state.design}
       data-world-media={activeDesign.worldMedia}
       data-lenox-presence={activeDesign.lenoxPresence}
+      data-engine-mode={activeDesign.engineMode}
       data-intro={state.introPhase}
       data-composition={mode}
+      data-proof={proofMode}
+      data-reduced={reduced}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
     >
       <div className={styles.world} aria-hidden>
         <div className={styles.worldPoster} />
-        <video
-          ref={worldVideoRef}
-          className={styles.worldFilm}
-          src={CLIP_A}
-          poster={HERO_POSTER}
-          muted
-          playsInline
-          preload="none"
-          disablePictureInPicture
-        />
+        {activeDesign.worldMedia === "film" ? (
+          <video
+            ref={worldVideoRef}
+            className={styles.worldFilm}
+            src={CLIP_A}
+            poster={HERO_POSTER}
+            muted
+            playsInline
+            preload="none"
+            disablePictureInPicture
+          />
+        ) : null}
       </div>
-      <div className={styles.lenoxLayer} data-visible="true">
-        {gpuPath === "fallback" ? (
+      <div
+        className={styles.lenoxLayer}
+        data-visible={engineEnabled && gpuPath !== "fallback"}
+      >
+        <div ref={hostRef} className={styles.engineHost} />
+        {gpuPath === "fallback" && activeDesign.engineMode === "character" ? (
           <FallbackEyes state={engineState} />
-        ) : (
-          <div ref={hostRef} className={styles.engineHost} />
-        )}
+        ) : null}
       </div>
       {ARRIVAL_SOURCE ? (
         <video
@@ -1087,21 +1126,39 @@ export function StudioExperience() {
         onLocale={changeLocale}
         onDesign={requestDesign}
       />
-      <StudioJourney
-        key={state.design}
-        active={state.introPhase === "entered"}
-        design={state.design}
-        locale={state.locale}
-        mode={mode}
-        reduced={reduced}
-        onProgress={onProgress}
-        onPose={onPose}
-        onPosition={onPosition}
-        onDirector={onDirector}
-        onMorph={morph}
-      />
-      <EntryGate locale={state.locale} phase={state.introPhase} onWake={wake} onSkip={finishIntro} />
-      <div className={styles.morphCurtain} data-active={morphTarget !== null} aria-hidden>
+      {proofMode ? (
+        <RealityProofSlice
+          design={state.design}
+          locale={state.locale}
+          proofSlice={state.proofSlice}
+          morphPhase={morphPhase}
+          onProofSlice={(proofSlice) => dispatch({ type: "SET_PROOF_SLICE", proofSlice })}
+          onDesign={morph}
+        />
+      ) : (
+        <StudioJourney
+          key={state.design}
+          active={state.introPhase === "entered"}
+          design={state.design}
+          locale={state.locale}
+          mode={mode}
+          reduced={reduced}
+          onProgress={onProgress}
+          onPose={onPose}
+          onPosition={onPosition}
+          onDirector={onDirector}
+          onMorph={morph}
+        />
+      )}
+      {MASTER_ENTRY_GATE_ENABLED ? (
+        <EntryGate locale={state.locale} phase={state.introPhase} onWake={wake} onSkip={finishIntro} />
+      ) : null}
+      <div
+        className={styles.morphCurtain}
+        data-active={morphTarget !== null}
+        data-phase={morphPhase}
+        aria-hidden
+      >
         <span>{morphTarget ? getDesign(morphTarget).label : getDesign(state.design).label}</span>
       </div>
     </div>

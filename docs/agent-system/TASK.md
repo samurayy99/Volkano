@@ -57,3 +57,19 @@ switch through one signature Cut without losing interaction state.
 
 The task stops after technical evidence and the manual review checklist. Volkan
 decides the visual Go/No-Go.
+
+## Implementation status (2026-07-24)
+
+- [x] SIGNAL default and v1 session migration.
+- [x] Canonical SIGNAL, GRAVITY and ATELIER registry with engine modes.
+- [x] Development proof at `?proof=realities` inside `StudioExperience`.
+- [x] Shared input and disclosed analysis fixture survive all three switches.
+- [x] Two-phase Cut with last-request-wins transaction guard.
+- [x] Keyboard `1`, `2`, `3`, `L` and transparent LENOX selection logic.
+- [x] GRAVITY uses the existing WebGPU path without film or persistent v006.
+- [x] Static GRAVITY composition remains when WebGPU is unavailable.
+- [x] Tests, TypeScript, touched-file ESLint, diff check and production build.
+- [ ] Volkan desktop, 390x844, hammering, reduced-motion and WebGPU-off review.
+- [ ] Volkan Go/No-Go.
+
+No browser automation or agent visual acceptance was performed.

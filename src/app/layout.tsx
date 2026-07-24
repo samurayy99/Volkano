@@ -51,7 +51,7 @@ export const metadata: Metadata = {
         url: '/studio/world/hero-keyframe.jpg',
         width: 2752,
         height: 1536,
-        alt: 'VOLKAN AI STUDIO Gravity Reef experience',
+        alt: 'VOLKAN AI STUDIO digital experience',
       },
     ],
   },
@@ -79,7 +79,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              `try{var s=JSON.parse(sessionStorage.getItem('volkan-studio-experience-v1')||'{}'),p=new URLSearchParams(location.search),l=p.get('lang'),a=${designIds},r=p.get('design')||p.get('reality')||s.design||s.reality,d=a.includes(r)?r:'${DEFAULT_DESIGN_ID}';document.documentElement.dataset.design=d;document.documentElement.lang=l==='de'||(!l&&s.locale==='de')?'de':'en'}catch(e){document.documentElement.dataset.design='${DEFAULT_DESIGN_ID}';document.documentElement.lang='en'}`,
+              `try{var v=sessionStorage.getItem('volkan-studio-experience-v2')||sessionStorage.getItem('volkan-studio-experience-v1')||'{}',s=JSON.parse(v),p=new URLSearchParams(location.search),l=p.get('lang'),a=${designIds},n=function(x){return x==='reef'?'gravity':a.includes(x)?x:null},d=n(p.get('design'))||n(p.get('reality'))||n(s.design)||n(s.reality)||'${DEFAULT_DESIGN_ID}';document.documentElement.dataset.design=d;document.documentElement.lang=l==='de'||(!l&&s.locale==='de')?'de':'en'}catch(e){document.documentElement.dataset.design='${DEFAULT_DESIGN_ID}';document.documentElement.lang='en'}`,
           }}
         />
       </head>
