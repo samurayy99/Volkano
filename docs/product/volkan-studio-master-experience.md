@@ -1,6 +1,10 @@
 # VOLKAN AI STUDIO — Master Experience Contract
 
-**Status:** Active product truth from 2026-07-19. This contract supersedes the isolated `YOU vs LENOX` choice as the public homepage narrative. The earlier engine and film experiments remain implementation evidence, not the product structure.
+> **SUPERSEDED 2026-07-24:** Historical implementation contract. The active
+> product truth is `/PRODUCT_CONTRACT.md`; the existing registry, state and
+> semantic-position implementation remain reusable evidence.
+
+**Historical status:** Active from 2026-07-19 until superseded on 2026-07-24.
 
 ## Product Promise
 

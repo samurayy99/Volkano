@@ -1,5 +1,23 @@
 # Current Handoff
 
+## LIVING AGENCY v1.2 ACTIVE (2026-07-24, Codex)
+
+Volkan approved `/PRODUCT_CONTRACT.md` v1.2 for implementation. SIGNAL is now
+the public default; the homepage has no mandatory gate; the three canonical
+realities are SIGNAL, GRAVITY and ATELIER. GRAVITY REEF, mandatory film-world
+architecture and persistent v006 character staging are historical directions.
+The existing PLAY/WAKE implementation and v006 production candidate remain
+preserved for a later `/lab` and optional Volkan-approved signature reveal.
+
+Active branch: `codex/living-agency-v1`. Baseline commit `8b8046e` preserves the
+complete pre-pivot Studio/Engine/v006 work before the contract migration. The
+current assignment is the isolated development Reality Proof Slice in
+`docs/agent-system/TASK.md`. Volkan owns all visual checks; agents run no browser
+automation or screenshot acceptance for this phase.
+
+Everything below this block predates v1.2 and is retained as implementation
+history. Where it conflicts with `/PRODUCT_CONTRACT.md`, the root contract wins.
+
 ## ONE-MAIN CONSOLIDATION (2026-07-20, Codex)
 
 The repository is consolidated on local `main`. All local side branches and the

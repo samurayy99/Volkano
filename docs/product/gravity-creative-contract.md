@@ -1,5 +1,10 @@
 # GRAVITY Creative Contract
 
+> **SUPERSEDED 2026-07-24:** Historical GRAVITY creation direction. The active
+> product truth is `/PRODUCT_CONTRACT.md`. Its engine observations remain
+> implementation evidence; PLAY/WAKE, THE COLLAPSE and the palette are no longer
+> public-homepage requirements.
+
 **Approved:** 2026-07-16 by Volkan (continuation approval on the recommended pair; individual calls below remain revisitable at video review).
 **Basis:** `docs/concepts/gravity-transition-concepts-2026-07-16.md` (concepts + Codex feasibility verdict) and the storyboard board `docs/concepts/gravity-collapse-storyboard-2026-07-16.html`.
 **Scope:** This contract binds the visible result. Implementation technique is the executor's domain within the Codex-verified boundaries.

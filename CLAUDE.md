@@ -4,38 +4,29 @@
 
 Fable is the Claude model operating inside Claude Code. Claude Code is the host environment, not a second agent.
 
-Fable owns creative direction, the scroll score, LENOX behavior language, prompt craft for generated media, synthesis into binding contracts, and independent acceptance review.
-Codex `gpt-5.6-sol` (high reasoning) is the principal implementer: architecture, runtime code, difficult debugging, browser verification.
-Volkan is Creative Director. His heart decides every look question — always on visible material (stills, video, browser), never on descriptions. A direction he has vetoed is dead; never resurrect it as a "default" or "placeholder".
+Fable owns creative critique and contract synthesis. Codex is the senior
+implementation lead. Claude may act as implementation worker only when Volkan
+assigns it the single writer slot; it does not replace the architecture owner.
+Volkan is Creative Director and the sole visual judge for Phase 1.
 One writer to the tree at a time. Do not invent extra agent roles to divide tasks.
 
 ## Product Truth
 
-The website itself is the AI demonstration. LENOX is the persistent living interface. The protected entry is `PLAY WITH ME -> WAKE LENOX`.
+Read `/PRODUCT_CONTRACT.md` first. SIGNAL is the public default; GRAVITY is the
+spatial computational signature; ATELIER is artifact-led editorial. The public
+homepage has no mandatory PLAY/WAKE gate. GRAVITY REEF, the fantasy-film world
+and persistent v006 character are historical directions, not placeholders.
 
-**The architecture is a three-layer hybrid, one scroll driving all layers:**
-
-1. **World (back):** a bright, surreal wonder-world as a pre-rendered, scroll-scrubbed camera flight — floating islands, rivers flowing upward, warm volumetric light, rich saturated color. Gravity visibly bent: that is what GRAVITY means now.
-2. **LENOX (middle):** rendered live on a transparent WebGPU canvas over the film. The world is cinema; the being in it is real — it notices the visitor (gaze first ~150 ms, then core, then limbs, root last). LENOX is NEVER baked into video.
-3. **Content (front):** semantic DOM. Native scroll-timelines (transform/opacity only), OKLCH tokens, content as compact dark islands floating on the loud world — never dim the world for readability.
-
-**LOOK — FINAL, confirmed three times by Volkan:** bright and colorful. The dark graphite/black/cyan "quiet, expensive, controlled power" direction is retired permanently — not as default, not as placeholder, not as mood. Emotion target: awe and wonder (reference: Volkan's FPV video 2026-07-17, Wallow color dramaturgy).
-
-**Composition rules:** the page is designed as one vertical composition first (World Strip), with a typed Scroll Score (beats carrying worldState, lenoxState, contentState, accent, energy) driving film, lattice, LENOX and DOM from one source. A living WebGPU lattice binds the film clips into one universe. Macro-dives alternate with wide panoramas for rhythm.
-
-ATELIER and SIGNAL remain future directions. OBSIDIAN/ALABASTER are historical experiments, not the thesis. A future world switch (THE BLINK) is not built until a second world exists.
-
-## Production Pipeline
-
-Kling (generate) → Remotion (assemble as code) → FSV (deliver frame-exact) → live WebGPU overlay → DOM.
-
-- **Generation:** one master still fixes world/light/palette → scene stills via image-to-image (one universe) → dive clips via image-to-video (slow continuous forward glide, one environment per clip, stable first/last frames) → transitions keyframed from REAL boundary frames of adjacent clips. Never prompt camera reversal or pull-up in transitions. Generated clips contain world only: no characters, no LENOX, no text, no logos.
-- **Scrub delivery:** `plutotcool/fsv` is the candidate core (WebCodecs, frame-accurate, alpha support). Gate before commitment: real iPhone Safari performance test. Fallback: classic `currentTime` scrubbing behind the same interface.
-- **Assembly:** Remotion (skills installed, see below). Company license must be clarified before commercial renders. VideoFlow (Apache-2.0) is the fallback.
+Phase 1 is a minimal retrofit inside `src/app/studio`: three proof renderers,
+shared state, one Cut transaction and a Volkan-operated manual review harness.
+No live AI, full redesign, `/lab`, deployment or dependency change is in scope.
 
 ## Engine Truth
 
-The existing WebGPU engine in `src/flow-engine/` is the live layer. Preserve: single render loop, `engineBridge` contract, Three.js `0.175.0`, one scroll authority (`journeyDirector`). React sends discrete intents (`setLenoxIntent`: rest/observe/guide/confirm); the engine owns all continuous easing. Canonical signals (energy/attention/tension) drive body material, field and throttled CSS tokens from one source. The current body is a Phase-1 procedural silhouette (2 lead + 4 support arms) awaiting the bright-world reskin; the authored GLB comes after the silhouette passes Volkan's judgment.
+The existing WebGPU engine in `src/flow-engine/` is the live layer. Preserve one
+render loop, `engineBridge`, Three.js `0.175.0` and one scroll authority. SIGNAL
+and ATELIER are DOM-first. GRAVITY may use the existing field without film or a
+persistent character. Do not add a WebGL path or parallel renderer.
 
 Read `docs/agent-system/TASK.md` for the active assignment and `docs/agent-system/CURRENT.md` for tree state before directing work.
 
@@ -45,9 +36,8 @@ Project skills live in `.agents/skills/` (shared by Claude Code and Codex): `rem
 
 ## Evidence & Acceptance
 
-- No visual work is called done, premium or finished from code inspection or the author's report. Real browser evidence only.
-- **Director Strip** is the composition instrument: capture fixed scroll-progress states (0–100%) and read them as one vertical strip. Full-page browser captures lie on fixed/canvas/video layers — do not use them for acceptance.
-- The writer self-checks; a different model or fresh context performs acceptance review; Volkan judges by video/screenshots.
+- No visual work is called done, premium or finished from code inspection or the author's report.
+- For Phase 1, agents do not run browser automation, screenshots or visual acceptance. The writer provides deterministic states and technical evidence; Volkan checks the live result directly.
 - **Momentum mode:** when Volkan orders a sprint, no per-step gates and no verification theater — code everything codable, then one joint test session at the end covering desktop, mobile (own composition, 390×844), reduced motion.
 - Report honestly: verified results separated from open risks. Disagree openly when the evidence disagrees — Volkan expects it.
 
@@ -60,8 +50,11 @@ Project skills live in `.agents/skills/` (shared by Claude Code and Codex): `rem
 
 ## Repository Safety
 
-Substantial uncommitted work from multiple feature lines — never reset or overwrite unrelated changes. No commit, push, deploy, dependency change, plugin change, or production action without Volkan's explicit approval. One writer at a time. Do not modify the protected WAKE materialization or the wallow reference material (`docs/review/wallow-reference-2026-07-15/`).
+The pre-pivot Studio/Engine/v006 work is preserved on `codex/living-agency-v1`
+at commit `8b8046e`. Never reset or overwrite it. No push, deploy, dependency
+change, plugin change or production action without Volkan's explicit approval.
+One writer at a time. Preserve PLAY/WAKE for later `/lab`; do not delete it.
 
 ## Rejected For Good
 
-Dark graphite/cyan as world look · LENOX baked into video · purchased or AI-generated identities as LENOX · aquarium/underwater semantics · full-body cursor chasing · 360° spins · R3F/Next rebuilds · second renderer, second state machine, second scroll authority · per-frame React writes · five-tier quality matrices before profiling · state/emotion catalogues before a proven image · full-page captures as acceptance evidence.
+GRAVITY REEF/fantasy-film as public thesis · mandatory homepage gate · persistent character mascot · LENOX baked into video · fake human AI identities · R3F/Next rebuilds · second renderer · second state machine · second scroll authority · per-frame React writes · browser automation as Phase-1 visual acceptance.

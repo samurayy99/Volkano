@@ -1,5 +1,9 @@
 # LENOX — THE GRAVITY REEF · Scroll Score (LOCKED 2026-07-18)
 
+> **SUPERSEDED 2026-07-24:** Historical film-world contract. GRAVITY REEF and
+> the mandatory film architecture were retired by `/PRODUCT_CONTRACT.md` v1.2.
+> Assets and measured implementation lessons remain historical evidence.
+
 **Status:** Team-locked (Volkan + Fable + ChatGPT + Codex; Gemini's shader-background proposal rejected as architecture conflict). This document is the binding beat contract for the first scroll-background film. Supersedes the three underwater pitches of 2026-07-18.
 
 ## World Definition

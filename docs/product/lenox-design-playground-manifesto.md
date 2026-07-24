@@ -1,5 +1,9 @@
 # THE LENOX DESIGN PLAYGROUND
 
+> **SUPERSEDED 2026-07-24:** Historical product definition. The active product
+> truth is `/PRODUCT_CONTRACT.md`. In particular, PLAY/WAKE is no longer a
+> mandatory homepage gate, SIGNAL is the default, and GRAVITY REEF is retired.
+
 ## Promise
 
 VOLKAN AI STUDIO does not merely claim that it can build exceptional websites and AI systems. The website proves it live.
@@ -65,4 +69,3 @@ The site is simultaneously a portfolio, design playground, AI demonstration, pro
 - No chat window, generic dashboard, theme gallery, or three-card marketing grammar
 - No OBSIDIAN or ALABASTER promotion as launch templates
 - No production push or deployment without explicit approval
-
