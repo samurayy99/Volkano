@@ -11,7 +11,14 @@ import {
   type ReactNode,
 } from "react";
 import { FlowEngineBridge } from "../../flow-engine/engineBridge";
-import type { LenoxProofState, LenoxSignals } from "../../flow-engine/types";
+import type {
+  LenoxEmotion,
+  LenoxIntent,
+  LenoxJourneyPose,
+  LenoxProofState,
+  LenoxReaction,
+  LenoxSignals,
+} from "../../flow-engine/types";
 import { FallbackEyes } from "../FallbackEyes";
 import { createFilmScrubber, type FilmScrubber } from "../stage/filmScrubber";
 import { useCompositionMode } from "../stage/compositionMode";
@@ -43,6 +50,36 @@ import styles from "./StudioExperience.module.css";
 const HERO_POSTER = "/studio/world/hero-keyframe.jpg";
 const CLIP_A = "/flow-assets/gravity-clip-a-v2-dense.mp4";
 const ARRIVAL_SOURCE: string | null = null;
+
+function readReducedMotionPreference() {
+  if (typeof window === "undefined") return false;
+  const forceReduced =
+    process.env.NODE_ENV === "development" &&
+    new URLSearchParams(window.location.search).has("lenox-reduced");
+  return forceReduced || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+type LenoxReviewApi = {
+  go: (chapter: ChapterId, localProgress?: number) => void;
+  intent: (intent: LenoxIntent) => void;
+  emotion: (emotion: LenoxEmotion) => void;
+  reaction: (reaction: LenoxReaction) => void;
+  gaze: (x: number, y: number) => void;
+  pose: (pose: LenoxJourneyPose, tau?: number) => void;
+  snapshot: () => {
+    design: DesignId;
+    chapter: ChapterId;
+    localProgress: number;
+    composition: "side" | "banded";
+    engineState: LenoxProofState;
+  };
+};
+
+declare global {
+  interface Window {
+    __LENOX_REVIEW__?: LenoxReviewApi;
+  }
+}
 
 const statusLabel: Record<LenoxStatus, string> = {
   dormant: "DORMANT",
@@ -77,56 +114,56 @@ const STUDIO_STATIONS: readonly StudioStation[] = [
   {
     id: "hero",
     pose: {
-      side: { zoom: 0.84, shiftX: -0.18, shiftY: 0.03 },
+      side: { zoom: 0.95, shiftX: -0.65, shiftY: 0.03 },
       banded: { zoom: 1.04, shiftX: 0, shiftY: -0.26 },
     },
   },
   {
     id: "work",
     pose: {
-      side: { zoom: 1.08, shiftX: 0.28, shiftY: 0.02 },
+      side: { zoom: 1.05, shiftX: -0.7, shiftY: 0.02 },
       banded: { zoom: 1.22, shiftX: 0, shiftY: -0.2 },
     },
   },
   {
     id: "services",
     pose: {
-      side: { zoom: 0.68, shiftX: -0.3, shiftY: -0.02 },
+      side: { zoom: 0.85, shiftX: -0.68, shiftY: -0.02 },
       banded: { zoom: 1.12, shiftX: 0, shiftY: -0.24 },
     },
   },
   {
     id: "lenox",
     pose: {
-      side: { zoom: 0.62, shiftX: 0.22, shiftY: 0.02 },
+      side: { zoom: 0.7, shiftX: -0.68, shiftY: 0.02 },
       banded: { zoom: 0.96, shiftX: 0, shiftY: -0.2 },
     },
   },
   {
     id: "ai-systems",
     pose: {
-      side: { zoom: 0.76, shiftX: -0.28, shiftY: 0 },
+      side: { zoom: 0.85, shiftX: -0.68, shiftY: 0 },
       banded: { zoom: 1.15, shiftX: 0, shiftY: -0.22 },
     },
   },
   {
     id: "volkan",
     pose: {
-      side: { zoom: 1.45, shiftX: 0.3, shiftY: 0.04 },
+      side: { zoom: 1.2, shiftX: -0.72, shiftY: 0.04 },
       banded: { zoom: 1.42, shiftX: 0, shiftY: -0.08 },
     },
   },
   {
     id: "recompose",
     pose: {
-      side: { zoom: 0.88, shiftX: -0.24, shiftY: 0 },
+      side: { zoom: 1, shiftX: -0.68, shiftY: 0 },
       banded: { zoom: 1.06, shiftX: 0, shiftY: -0.2 },
     },
   },
   {
     id: "contact",
     pose: {
-      side: { zoom: 0.82, shiftX: 0.3, shiftY: 0 },
+      side: { zoom: 1, shiftX: -0.68, shiftY: 0 },
       banded: { zoom: 1.08, shiftX: 0, shiftY: -0.18 },
     },
   },
@@ -623,6 +660,8 @@ export function StudioExperience() {
   const directorRef = useRef<StudioDirector | null>(null);
   const semanticRef = useRef<SemanticPosition>({ chapter: "hero", localProgress: 0 });
   const restoreRef = useRef<SemanticPosition | null>(null);
+  const wakeInFlightRef = useRef(false);
+  const presenceCommittedRef = useRef(false);
   const pointerFrameRef = useRef<number | null>(null);
   const pointerSampleRef = useRef({ x: 0, y: 0 });
   const positionCommitRef = useRef<number | null>(null);
@@ -631,7 +670,7 @@ export function StudioExperience() {
   const [gpuPath, setGpuPath] = useState<"probing" | "webgpu" | "fallback">("probing");
   const [engineState, setEngineState] = useState<LenoxProofState>("dormant");
   const [morphTarget, setMorphTarget] = useState<DesignId | null>(null);
-  const [reduced, setReduced] = useState(false);
+  const [reduced, setReduced] = useState(readReducedMotionPreference);
   const mode = useCompositionMode(false);
 
   useEffect(() => {
@@ -653,7 +692,10 @@ export function StudioExperience() {
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const read = () => setReduced(media.matches);
+    const forceReduced =
+      process.env.NODE_ENV === "development" &&
+      new URLSearchParams(window.location.search).has("lenox-reduced");
+    const read = () => setReduced(forceReduced || media.matches);
     read();
     media.addEventListener("change", read);
     return () => media.removeEventListener("change", read);
@@ -693,6 +735,102 @@ export function StudioExperience() {
   }, [mode]);
 
   useEffect(() => {
+    const opacity = state.introPhase === "gate"
+      ? 1
+      : getDesign(state.design).worldMedia === "film"
+        ? 0.16
+        : 1;
+    bridgeRef.current?.setLenoxBackdropOpacity(opacity);
+  }, [gpuPath, state.design, state.introPhase]);
+
+  useEffect(() => {
+    if (engineState === "present") {
+      wakeInFlightRef.current = false;
+      presenceCommittedRef.current = true;
+      return;
+    }
+    if (
+      gpuPath !== "webgpu" ||
+      state.introPhase !== "entered" ||
+      wakeInFlightRef.current
+    ) return;
+    if (
+      !presenceCommittedRef.current ||
+      engineState === "dormant" ||
+      engineState === "idle"
+    ) {
+      bridgeRef.current?.setLenoxState("present");
+    }
+  }, [engineState, gpuPath, state.introPhase]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("lenox-review")) return;
+
+    const review: LenoxReviewApi = {
+      go(chapter, localProgress = 0) {
+        directorRef.current?.restore({
+          chapter,
+          localProgress: Math.min(1, Math.max(0, localProgress)),
+        });
+      },
+      intent: (intent) => bridgeRef.current?.setLenoxIntent(intent),
+      emotion: (emotion) => bridgeRef.current?.setLenoxEmotion(emotion),
+      reaction: (reaction) => bridgeRef.current?.setLenoxReaction(reaction),
+      gaze: (x, y) => bridgeRef.current?.setLenoxGaze(x, y),
+      pose: (pose, tau) => bridgeRef.current?.setJourneyPose(pose, tau),
+      snapshot() {
+        const position = directorRef.current?.getPosition() ?? semanticRef.current;
+        return {
+          design: state.design,
+          chapter: position.chapter,
+          localProgress: position.localProgress,
+          composition: mode,
+          engineState,
+        };
+      },
+    };
+    window.__LENOX_REVIEW__ = review;
+
+    const preset = params.get("lenox-preset");
+    const forcePresent = params.has("lenox-force-present") || preset !== null;
+    const presetTimer = forcePresent
+      ? window.setTimeout(() => {
+          bridgeRef.current?.setLenoxState("present");
+          if (!preset) return;
+          review.go("lenox", 0.35);
+          if (preset === "neutral") {
+            review.emotion("neutral");
+            review.intent({ kind: "rest" });
+          } else if (preset === "thinking") {
+            review.emotion("thinking");
+            review.intent({ kind: "observe" });
+          } else if (preset === "concerned") {
+            review.emotion("concerned");
+            review.intent({ kind: "observe" });
+          } else if (preset === "confirm") {
+            review.emotion("pleased");
+            review.intent({ kind: "confirm" });
+            review.reaction("confirm");
+          } else if (preset === "guide-left" || preset === "guide-right") {
+            review.emotion("curious");
+            review.intent({
+              kind: "guide",
+              arm: preset === "guide-left" ? "left" : "right",
+              targetNdc: { x: preset === "guide-left" ? -0.34 : 0.34, y: 0 },
+              reach: 0.78,
+            });
+          }
+        }, 0)
+      : null;
+    return () => {
+      if (presetTimer !== null) window.clearTimeout(presetTimer);
+      if (window.__LENOX_REVIEW__ === review) delete window.__LENOX_REVIEW__;
+    };
+  }, [engineState, gpuPath, mode, state.activeChapter, state.design, state.introPhase]);
+
+  useEffect(() => {
     const signature = getDesign(state.design).engineSignature;
     if (signature) bridgeRef.current?.setSignature(signature);
   }, [gpuPath, state.design]);
@@ -718,6 +856,7 @@ export function StudioExperience() {
   const finishIntro = useCallback(() => {
     timers.current.forEach(window.clearTimeout);
     timers.current = [];
+    wakeInFlightRef.current = true;
     dispatch({ type: "SET_INTRO", phase: "handoff" });
     bridgeRef.current?.setLenoxState("waking");
     timers.current.push(window.setTimeout(markIntroSeen, reduced ? 0 : 900));
@@ -775,7 +914,8 @@ export function StudioExperience() {
       setMorphTarget(null);
       return;
     }
-    const position = directorRef.current?.getPosition() ?? semanticRef.current;
+    const position = { ...(directorRef.current?.getPosition() ?? semanticRef.current) };
+    semanticRef.current = position;
     restoreRef.current = position;
     dispatch({ type: "SET_POSITION", chapter: position.chapter, localProgress: position.localProgress });
     setMorphTarget(targetDesign);
@@ -788,7 +928,8 @@ export function StudioExperience() {
         window.history.replaceState(null, "", `${url.pathname}${url.search}#${position.chapter}`);
       }, reduced ? 60 : 420),
       window.setTimeout(() => {
-        if (restoreRef.current) directorRef.current?.restore(restoreRef.current);
+        directorRef.current?.restore(position);
+        restoreRef.current = null;
         setMorphTarget(null);
       }, reduced ? 120 : 720),
     );
@@ -919,7 +1060,7 @@ export function StudioExperience() {
           disablePictureInPicture
         />
       </div>
-      <div className={styles.lenoxLayer} data-visible={state.introPhase === "entered" || state.introPhase === "handoff"}>
+      <div className={styles.lenoxLayer} data-visible="true">
         {gpuPath === "fallback" ? (
           <FallbackEyes state={engineState} />
         ) : (

@@ -32,7 +32,7 @@ import { createLenoxBody } from "./lenoxBody.js";
  */
 
 const VESSEL_URL = "/models/lenox-source/360_sphere_robot_Done.glb";
-const AUTHORED_LENOX_URL = "/models/lenox/lenox-v004.glb";
+const AUTHORED_LENOX_URL = "/models/lenox/lenox-v006.glb";
 
 const stripMaps = (mat) => {
   mat.map = null;

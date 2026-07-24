@@ -1,0 +1,19 @@
+{
+  "authority": "docs/character/lenox-canonical-reference.png",
+  "visual_approval": false,
+  "diagnostic_only": true,
+  "reference_bound": [
+    "front silhouette",
+    "eye placement",
+    "fin span",
+    "head-body ratio",
+    "visible arm distribution"
+  ],
+  "controlled_interpretation": [
+    "side depth",
+    "back of head",
+    "back of fins",
+    "rear arm placement"
+  ],
+  "notes": "No canonical orthographic side or back references exist; diagnostics never grant visual approval."
+}

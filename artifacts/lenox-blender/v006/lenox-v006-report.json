@@ -1,0 +1,89 @@
+{
+  "version": "v006",
+  "status": "technical_candidate; visual approval remains with Volkan and team",
+  "toolchain": {
+    "blender_binary": "/Applications/Blender.app/Contents/MacOS/Blender",
+    "blender_version": "5.2.0 LTS",
+    "blender_python": "3.13.13",
+    "generator_sha256": "a1a3ee9922c45c0ef9a0fa155f1aab90fdfb7127ce974f5af4b66812b78cc947",
+    "source_sha256": "59ecaf58b9b60c988229201cbb70967d8087354c3b01724de8ddfbca36c5b4e8",
+    "canonical_reference_sha256": "98347ebc13d9e7ab5acb4ab74bca5d2875a088e3bbe93c0603b49cde48a9c480",
+    "command": "blender --background --factory-startup --python tools/blender/generate_lenox_v006.py"
+  },
+  "geometry": {
+    "sculpt_triangles": 535620,
+    "export_mesh_triangles": {
+      "LENOX_Body_Arms_Retopology": 34000,
+      "LENOX_Fin_L": 468,
+      "LENOX_Fin_R": 468,
+      "LENOX_Arm_Secondary_Rear_L": 416,
+      "LENOX_Arm_Secondary_Rear_R": 416,
+      "LENOX_Eye_Iris_L": 960,
+      "LENOX_Eye_Iris_R": 960,
+      "LENOX_Mouth_Closed": 180
+    },
+    "export_triangles_total": 37868,
+    "visible_arms": 8,
+    "primary_control_chains": 6,
+    "secondary_mapping": {
+      "LENOX_Arm_Secondary_Rear_L": "Arm_Support_Side_L_*",
+      "LENOX_Arm_Secondary_Rear_R": "Arm_Support_Side_R_*"
+    }
+  },
+  "materials": [
+    "LENOX_Eye_IrisCornea_v006",
+    "LENOX_Face_Coral_v006",
+    "LENOX_PearlOpal_Aux_v006",
+    "LENOX_PearlOpal_Light_v006",
+    "LENOX_PearlOpal_Skin_v006"
+  ],
+  "textures": {
+    "lenox-v006-base-color.jpg": [
+      512,
+      512
+    ],
+    "lenox-v006-normal.png": [
+      512,
+      512
+    ],
+    "lenox-v006-roughness.png": [
+      512,
+      512
+    ],
+    "lenox-v006-iris.png": [
+      512,
+      512
+    ]
+  },
+  "outputs": {
+    "blend": "assets/lenox/lenox-v006.blend",
+    "blend_sha256": "f5b63f34acc85f1bbb9cfa4f599d4a496c4297435579cbf2f5c5a54cf6c68b55",
+    "glb": "public/models/lenox/lenox-v006.glb",
+    "glb_sha256": "a24d3f4a49fe9a51dd1a1778a704b71d46cfbe6acaea9d17cfada971b20e2949",
+    "glb_bytes": 2715604
+  },
+  "inspection": [
+    "inspection-front-neutral.png",
+    "inspection-three-quarter.png",
+    "silhouette-v006-96px.png",
+    "silhouette-v006-64px.png",
+    "expression-neutral.png",
+    "expression-observe.png",
+    "expression-concerned.png",
+    "expression-confirm.png",
+    "expression-contact-sheet.png",
+    "look-source-front.png",
+    "look-production-front.png",
+    "look-source-three-quarter.png",
+    "look-production-three-quarter.png",
+    "look-source-closeup-eye-fin.png",
+    "look-production-closeup-eye-fin.png",
+    "source-production-three-quarter.png",
+    "source-production-closeup-eye-fin.png",
+    "source-production-look-contact-sheet.png",
+    "reef-production-front.png",
+    "reef-production-three-quarter.png",
+    "reef-production-closeup-eye-fin.png"
+  ],
+  "visual_self_approval": false
+}

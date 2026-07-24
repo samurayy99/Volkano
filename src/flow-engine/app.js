@@ -1063,6 +1063,10 @@ class App {
     this.scene.environmentRotation.set(0, voidEnv ? 0 : -2.15, 0);
   }
 
+  setLenoxBackdropOpacity(opacity) {
+    this.lenoxBackdrop?.setOpacity?.(opacity);
+  }
+
   /* ── DER BEGLEITER: signature worlds ─────────────────────────────────── */
 
   /** Reflection world per signature, generated once, kept for re-calibration. */

@@ -58,9 +58,13 @@ export class FlowEngineBridge implements FlowEngineApi {
   private chamberEnergy = 0;
   private chamberDrive = new SourceChamberDrive();
   private lenoxDrive: LenoxEyesDrive | null = null;
+  private pendingLenoxState: LenoxProofState = "dormant";
   private lastLenoxState: LenoxProofState = "idle";
   /** React usually knows the composition before the GPU is up; hold it until then. */
   private pendingCompositionMode: CompositionMode = "side";
+  private pendingLenoxBackdropOpacity = 1;
+  private pendingJourneyPose: LenoxJourneyPose | null = null;
+  private pendingJourneyTau: number | undefined;
   /** Rolling engine tick time (ms), exposed as __LENOX_PERF__ in Lenox mode. */
   private engineMsAvg: number | null = null;
   private deviceLossArmed = false;
@@ -89,13 +93,35 @@ export class FlowEngineBridge implements FlowEngineApi {
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    await renderer.init();
+    let app: App | null = null;
+    try {
+      await renderer.init();
+      if (this.disposed) {
+        renderer.dispose?.();
+        return;
+      }
 
-    if (!(renderer.backend as any)?.isWebGPUBackend) {
-      throw new Error("Could not initialize a WebGPU backend.");
+      if (!(renderer.backend as any)?.isWebGPUBackend) {
+        throw new Error("Could not initialize a WebGPU backend.");
+      }
+
+      app = new App(renderer, {
+        visualMode: this.options.lenoxMode ? "void" : "chamber",
+      });
+      await app.init(width, height);
+      if (this.disposed) {
+        app.dispose();
+        renderer.dispose?.();
+        return;
+      }
+    } catch (error) {
+      app?.dispose();
+      renderer.dispose?.();
+      throw error;
     }
 
     this.renderer = renderer;
+    this.app = app;
     const device = (renderer.backend as any)?.device as GPUDevice | undefined;
     if (device && !this.deviceLossArmed) {
       this.deviceLossArmed = true;
@@ -106,18 +132,24 @@ export class FlowEngineBridge implements FlowEngineApi {
       });
     }
     this.container.appendChild(renderer.domElement);
+    if (process.env.NODE_ENV === "development") {
+      console.assert(
+        this.container.querySelectorAll(":scope > canvas").length === 1,
+        "[flow-engine] Expected exactly one canvas in the engine host.",
+      );
+    }
 
-    const app = new App(renderer, {
-      visualMode: this.options.lenoxMode ? "void" : "chamber",
-    });
-    this.app = app;
-    await app.init(width, height);
     // Before the first frame: the engine must never compose from its own guess.
     app.setCompositionMode?.(this.pendingCompositionMode);
+    app.setLenoxBackdropOpacity?.(this.pendingLenoxBackdropOpacity);
+    if (this.pendingJourneyPose) {
+      app.setLenoxJourneyPose?.(this.pendingJourneyPose, this.pendingJourneyTau);
+    }
     if (this.options.lenoxMode) {
       this.lenoxDrive = new LenoxEyesDrive({
         reducedMotion: this.options.lenoxReducedMotion,
       });
+      this.lenoxDrive.setState(this.pendingLenoxState);
     }
 
     this.resizeObserver = new ResizeObserver(this.onResize);
@@ -197,6 +229,7 @@ export class FlowEngineBridge implements FlowEngineApi {
 
   setLenoxState(state: LenoxProofState): void {
     if (this.disposed) return;
+    this.pendingLenoxState = state;
     this.lenoxDrive?.setState(state);
   }
 
@@ -241,7 +274,9 @@ export class FlowEngineBridge implements FlowEngineApi {
   /** Journey camera pose (scroll director → engine; engine eases). */
   setJourneyPose(pose: LenoxJourneyPose, tau?: number): void {
     if (this.disposed) return;
-    this.app?.setLenoxJourneyPose?.(pose, tau);
+    this.pendingJourneyPose = { ...pose };
+    this.pendingJourneyTau = tau;
+    this.app?.setLenoxJourneyPose?.(this.pendingJourneyPose, tau);
   }
 
   /**
@@ -259,6 +294,12 @@ export class FlowEngineBridge implements FlowEngineApi {
   setLenoxEnvironment(useVoid: boolean): void {
     if (this.disposed) return;
     this.app?.setLenoxEnvironment?.(useVoid);
+  }
+
+  setLenoxBackdropOpacity(opacity: number): void {
+    if (this.disposed || !Number.isFinite(opacity)) return;
+    this.pendingLenoxBackdropOpacity = Math.min(1, Math.max(0, opacity));
+    this.app?.setLenoxBackdropOpacity?.(this.pendingLenoxBackdropOpacity);
   }
 
   /* ── DER BEGLEITER: signature worlds (lenox mode only) ─────────────── */

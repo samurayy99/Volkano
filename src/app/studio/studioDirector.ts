@@ -113,15 +113,21 @@ export function createStudioDirector(
     const index = stations.findIndex((station) => station.id === next.chapter);
     if (index < 0) return;
     const section = sections[index];
-    scroller.scrollTo({
-      top: semanticScrollTarget(
-        section.offsetTop,
-        section.offsetHeight,
-        scroller.clientHeight,
-        next.localProgress,
-      ),
-      behavior,
-    });
+    const top = semanticScrollTarget(
+      section.offsetTop,
+      section.offsetHeight,
+      scroller.clientHeight,
+      next.localProgress,
+    );
+    if (behavior === "auto") {
+      const inlineBehavior = scroller.style.scrollBehavior;
+      scroller.style.scrollBehavior = "auto";
+      scroller.scrollTop = top;
+      scroller.style.scrollBehavior = inlineBehavior;
+      readPosition();
+      return;
+    }
+    scroller.scrollTo({ top, behavior });
     window.requestAnimationFrame(readPosition);
   };
 

@@ -1,6 +1,6 @@
 .root {
   --reef-ink: #061416;
-  --reef-panel: rgb(4 18 20 / 86%);
+  --reef-panel: rgb(4 18 20 / 78%);
   --reef-line: rgb(230 255 248 / 18%);
   --reef-copy: #eefcf8;
   --seafoam: #9ce9da;
@@ -36,6 +36,16 @@
   overflow: hidden;
   background: #c8eced;
   transition: opacity 520ms var(--ease-out-expo), filter 520ms var(--ease-out-expo);
+}
+
+.root[data-intro="gate"] {
+  background: #000;
+}
+
+.root[data-intro="gate"] .world,
+.root[data-intro="arrival"] .world,
+.root[data-intro="handoff"] .world {
+  opacity: 0;
 }
 
 .worldPoster {
@@ -231,6 +241,14 @@
   background: #b7dce3;
 }
 
+.entry[data-phase="gate"] {
+  background: transparent;
+}
+
+.entry[data-phase="gate"] .entryCopy {
+  color: var(--reef-copy);
+}
+
 .distantAtmosphere {
   position: absolute;
   inset: -8%;
@@ -243,6 +261,10 @@
   filter: saturate(0.92);
   transform: scale(1.08);
   transition: transform 6s cubic-bezier(0.2, 0.6, 0.1, 1), filter 1s ease;
+}
+
+.entry[data-phase="gate"] .distantAtmosphere {
+  opacity: 0;
 }
 
 .entry[data-phase="arrival"] .distantAtmosphere,
@@ -377,6 +399,8 @@
 }
 
 .scroller[data-active="false"] {
+  visibility: hidden;
+  opacity: 0;
   overflow: hidden;
   pointer-events: none;
 }
@@ -1036,6 +1060,145 @@
 @keyframes handoffFade {
   70% { opacity: 1; }
   to { opacity: 0; visibility: hidden; }
+}
+
+@media (min-width: 981px) {
+  .reefRenderer .chapterSticky {
+    padding-inline: clamp(28px, 4.2vw, 72px);
+  }
+
+  .reefRenderer .chapterSticky > * {
+    max-width: 920px;
+  }
+
+  .reefRenderer .chapterIntro {
+    display: block;
+  }
+
+  .reefRenderer .chapterIntro > p {
+    margin-top: 18px;
+  }
+
+  .reefRenderer .chapter h2,
+  .reefRenderer .chapter h1,
+  .reefRenderer .heroChapter h1 {
+    font-size: clamp(54px, 6.2vw, 104px);
+    line-height: 0.82;
+  }
+
+  .reefRenderer .chapterIntro,
+  .reefRenderer .heroChapter,
+  .reefRenderer .recomposeChapter,
+  .reefRenderer .contactChapter,
+  .reefRenderer .servicesChapter,
+  .reefRenderer .lenoxChapter,
+  .reefRenderer .aiChapter,
+  .reefRenderer .volkanChapter {
+    padding: clamp(24px, 2.8vw, 42px);
+    backdrop-filter: blur(18px) saturate(1.12);
+  }
+
+  .reefRenderer .servicesChapter > .chapterIntro,
+  .reefRenderer .lenoxChapter > .chapterIntro,
+  .reefRenderer .aiChapter > .chapterIntro,
+  .reefRenderer .volkanChapter > .chapterIntro,
+  .reefRenderer .contactChapter > .chapterIntro {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .reefRenderer .heroChapter {
+    width: min(680px, 44vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .workChapter {
+    width: min(720px, 50vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .servicesChapter {
+    width: min(680px, 44vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .lenoxChapter {
+    width: min(700px, 44vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .aiChapter {
+    width: min(700px, 44vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .volkanChapter {
+    width: min(680px, 44vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .recomposeChapter {
+    width: min(660px, 44vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .contactChapter {
+    width: min(700px, 44vw);
+    margin-inline: auto 0;
+  }
+
+  .reefRenderer .caseSelector {
+    margin-top: 26px;
+  }
+
+  .reefRenderer .casePanel {
+    grid-template-columns: minmax(270px, 0.9fr) minmax(330px, 1.1fr);
+    min-height: 46svh;
+  }
+
+  .reefRenderer .caseMedia {
+    min-height: 350px;
+  }
+
+  .reefRenderer .caseDetails {
+    padding: clamp(24px, 2.4vw, 36px);
+  }
+
+  .reefRenderer .caseDetails h3 {
+    font-size: clamp(40px, 4vw, 64px);
+  }
+
+  .reefRenderer :global(.intelligence-demo) {
+    margin-top: 34px;
+    padding: clamp(22px, 2.4vw, 34px);
+    background: rgb(6 20 22 / 82%);
+  }
+
+  .reefRenderer .serviceLines,
+  .reefRenderer .abilityList,
+  .reefRenderer .moduleTeasers,
+  .reefRenderer .roleMatrix {
+    margin-top: 34px;
+  }
+}
+
+@media (min-width: 981px) and (max-width: 1100px) {
+  .reefRenderer .chapter h2,
+  .reefRenderer .chapter h1,
+  .reefRenderer .heroChapter h1 {
+    font-size: clamp(48px, 5.8vw, 64px);
+  }
+
+  .reefRenderer .casePanel {
+    grid-template-columns: 1fr;
+  }
+
+  .reefRenderer .caseMedia {
+    min-height: 220px;
+  }
 }
 
 @media (max-width: 980px) {

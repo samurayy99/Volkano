@@ -14,6 +14,75 @@ const findNamed = (root, ...names) => {
   return null;
 };
 
+const REQUIRED_NODE_ALIASES = [
+  ["Root"],
+  ["Head"],
+  ["Eye.L", "Eye_L", "EyeL"],
+  ["Eye.R", "Eye_R", "EyeR"],
+  ["Fin.L", "Fin_L", "FinL"],
+  ["Fin.R", "Fin_R", "FinR"],
+  ["LENOX_FACE_ANCHOR"],
+];
+const PRIMARY_CHAIN_PREFIXES = [
+  "Arm_Lead_L_",
+  "Arm_Lead_R_",
+  "Arm_Support_Front_L_",
+  "Arm_Support_Front_R_",
+  "Arm_Support_Side_L_",
+  "Arm_Support_Side_R_",
+];
+const REQUIRED_MORPHS = ["Concerned", "Confirm", "Thinking"];
+
+const validateAuthoredContract = (scene, animations) => {
+  const names = new Set();
+  const boneNames = new Set();
+  const morphNames = new Set();
+  let skinnedMeshes = 0;
+  scene.traverse((child) => {
+    if (child.name) names.add(child.name);
+    if (child.isBone) boneNames.add(child.name);
+    if (child.isSkinnedMesh) skinnedMeshes += 1;
+    for (const name of Object.keys(child.morphTargetDictionary ?? {})) {
+      morphNames.add(name);
+    }
+  });
+
+  const missingNodes = REQUIRED_NODE_ALIASES.filter(
+    (aliases) => !aliases.some((name) => names.has(name) || boneNames.has(name)),
+  ).map(([canonical]) => canonical);
+  const missingChains = PRIMARY_CHAIN_PREFIXES.filter(
+    (prefix) => ![...boneNames].some((name) => name.startsWith(prefix)),
+  );
+  const missingMorphs = REQUIRED_MORPHS.filter((name) => !morphNames.has(name));
+  const metadata = findNamed(scene, "LENOX_ROOT")?.userData ?? {};
+  const bodyMetadata = findNamed(scene, "LENOX_Body_Arms_Retopology")?.userData ?? {};
+  const authoredArmObjects = [...names].filter((name) => name.startsWith("LENOX_Arm_"));
+  const visibleArmCount =
+    metadata.visible_arm_count ??
+    (bodyMetadata.authored_visible_arms ?? 0) + authoredArmObjects.length;
+  const primaryControlChains =
+    metadata.primary_control_chains ??
+    PRIMARY_CHAIN_PREFIXES.length - missingChains.length;
+  const animationTest = animations.some((clip) => /^LENOX_v\d+_/.test(clip.name));
+
+  const failures = [];
+  if (missingNodes.length) failures.push(`missing nodes: ${missingNodes.join(", ")}`);
+  if (missingChains.length) failures.push(`missing chains: ${missingChains.join(", ")}`);
+  if (missingMorphs.length) failures.push(`missing morphs: ${missingMorphs.join(", ")}`);
+  if (visibleArmCount !== 8) failures.push(`visible arms: ${visibleArmCount}, expected 8`);
+  if (primaryControlChains !== 6) {
+    failures.push(`primary chains: ${primaryControlChains}, expected 6`);
+  }
+  if (skinnedMeshes < 1) failures.push("no skinned deformable mesh");
+  if (!animationTest) failures.push("named LENOX animation test missing");
+  return {
+    failures,
+    metadata,
+    visibleArmCount,
+    primaryControlChains,
+  };
+};
+
 /**
  * Runtime adapter for the authored Blender character.
  *
@@ -24,8 +93,16 @@ const findNamed = (root, ...names) => {
 export function createAuthoredLenox({ scene, animations = [], parentScale } = {}) {
   if (!scene) return null;
 
+  const contract = validateAuthoredContract(scene, animations);
+  if (contract.failures.length) {
+    console.warn(
+      `[lenox] authored GLB contract rejected — keeping procedural fallback: ${contract.failures.join("; ")}`,
+    );
+    return null;
+  }
+
   const orient = new THREE.Group();
-    orient.name = "Lenox_Authored_v004";
+  orient.name = `Lenox_Authored_${contract.metadata.version ?? "compatible"}`;
   orient.add(scene);
   // Blender authored front is -Y; glTF converts it to +Z. The engine camera
   // sees the legacy vessel after the same half-turn.
@@ -35,6 +112,11 @@ export function createAuthoredLenox({ scene, animations = [], parentScale } = {}
   const meshes = [];
   const materials = new Set();
   const morphMeshes = [];
+  const morphChannels = {
+    face: [],
+    fins: [],
+    mouth: [],
+  };
   scene.traverse((child) => {
     if (!child.isMesh) return;
     child.castShadow = false;
@@ -56,6 +138,9 @@ export function createAuthoredLenox({ scene, animations = [], parentScale } = {}
     meshes.push(child);
     if (child.morphTargetDictionary && child.morphTargetInfluences) {
       morphMeshes.push(child);
+      if (child.name.includes("Fin_")) morphChannels.fins.push(child);
+      else if (child.name.includes("Mouth")) morphChannels.mouth.push(child);
+      else morphChannels.face.push(child);
     }
   });
 
@@ -84,21 +169,23 @@ export function createAuthoredLenox({ scene, animations = [], parentScale } = {}
   const supportBones = [...bones.entries()]
     .filter(([name]) => name.startsWith("Arm_Support_"))
     .map(([, bone]) => bone);
-  const finL = findNamed(scene, "Fin.L", "Fin_L");
-  const finR = findNamed(scene, "Fin.R", "Fin_R");
-  const eyeL = findNamed(scene, "Eye.L", "Eye_L");
-  const eyeR = findNamed(scene, "Eye.R", "Eye_R");
+  const finL = findNamed(scene, "Fin.L", "Fin_L", "FinL");
+  const finR = findNamed(scene, "Fin.R", "Fin_R", "FinR");
+  const eyeL = findNamed(scene, "Eye.L", "Eye_L", "EyeL");
+  const eyeR = findNamed(scene, "Eye.R", "Eye_R", "EyeR");
 
   const expression = {
     concerned: 0,
     confirm: 0,
     thinking: 0,
   };
+  const finExpression = { ...expression };
+  const mouthExpression = { ...expression };
   let reveal = 0;
   let solid = false;
 
-  const setMorph = (name, value) => {
-    for (const mesh of morphMeshes) {
+  const setMorph = (targets, name, value) => {
+    for (const mesh of targets) {
       const index = mesh.morphTargetDictionary[name];
       if (index !== undefined) mesh.morphTargetInfluences[index] = value;
     }
@@ -117,8 +204,8 @@ export function createAuthoredLenox({ scene, animations = [], parentScale } = {}
     materials,
     modelHeight: Math.max(size.y, 1e-4),
     modelWidth: Math.max(size.x, 1e-4),
-    primaryControlChains: 6,
-    visibleArmCount: 8,
+    primaryControlChains: contract.primaryControlChains,
+    visibleArmCount: contract.visibleArmCount,
 
     fitToWorldHeight(targetWorldHeight) {
       const k = Math.max(targetWorldHeight, 1e-4) / Math.max(size.y, 1e-4);
@@ -157,12 +244,21 @@ export function createAuthoredLenox({ scene, animations = [], parentScale } = {}
       const concernedTarget = kind === "confirm" ? 0 : clamp01((tension - 0.42) / 0.34);
       const confirmTarget = kind === "confirm" ? 1 : 0;
       const thinkingTarget = kind === "observe" ? attention * 0.36 : 0;
-      expression.concerned = damp(expression.concerned, concernedTarget, 0.24, dt);
-      expression.confirm = damp(expression.confirm, confirmTarget, 0.2, dt);
-      expression.thinking = damp(expression.thinking, thinkingTarget, 0.3, dt);
-      setMorph("Concerned", expression.concerned);
-      setMorph("Confirm", expression.confirm);
-      setMorph("Thinking", expression.thinking);
+      expression.concerned = damp(expression.concerned, concernedTarget, 0.16, dt);
+      expression.confirm = damp(expression.confirm, confirmTarget, 0.15, dt);
+      expression.thinking = damp(expression.thinking, thinkingTarget, 0.22, dt);
+      finExpression.concerned = damp(finExpression.concerned, concernedTarget, 0.26, dt);
+      finExpression.confirm = damp(finExpression.confirm, confirmTarget, 0.23, dt);
+      finExpression.thinking = damp(finExpression.thinking, thinkingTarget, 0.28, dt);
+      mouthExpression.concerned = damp(mouthExpression.concerned, concernedTarget, 0.36, dt);
+      mouthExpression.confirm = damp(mouthExpression.confirm, confirmTarget, 0.26, dt);
+      mouthExpression.thinking = damp(mouthExpression.thinking, thinkingTarget, 0.34, dt);
+      for (const name of REQUIRED_MORPHS) {
+        const key = name.toLowerCase();
+        setMorph(morphChannels.face, name, expression[key]);
+        setMorph(morphChannels.fins, name, finExpression[key]);
+        setMorph(morphChannels.mouth, name, mouthExpression[key]);
+      }
 
       const lookX = Math.max(-1, Math.min(look?.x ?? 0, 1));
       const lookY = Math.max(-1, Math.min(look?.y ?? 0, 1));
@@ -176,7 +272,11 @@ export function createAuthoredLenox({ scene, animations = [], parentScale } = {}
       for (let index = 0; index < leadBones.length; index++) {
         const bone = leadBones[index];
         const phase = index * 0.73 + (bone.name.includes("_L_") ? 0.31 : 1.17);
-        const guide = kind === "guide" ? clamp01(intent?.reach ?? 0.72) : 0;
+        const selected =
+          kind === "guide" &&
+          ((intent?.arm === "left" && bone.name.includes("_L_")) ||
+            (intent?.arm === "right" && bone.name.includes("_R_")));
+        const guide = selected ? clamp01(intent?.reach ?? 0.72) : 0;
         const wave = Math.sin(time * 0.83 + phase) * 0.055 * motion;
         const secondary = Math.sin(time * 1.97 + phase * 1.4) * 0.014 * motion;
         setBoneRotation(

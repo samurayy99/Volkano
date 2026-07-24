@@ -1,0 +1,65 @@
+{
+  "pass": true,
+  "failures": [],
+  "glb_bytes": 2715604,
+  "exported_triangles": 37868,
+  "node_count": 37,
+  "mesh_count": 8,
+  "primitive_draw_call_estimate": 8,
+  "material_count": 5,
+  "texture_count": 4,
+  "texture_dimensions": [
+    [
+      512,
+      512
+    ],
+    [
+      512,
+      512
+    ],
+    [
+      512,
+      512
+    ],
+    [
+      512,
+      512
+    ]
+  ],
+  "skin_count": 1,
+  "animation_count": 1,
+  "animation_names": [
+    "LENOX_v006_MotionExpression_Test"
+  ],
+  "morph_targets": [
+    "Concerned",
+    "Confirm",
+    "Thinking"
+  ],
+  "visible_arm_meshes": [
+    "LENOX_Arm_Secondary_Rear_L_Mesh",
+    "LENOX_Arm_Secondary_Rear_R_Mesh"
+  ],
+  "primary_chain_prefixes": [
+    "Arm_Lead_L_",
+    "Arm_Lead_R_",
+    "Arm_Support_Front_L_",
+    "Arm_Support_Front_R_",
+    "Arm_Support_Side_L_",
+    "Arm_Support_Side_R_"
+  ],
+  "forbidden_compression_extensions_present": [],
+  "non_finite_float_accessors": [],
+  "declared_visible_arm_count": 8,
+  "declared_primary_control_chains": 6,
+  "primary_visible_arm_cage_count": 6,
+  "secondary_coupled_arm_nodes": [
+    "LENOX_Arm_Secondary_Rear_L",
+    "LENOX_Arm_Secondary_Rear_R"
+  ],
+  "maximum_nonzero_bone_influences": 2,
+  "extensions_used_or_required": [
+    "KHR_materials_clearcoat"
+  ],
+  "runtime_promotion": "eligible"
+}

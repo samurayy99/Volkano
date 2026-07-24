@@ -149,6 +149,8 @@ export interface FlowEngineApi {
   setLenoxEyeRigEnhanced: (enabled: boolean) => void;
   /** Which way he makes room when the page is built. Lenox mode only. */
   setCompositionMode: (mode: CompositionMode) => void;
+  /** Existing engine backdrop contribution over an authored DOM world. */
+  setLenoxBackdropOpacity: (opacity: number) => void;
   /** Instant signature world (boot / reduced motion). Lenox mode only. */
   setSignature: (id: LenoxSignatureId) => void;
   /** Arm the world behind the reconstruction front. Lenox mode only. */

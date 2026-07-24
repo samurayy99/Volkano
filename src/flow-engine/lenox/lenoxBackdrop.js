@@ -156,7 +156,7 @@ const createSilverDust = () => {
   return points;
 };
 
-const createLiquidFloor = (sig) => {
+const createLiquidFloor = (sig, backdropOpacity) => {
   const material = new THREE.MeshBasicNodeMaterial({
     toneMapped: false,
     transparent: true,
@@ -238,7 +238,7 @@ const createLiquidFloor = (sig) => {
       .sub(smoothstep(float(0.62), float(1.0), p.x.abs()))
       .mul(float(1).sub(smoothstep(float(0.7), float(1.02), p.y.abs())))
       .clamp(0, 1);
-    return fade.mul(0.78);
+    return fade.mul(0.78).mul(backdropOpacity);
   })();
 
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -259,11 +259,14 @@ export function createLenoxBackdrop() {
     center: uniform(new THREE.Vector2(0, 0)),
     /** How deep the pool behind him is. */
     depth: uniform(0.62),
+    /** Composite contribution over authored DOM worlds such as GRAVITY Reef. */
+    opacity: uniform(1),
     ...signature,
   };
 
   const material = new THREE.MeshBasicNodeMaterial({
     toneMapped: false,
+    transparent: true,
     depthWrite: true,
     /**
      * DoubleSide, and it is load-bearing: the camera views the sim from -z,
@@ -410,6 +413,7 @@ export function createLenoxBackdrop() {
 
     return color.add(hash.sub(0.5).mul(1 / 255));
   })();
+  material.opacityNode = uniforms.opacity;
 
   const object = new THREE.Group();
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -417,7 +421,7 @@ export function createLenoxBackdrop() {
   mesh.renderOrder = -1000;
   object.add(mesh);
 
-  const floor = createLiquidFloor(signature);
+  const floor = createLiquidFloor(signature, uniforms.opacity);
   const dust = createSilverDust();
   object.add(floor, dust);
 
@@ -459,6 +463,11 @@ export function createLenoxBackdrop() {
     setScan(radius, rim) {
       uniforms.scanR.value = Math.max(radius, 0);
       uniforms.rim.value = Math.max(Math.min(rim ?? 0, 1), 0);
+    },
+    setOpacity(opacity) {
+      const clamped = Math.max(0, Math.min(Number.isFinite(opacity) ? opacity : 1, 1));
+      uniforms.opacity.value = clamped;
+      dust.material.opacity = 0.22 * clamped;
     },
     /** The target world becomes the world. */
     commitSignature() {
