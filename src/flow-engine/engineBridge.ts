@@ -399,6 +399,39 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app?.particleRenderer?.setSubstance?.(hexColor, strength);
   }
 
+  setCoherenceField(field: {
+    inner?: number;
+    outer?: number;
+    recruit?: number;
+    release?: number;
+    motion?: boolean;
+    curl?: boolean;
+  }): void {
+    if (this.disposed) return;
+    this.app?.mlsMpmSim?.setCoherenceField?.(field);
+  }
+
+  /** Diagnostic: is the recruitment centre actually inside the matter? */
+  getCoherenceCenter(): [number, number, number] | null {
+    const c = this.app?.mlsMpmSim?.uniforms?.coherenceCenter?.value;
+    return c ? [c.x, c.y, c.z] : null;
+  }
+
+  setCoherenceDebug(enabled: boolean): void {
+    if (this.disposed) return;
+    this.app?.particleRenderer?.setCoherenceDebug?.(enabled);
+  }
+
+  setCoherenceMaterial(enabled: boolean): void {
+    if (this.disposed) return;
+    this.app?.particleRenderer?.setCoherenceMaterial?.(enabled);
+  }
+
+  setParticlePrimitive(primitive: "shard" | "billboard"): void {
+    if (this.disposed) return;
+    this.app?.particleRenderer?.setPrimitive?.(primitive);
+  }
+
   /**
    * Switching is async because an HDRI has to be fetched. A fast A/B can land
    * out of order — pick studio, pick procedural, studio finishes last and

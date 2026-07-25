@@ -2,7 +2,9 @@ import * as THREE from "three/webgpu";
 import {
   Fn,
   attribute,
+  vec2,
   vec3,
+  vec4,
   float,
   varying,
   instanceIndex,
@@ -11,6 +13,7 @@ import {
   cross,
   mat3,
   normalLocal,
+  normalView,
   transformNormalToView,
   mrt,
   uniform,
@@ -20,6 +23,9 @@ import {
   sin,
   step,
   positionWorld,
+  cameraWorldMatrix,
+  modelWorldMatrix,
+  modelWorldMatrixInverse,
 } from "three/tsl";
 
 import { forensicHoldReadIsolation } from "../post-enter/forensicPostEnter.js";
@@ -606,7 +612,7 @@ const buildUnifiedParticleSurfaceNodes = ({
   // everywhere except in the phase-field lab, so every existing path renders
   // byte-identically. This is the ONLY change to the silver law — the material
   // question is answered by morphology and environment, not by more shader.
-  const surfaceColor = mix(
+  const surfaceColorTinted = mix(
     mix(
       mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT),
       gravityColor,
@@ -614,6 +620,22 @@ const buildUnifiedParticleSurfaceNodes = ({
     ),
     uniforms.substanceColor,
     uniforms.substanceT.clamp(0, 1),
+  ).toConst("surfaceColorTinted");
+
+  // A.1a debug only: paint the coherent cohort so recruitment and release are
+  // visible while tuning. Off by default and not a material feature — A.1c is
+  // where coherence earns a real material response.
+  const particleCoherence = particle.get("coherence").clamp(0, 1);
+  const coherenceMaterialT = uniforms.coherenceMaterialT
+    .clamp(0, 1)
+    .toConst("coherenceMaterialT");
+  // Magenta, not cyan: the engine's own kinetic law already tints moving matter
+  // cyan, so a cyan debug marker is indistinguishable from the base look — the
+  // first version of this instrument could not measure what it was built for.
+  const surfaceColor = mix(
+    surfaceColorTinted,
+    vec3(1.0, 0.0, 0.55),
+    particleCoherence.mul(uniforms.coherenceDebugT.clamp(0, 1)),
   ).toConst("surfaceColor");
 
   // Die Front streift die Materie: ein schmales Gauss-Band um den Radius
@@ -674,6 +696,16 @@ const buildUnifiedParticleSurfaceNodes = ({
     .sub(lenoxEnergyT.mul(float(0.06)))
     .clamp(float(0.05), float(0.92))
     .toConst("lenoxSurfaceRoughness");
+  const phaseSurfaceRoughness = mix(
+    uniforms.lenoxRoughness.add(float(0.38)).clamp(float(0.12), float(0.94)),
+    lenoxSurfaceRoughness,
+    particleCoherence,
+  ).toConst("phaseSurfaceRoughness");
+  const phaseMetalness = mix(
+    uniforms.lenoxMetalness.mul(float(0.18)),
+    uniforms.lenoxMetalness,
+    particleCoherence,
+  ).toConst("phaseMetalness");
 
   const chamberMetalness = mix(
     float(0.02),
@@ -689,21 +721,38 @@ const buildUnifiedParticleSurfaceNodes = ({
   ).toConst("chamberMetalness");
 
   material.colorNode = surfaceColor;
+  material.normalNode = mix(
+    normalView,
+    normalize(vNormalView),
+    uniforms.phaseFieldNormalT
+      .clamp(0, 1)
+      .max(uniforms.primitiveT.clamp(0, 1)),
+  );
   material.roughnessNode = mix(
     surfaceRoughness,
-    lenoxSurfaceRoughness,
+    mix(lenoxSurfaceRoughness, phaseSurfaceRoughness, coherenceMaterialT),
     lenoxTintT,
   );
   material.metalnessNode = mix(
     chamberMetalness,
-    uniforms.lenoxMetalness,
+    mix(uniforms.lenoxMetalness, phaseMetalness, coherenceMaterialT),
     lenoxTintT,
   );
   material.emissiveNode = surfaceEmissive;
   material.aoNode = surfaceAo;
   // Aura fog reads sparse and dim (Lenox); chamber path unchanged (auraT=0).
-  material.opacityNode = opacityEffective.mul(
-    mix(float(1), float(0.3), lenoxAuraT),
+  const billboardUv = attribute("uv").mul(float(2)).sub(float(1));
+  const billboardRadiusSq = billboardUv.dot(billboardUv);
+  const billboardAlpha = smoothstep(float(0.72), float(1), billboardRadiusSq)
+    .oneMinus()
+    .clamp(0, 1);
+  material.opacityNode = opacityEffective
+    .mul(mix(float(1), float(0.3), lenoxAuraT))
+    .mul(mix(float(1), billboardAlpha, uniforms.primitiveT.clamp(0, 1)));
+  material.alphaTestNode = mix(
+    float(0),
+    float(0.28),
+    uniforms.primitiveT.clamp(0, 1),
   );
 
   material.mrtNode = mrt({
@@ -730,6 +779,7 @@ const buildParticlePositionNode = ({
     const particleDirection = particle.get("direction");
     const localPos = attribute("position").xyz;
     const speed = particle.get("velocity").length();
+    const particleCoherence = particle.get("coherence").clamp(0, 1);
 
     const positionPostEnterMaterialT = smoothstep(
       float(0.0),
@@ -894,6 +944,66 @@ const buildParticlePositionNode = ({
       vFacingThickness,
     });
 
+    const cameraRightWorld = cameraWorldMatrix[0].xyz.normalize();
+    const cameraUpWorld = cameraWorldMatrix[1].xyz.normalize();
+    const cameraRightLocal = modelWorldMatrixInverse
+      .mul(vec4(cameraRightWorld, 0))
+      .xyz.normalize();
+    const cameraUpLocal = modelWorldMatrixInverse
+      .mul(vec4(cameraUpWorld, 0))
+      .xyz.normalize();
+    const particleDirectionWorld = modelWorldMatrix
+      .mul(vec4(particleDirection.xyz, 0))
+      .xyz;
+    const projectedDirection = vec2(
+      particleDirectionWorld.dot(cameraRightWorld),
+      particleDirectionWorld.dot(cameraUpWorld),
+    );
+    const projectedLength = projectedDirection.length();
+    const screenDirection = mix(
+      vec2(0, 1),
+      projectedDirection.div(projectedLength.max(float(0.0001))),
+      step(float(0.001), projectedLength),
+    ).toConst("billboardScreenDirection");
+    const screenAcross = vec2(screenDirection.y, screenDirection.x.negate());
+    const alongLocal = cameraRightLocal
+      .mul(screenDirection.x)
+      .add(cameraUpLocal.mul(screenDirection.y));
+    const acrossLocal = cameraRightLocal
+      .mul(screenAcross.x)
+      .add(cameraUpLocal.mul(screenAcross.y));
+    const billboardOffset = acrossLocal
+      .mul(localPos.x)
+      .mul(particleProfile.rodWidth)
+      .mul(widthJitter)
+      .add(
+        alongLocal
+          .mul(localPos.y)
+          .mul(finalRodLengthZ)
+          .mul(float(1.16)),
+      )
+      .toConst("billboardOffset");
+    const billboardDisc = attribute("uv").mul(float(2)).sub(float(1));
+    const billboardNormalZ = float(1)
+      .sub(billboardDisc.dot(billboardDisc))
+      .max(float(0))
+      .sqrt();
+    const billboardNormalView = vec3(
+      screenAcross.x
+        .mul(billboardDisc.x)
+        .add(screenDirection.x.mul(billboardDisc.y)),
+      screenAcross.y
+        .mul(billboardDisc.x)
+        .add(screenDirection.y.mul(billboardDisc.y)),
+      billboardNormalZ,
+    ).normalize();
+    vNormalView.assign(
+      mix(vNormalView, billboardNormalView, uniforms.primitiveT.clamp(0, 1)),
+    );
+    vFacingThickness.assign(
+      mix(vFacingThickness, float(0.46), uniforms.primitiveT.clamp(0, 1)),
+    );
+
     // Lenox role scale: aura fog finer, focal glint tighter (0 in chamber).
     const posRoleW = settleW.clamp(0, 1).toConst("posRoleW");
     const posLenoxT = uniforms.lenoxTintT.clamp(0, 1).toConst("posLenoxT");
@@ -908,13 +1018,25 @@ const buildParticlePositionNode = ({
       .mul(mix(float(1), float(0.78), posFocalT))
       .toConst("lenoxRoleScale");
 
-    return viewState.mat
-      .mul(shapedPos.mul(structureScale))
+    const primitiveShape = mix(
+      viewState.mat.mul(shapedPos),
+      billboardOffset,
+      uniforms.primitiveT.clamp(0, 1),
+    );
+    const coherenceSize = mix(
+      float(1),
+      mix(float(0.72), float(1.12), particleCoherence),
+      uniforms.coherenceMaterialT.clamp(0, 1),
+    );
+
+    return primitiveShape
+      .mul(structureScale)
       .mul(
         sizeUniform
           .mul(PARTICLE_PROFILE_READ.instanceScale)
           .mul(uniforms.bodyScaleMul)
-          .mul(lenoxRoleScale),
+          .mul(lenoxRoleScale)
+          .mul(coherenceSize),
       )
       .mul(particleProfile.densityScale)
       .add(simPos);
@@ -1049,6 +1171,11 @@ export const getParticleGeometryTemplate = () =>
   particleGeometryTemplate ??
   (particleGeometryTemplate = createShardGeometry());
 
+let billboardGeometryTemplate = null;
+const getBillboardGeometryTemplate = () =>
+  billboardGeometryTemplate ??
+  (billboardGeometryTemplate = new THREE.PlaneGeometry(0.92, 1.18, 1, 1));
+
 class ParticleRenderer {
   mlsMpmSim = null;
   object = null;
@@ -1070,10 +1197,15 @@ class ParticleRenderer {
   constructor(mlsMpmSim) {
     this.mlsMpmSim = mlsMpmSim;
 
-    this.geometry = new THREE.InstancedBufferGeometry().copy(
+    this._shardGeometry = new THREE.InstancedBufferGeometry().copy(
       getParticleGeometryTemplate(),
     );
-    this.geometry.instanceCount = this.mlsMpmSim.numParticles;
+    this._billboardGeometry = new THREE.InstancedBufferGeometry().copy(
+      getBillboardGeometryTemplate(),
+    );
+    this.geometry = this._shardGeometry;
+    this._shardGeometry.instanceCount = this.mlsMpmSim.numParticles;
+    this._billboardGeometry.instanceCount = this.mlsMpmSim.numParticles;
 
     this.material = new THREE.MeshStandardNodeMaterial({
       metalness: 0.015,
@@ -1097,6 +1229,13 @@ class ParticleRenderer {
     /** Phase-field substance tint; 0 strength leaves every existing path intact. */
     this.uniforms.substanceColor = uniform(new THREE.Color(0xffffff));
     this.uniforms.substanceT = uniform(0);
+    /** A.1a debug tint for the coherent cohort; 0 in every production path. */
+    this.uniforms.coherenceDebugT = uniform(0);
+    /** A.1c material range and A.1d primitive switch; both 0 elsewhere. */
+    this.uniforms.coherenceMaterialT = uniform(0);
+    /** Correct authored particle rotation on both sides of the A.1c comparison. */
+    this.uniforms.phaseFieldNormalT = uniform(0);
+    this.uniforms.primitiveT = uniform(0);
     /** Focal glint emissive gain (Lenox mode). */
     this.uniforms.lenoxFocalBoost = uniform(1);
     // Lenox silver-material channel — only blended in where lenoxTintT
@@ -1193,6 +1332,25 @@ class ParticleRenderer {
    * Phase-field lab only. `strength` 0 restores the untouched silver law, so
    * the studio page and every other caller are unaffected by this uniform.
    */
+  setCoherenceDebug(enabled) {
+    if (!this.uniforms?.coherenceDebugT) return;
+    this.uniforms.coherenceDebugT.value = enabled ? 1 : 0;
+  }
+
+  setCoherenceMaterial(enabled) {
+    if (!this.uniforms?.coherenceMaterialT) return;
+    this.uniforms.phaseFieldNormalT.value = 1;
+    this.uniforms.coherenceMaterialT.value = enabled ? 1 : 0;
+  }
+
+  setPrimitive(primitive) {
+    if (!this._particleBodyMesh || !this.uniforms?.primitiveT) return;
+    const billboard = primitive === "billboard";
+    this.geometry = billboard ? this._billboardGeometry : this._shardGeometry;
+    this._particleBodyMesh.geometry = this.geometry;
+    this.uniforms.primitiveT.value = billboard ? 1 : 0;
+  }
+
   setSubstance(hexColor, strength) {
     if (!this.uniforms?.substanceColor) return;
     this.uniforms.substanceColor.value.setHex(hexColor);
@@ -1262,9 +1420,12 @@ class ParticleRenderer {
 
     this._particleBodyMesh = null;
     this.object = null;
-    this.geometry?.dispose?.();
+    this._shardGeometry?.dispose?.();
+    this._billboardGeometry?.dispose?.();
     this.material?.dispose?.();
     this.geometry = null;
+    this._shardGeometry = null;
+    this._billboardGeometry = null;
     this.material = null;
     this.mlsMpmSim = null;
     this.uniforms = {};

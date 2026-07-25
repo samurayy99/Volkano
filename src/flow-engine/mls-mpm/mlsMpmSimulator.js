@@ -29,6 +29,7 @@ import {
   exp,
 } from "three/tsl";
 import { triNoise3Dvec } from "../common/noise";
+import { createParticleStruct } from "./particleStruct.js";
 import { StructuredArray } from "./structuredArray.js";
 import { forensicEnabled } from "../post-enter/forensicPostEnter.js";
 
@@ -164,6 +165,40 @@ function hash01(index, seed) {
 
 const hash01Node = (seed) =>
   fract(sin(float(instanceIndex).add(1).mul(seed)).mul(43758.5453123));
+
+/**
+ * Rotational turbulence in the shallow phase-field plane. The unnormalised
+ * rotated gradient is divergence-free; pointwise normalisation below trades
+ * that strict property for a bounded, visually comparable force magnitude.
+ */
+const buildPlanarCurlNoise = (particlePosition) => {
+  const p = particlePosition.mul(PARTICLE_FORCE_TUNING.noise.positionScale);
+  const epsilon = float(0.008);
+  const psiXp = triNoise3Dvec(
+    p.add(vec3(epsilon, 0, 0)),
+    PARTICLE_FORCE_TUNING.noise.speed,
+    time,
+  ).x;
+  const psiXm = triNoise3Dvec(
+    p.sub(vec3(epsilon, 0, 0)),
+    PARTICLE_FORCE_TUNING.noise.speed,
+    time,
+  ).x;
+  const psiYp = triNoise3Dvec(
+    p.add(vec3(0, epsilon, 0)),
+    PARTICLE_FORCE_TUNING.noise.speed,
+    time,
+  ).x;
+  const psiYm = triNoise3Dvec(
+    p.sub(vec3(0, epsilon, 0)),
+    PARTICLE_FORCE_TUNING.noise.speed,
+    time,
+  ).x;
+  const raw = vec3(psiYp.sub(psiYm), psiXm.sub(psiXp), 0);
+  return raw
+    .div(raw.length().max(float(0.0001)))
+    .mul(PARTICLE_FORCE_TUNING.noise.strength);
+};
 
 /**
  * `convergenceSlowdown` / `convergenceFreeze` / `convergenceHeatRetention` /
@@ -472,19 +507,8 @@ class mlsMpmSimulator {
     const maxParticles = maxParticleCapacity;
     this.gridSize.set(64, 64, 64);
 
-    const particleStruct = {
-      position: { type: "vec3" },
-      density: { type: "float" },
-      velocity: { type: "vec3" },
-      mass: { type: "float" },
-      C: { type: "mat3" },
-      direction: { type: "vec3" },
-      color: { type: "vec3" },
-      heat: { type: "float" },
-      dissolveState: { type: "vec2" },
-    };
     this.particleBuffer = new StructuredArray(
-      particleStruct,
+      createParticleStruct(),
       maxParticles,
       "particleData",
     );
@@ -508,6 +532,7 @@ class mlsMpmSimulator {
       this.particleBuffer.set(i, "position", vec);
       this.particleBuffer.set(i, "mass", mass);
       this.particleBuffer.set(i, "heat", 0);
+      this.particleBuffer.set(i, "coherence", 0);
     }
     this.captureInitialParticlePositions();
 
@@ -595,6 +620,30 @@ class mlsMpmSimulator {
     this.uniforms.returnBodyWeight = uniform(0);
     this.uniforms.recallLateralWeight = uniform(0);
     this.uniforms.recallVerticalWeight = uniform(0);
+    /*
+     * PHASE FIELD — the coherent cohort.
+     *
+     * A smooth kernel, never a sphere: a binary inside/outside draws a visible
+     * bubble in the matter. Recruitment is full inside `coherenceInner`, falls
+     * off to zero at `coherenceOuter`, and a release floor applies EVERYWHERE so
+     * the cohort turns over even while the pointer is still — otherwise the core
+     * freezes into a clump and stops being alive.
+     *
+     * The centre comes from the pointer's existing simulation-space position
+     * (`setMouseRay` → `mousePos`); no second screen-to-sim projection exists,
+     * because two of them drift apart.
+     *
+     * `coherenceRecruit` at 0 leaves every legacy path byte-identical.
+     */
+    this.uniforms.coherenceCenter = uniform(new THREE.Vector3());
+    this.uniforms.coherenceInner = uniform(6);
+    this.uniforms.coherenceOuter = uniform(16);
+    this.uniforms.coherenceRecruit = uniform(0);
+    this.uniforms.coherenceRelease = uniform(0.35);
+    /** A.1b response; both 0 preserve the original solver path. */
+    this.uniforms.coherenceMotionT = uniform(0);
+    this.uniforms.coherenceCurlT = uniform(0);
+
     this.uniforms.settleWeight = uniform(0);
     /**
      * Frame-rate-independent settle damping (Lenox critical settle), applied
@@ -840,10 +889,14 @@ class mlsMpmSimulator {
           Return();
         },
       );
-      const particlePosition = this.particleBuffer
-        .element(instanceIndex)
+      const phaseParticle = this.particleBuffer.element(instanceIndex);
+      const particlePosition = phaseParticle
         .get("position")
         .xyz.toVar("particlePosition");
+      const particleCoherence = phaseParticle
+        .get("coherence")
+        .clamp(0, 1)
+        .toConst("particleCoherence");
       const particleVelocity = vec3(0).toVar();
       particleVelocity.addAssign(this.uniforms.gravity.mul(this.uniforms.dt));
 
@@ -855,9 +908,26 @@ class mlsMpmSimulator {
         .sub(PARTICLE_FORCE_TUNING.noise.bias)
         .normalize()
         .mul(PARTICLE_FORCE_TUNING.noise.strength)
-        .toVar();
+        .toConst("phaseTriNoise");
+      const turbulence = noise.toVar("phaseTurbulence");
+      If(
+        this.uniforms.coherenceMotionT
+          .greaterThan(float(0.5))
+          .and(this.uniforms.coherenceCurlT.greaterThan(float(0.5))),
+        () => {
+          turbulence.assign(buildPlanarCurlNoise(particlePosition));
+        },
+      );
+      const turbulenceGain = mix(
+        float(1),
+        float(1).sub(particleCoherence.mul(float(0.78))),
+        this.uniforms.coherenceMotionT.clamp(0, 1),
+      ).toConst("coherenceTurbulenceGain");
       particleVelocity.subAssign(
-        noise.mul(this.uniforms.noise).mul(this.uniforms.dt),
+        turbulence
+          .mul(turbulenceGain)
+          .mul(this.uniforms.noise)
+          .mul(this.uniforms.dt),
       );
 
       const kernelState = buildQuadraticKernelState(particlePosition);
@@ -1040,10 +1110,16 @@ class mlsMpmSimulator {
         const toSettle = settleTargetPos
           .sub(particlePosition)
           .toConst("settleToTarget");
+        const coherenceAttraction = mix(
+          float(1),
+          mix(float(0.18), float(1), particleCoherence),
+          this.uniforms.coherenceMotionT.clamp(0, 1),
+        ).toConst("coherenceAttraction");
         particleVelocity.addAssign(
           toSettle
             .mul(float(SETTLE_STIFFNESS))
             .mul(this.uniforms.settleWeight)
+            .mul(coherenceAttraction)
             .mul(this.uniforms.dt),
         );
         // Critical settle (Lenox): the spring above has no damping of its
@@ -1054,13 +1130,55 @@ class mlsMpmSimulator {
           this.uniforms.settleDampingShell,
           this.uniforms.settleDampingFocal,
           settleFocalW,
-        ).toConst("settleDampRate");
+        )
+          .mul(coherenceAttraction)
+          .toConst("settleDampRate");
         If(settleDampRate.greaterThan(float(0.001)), () => {
           particleVelocity.mulAssign(
             exp(settleDampRate.negate().mul(this.uniforms.dt)),
           );
         });
       });
+
+      /*
+       * Coherence lifecycle: ambient → recruited → coherent → ageing → released.
+       * Recruitment is a smooth radial kernel around the attention point; release
+       * runs unconditionally, so a particle held in a motionless core still ages
+       * out and is replaced. That constant turnover is what separates living
+       * matter from a settled clump, and it is why this scalar is honestly named
+       * coherence rather than age.
+       */
+      const coherenceRef = phaseParticle.get("coherence");
+      // Distance in the view plane only. The matter is a shallow slab (z ≈ 27..33)
+      // while the pointer ray intersects at whatever depth the plane sits — a
+      // full 3D distance measured 17 units of pure z and recruited nothing. A
+      // pointer is a two-dimensional instrument; recruitment follows it in two
+      // dimensions.
+      const coherenceDist = particlePosition.xy
+        .sub(this.uniforms.coherenceCenter.xy)
+        .length()
+        .toConst("coherenceDist");
+      // Inverted, not reversed: smoothstep with edge0 > edge1 is undefined in
+      // GLSL/WGSL, and passing (outer, inner) silently recruited the entire
+      // field instead of a local cohort.
+      const coherencePull = smoothstep(
+        this.uniforms.coherenceInner,
+        this.uniforms.coherenceOuter,
+        coherenceDist,
+      )
+        .oneMinus()
+        .toConst("coherencePull");
+      const coherenceNext = coherenceRef
+        .add(
+          coherencePull
+            .mul(this.uniforms.mouseActive)
+            .mul(this.uniforms.coherenceRecruit)
+            .sub(this.uniforms.coherenceRelease)
+            .mul(this.uniforms.dt),
+        )
+        .clamp(float(0), float(1))
+        .toConst("coherenceNext");
+      coherenceRef.assign(coherenceNext);
 
       const slowdownDamping = float(1)
         .sub(
@@ -1920,6 +2038,44 @@ class mlsMpmSimulator {
 
   }
 
+  /**
+   * Phase field. The centre is taken from the pointer's simulation-space
+   * position, which `setMouseRay` already maintains — deriving a second
+   * screen-to-simulation mapping here is how two projections drift apart.
+   * `recruit` at 0 disables the whole lifecycle, which is the legacy default.
+   */
+  setCoherenceField({
+    inner,
+    outer,
+    recruit,
+    release,
+    motion,
+    curl,
+    useMouse = true,
+  } = {}) {
+    const u = this.uniforms;
+    if (useMouse) {
+      // `mousePos` is NOT in grid space: setMouseRay adds GRID_POINTER_OFFSET to
+      // the ray origin but not to the position, which never mattered because
+      // mouseForce only ever uses the difference between two samples. Measured
+      // raw it lands at x ≈ -14 against a grid of 3..61 — outside the matter, so
+      // nothing was ever recruited. The same offset is applied here.
+      u.coherenceCenter.value.set(
+        this.mousePos.x + this.gridSize.x * 0.5,
+        this.mousePos.y,
+        this.mousePos.z,
+      );
+    }
+    if (Number.isFinite(inner)) u.coherenceInner.value = Math.max(0.5, inner);
+    if (Number.isFinite(outer)) {
+      u.coherenceOuter.value = Math.max(u.coherenceInner.value + 0.5, outer);
+    }
+    if (Number.isFinite(recruit)) u.coherenceRecruit.value = Math.max(0, recruit);
+    if (Number.isFinite(release)) u.coherenceRelease.value = Math.max(0, release);
+    if (typeof motion === "boolean") u.coherenceMotionT.value = motion ? 1 : 0;
+    if (typeof curl === "boolean") u.coherenceCurlT.value = curl ? 1 : 0;
+  }
+
   setMouseInfluence(value) {
     this.uniforms.mouseInfluence.value = value;
   }
@@ -2106,6 +2262,9 @@ class mlsMpmSimulator {
       this.particleBuffer.set(index, "color", zeroColor);
       this.particleBuffer.set(index, "heat", 0);
       this.particleBuffer.set(index, "dissolveState", [0, 0]);
+      // Never inherit a stale cohort: uninitialised memory reads as permanent
+      // false coherence and the core would exist before anyone touched it.
+      this.particleBuffer.set(index, "coherence", 0);
     };
 
     for (let i = 0; i < particleCount; i++) {
@@ -2745,6 +2904,7 @@ class mlsMpmSimulator {
       this.particleBuffer.set(i, "color", zeroColor);
       this.particleBuffer.set(i, "heat", 0);
       this.particleBuffer.set(i, "dissolveState", [0, 0]);
+      this.particleBuffer.set(i, "coherence", 0);
     }
 
     this.markParticleBufferDirty();

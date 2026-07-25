@@ -40,6 +40,7 @@ import styles from "./PhaseFieldProto.module.css";
 
 type EnvSource = "procedural" | "studio" | "meadow";
 type Tier = "low" | "medium" | "high";
+type Primitive = "shard" | "billboard";
 
 const SUBSTANCES = [
   { id: "pearl", label: "PEARL", hex: 0xdfe9e4, strength: 0.0 },
@@ -89,7 +90,7 @@ export function PhaseFieldProto() {
   const [ready, setReady] = useState<"probing" | "webgpu" | "fallback">("probing");
   const [phase, setPhase] = useState<PhaseName>("ambient");
   const [substance, setSubstance] = useState<string>("pearl");
-  const [env, setEnv] = useState<EnvSource>("procedural");
+  const [env, setEnv] = useState<EnvSource>("studio");
   const [envCost, setEnvCost] = useState<EnvironmentCost | null>(null);
   const [envRotation, setEnvRotation] = useState(0);
   const [envIntensity, setEnvIntensity] = useState(1);
@@ -98,6 +99,12 @@ export function PhaseFieldProto() {
   const [focus, setFocus] = useState<FocusParams>({ ...DEFAULT_FOCUS });
   /** Fraction of the population that joins the concentration. */
   const [coherence, setCoherence] = useState(0.34);
+  /** A.1a: paint the coherent cohort while tuning recruitment and release. */
+  const [coherenceDebug, setCoherenceDebug] = useState(false);
+  const [coherenceMotion, setCoherenceMotion] = useState(true);
+  const [curl, setCurl] = useState(true);
+  const [coherenceMaterial, setCoherenceMaterial] = useState(true);
+  const [primitive, setPrimitive] = useState<Primitive>("billboard");
   const [probe, setProbe] = useState({
     fps: 0,
     worst: 0,
@@ -115,6 +122,18 @@ export function PhaseFieldProto() {
     coherenceRef.current = coherence;
     focusDirtyRef.current = true;
   }, [coherence]);
+
+  useEffect(() => {
+    bridgeRef.current?.setCoherenceDebug(coherenceDebug);
+  }, [coherenceDebug, ready]);
+
+  useEffect(() => {
+    bridgeRef.current?.setCoherenceMaterial(coherenceMaterial);
+  }, [coherenceMaterial, ready]);
+
+  useEffect(() => {
+    bridgeRef.current?.setParticlePrimitive(primitive);
+  }, [primitive, ready]);
 
   useEffect(() => {
     focusDirtyRef.current = true;
@@ -153,7 +172,7 @@ export function PhaseFieldProto() {
         const b = bridge.getSimBounds();
         if (b) boundsRef.current = b;
         bridge
-          .setEnvironment("procedural")
+          .setEnvironment("studio")
           .then((c) => c.applied && setEnvCost(c));
       })
       .catch((e) => {
@@ -217,6 +236,16 @@ export function PhaseFieldProto() {
         Math.abs(p.targetInfluence - before.targetInfluence) > 0.0004;
 
       bridge.setTargetInfluence(p.targetInfluence);
+      // Recruitment follows the pointer; release runs unconditionally so the
+      // cohort turns over even when nothing moves.
+      bridge.setCoherenceField({
+        inner: 5,
+        outer: 15,
+        recruit: p.coherenceRecruit,
+        release: p.coherenceRelease,
+        motion: coherenceMotion,
+        curl,
+      });
       bridge.applyEngineRuntime({
         noise: p.noise,
         speed: p.speed,
@@ -294,7 +323,7 @@ export function PhaseFieldProto() {
       stopped = true;
       window.cancelAnimationFrame(raf);
     };
-  }, [ready, tier]);
+  }, [coherenceMotion, curl, ready, tier]);
 
   /* ── controls ─────────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -317,6 +346,14 @@ export function PhaseFieldProto() {
       lenoxMetalness: material.metalness,
     });
   }, [material, ready]);
+
+  // Exposed for diagnosis from the console; not product surface.
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__PF__ = {
+      center: () => bridgeRef.current?.getCoherenceCenter(),
+      bounds: () => bridgeRef.current?.getSimBounds(),
+    };
+  }, [ready]);
 
   const chooseEnv = useCallback(
     (next: EnvSource, rot = envRotation, intensity = envIntensity) => {
@@ -482,6 +519,74 @@ export function PhaseFieldProto() {
         </div>
 
         <div className={styles.group}>
+          <b>COHERENT COHORT (A.1a)</b>
+          <div className={styles.row}>
+            <button
+              type="button"
+              data-on={coherenceDebug}
+              onClick={() => setCoherenceDebug((v) => !v)}
+            >
+              DEBUG TINT
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.group}>
+          <b>MOTION (A.1b)</b>
+          <div className={styles.row}>
+            <button
+              type="button"
+              data-on={coherenceMotion}
+              onClick={() => setCoherenceMotion((v) => !v)}
+            >
+              COHERENCE
+            </button>
+            <button type="button" data-on={!curl} onClick={() => setCurl(false)}>
+              TRI NOISE
+            </button>
+            <button type="button" data-on={curl} onClick={() => setCurl(true)}>
+              CURL
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.group}>
+          <b>MATERIAL RESPONSE (A.1c)</b>
+          <div className={styles.row}>
+            <button
+              type="button"
+              data-on={!coherenceMaterial}
+              onClick={() => setCoherenceMaterial(false)}
+            >
+              FLAT
+            </button>
+            <button
+              type="button"
+              data-on={coherenceMaterial}
+              onClick={() => setCoherenceMaterial(true)}
+            >
+              COHERENCE
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.group}>
+          <b>PRIMITIVE (A.1d) — EQUAL TIER</b>
+          <div className={styles.row}>
+            {(["shard", "billboard"] as Primitive[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                data-on={primitive === value}
+                onClick={() => setPrimitive(value)}
+              >
+                {value.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.group}>
           <b>MATERIAL — SIZE IS ALSO THE FILL-RATE LEVER</b>
           {(
             [
@@ -533,7 +638,7 @@ export function PhaseFieldProto() {
       <div className={styles.hud} data-warn={probe.worst > 34}>
         <span>PROOF A · PHASE FIELD</span>
         <span>
-          {phase.toUpperCase()} · {substance.toUpperCase()} · {env.toUpperCase()}
+          {phase.toUpperCase()} · {primitive.toUpperCase()} · {env.toUpperCase()}
         </span>
         <span>
           SOURCE FILE <b>{(envCost?.sourceFileBytes ?? 0).toLocaleString()}</b> B

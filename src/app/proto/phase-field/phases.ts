@@ -23,6 +23,9 @@ export type PhaseParams = {
   dynamicViscosity: number;
   /** How far the ambient anchors are advected per second (sim units). */
   anchorDrift: number;
+  /** Coherent-cohort lifecycle, in membership units per second. */
+  coherenceRecruit: number;
+  coherenceRelease: number;
 };
 
 /** Per-parameter response, in units of "fraction closed per second". */
@@ -36,6 +39,8 @@ export const RESPONSE: Record<keyof PhaseParams, number> = {
   dynamicViscosity: 0.7,
   // Anchors drift on their own clock and never need to chase.
   anchorDrift: 0.5,
+  coherenceRecruit: 1.8,
+  coherenceRelease: 0.7,
 };
 
 /**
@@ -52,6 +57,8 @@ export const PHASES: Record<PhaseName, PhaseParams> = {
     gravity: 0,
     dynamicViscosity: 0.034,
     anchorDrift: 0.55,
+    coherenceRecruit: 0.5,
+    coherenceRelease: 0.42,
   },
   attention: {
     targetInfluence: 0.045,
@@ -60,6 +67,8 @@ export const PHASES: Record<PhaseName, PhaseParams> = {
     gravity: 0,
     dynamicViscosity: 0.026,
     anchorDrift: 0.85,
+    coherenceRecruit: 0.9,
+    coherenceRelease: 0.42,
   },
   lenox: {
     // An order of magnitude above ambient, enforced by phases.test.ts: the
@@ -71,6 +80,8 @@ export const PHASES: Record<PhaseName, PhaseParams> = {
     gravity: 0,
     dynamicViscosity: 0.052,
     anchorDrift: 0.18,
+    coherenceRecruit: 1.6,
+    coherenceRelease: 0.42,
   },
 };
 
@@ -110,4 +121,18 @@ export function stepToward(
 
 export function initialParams(): PhaseParams {
   return { ...PHASES.ambient };
+}
+
+/** CPU mirror of the GPU lifecycle equation, kept here for invariant tests. */
+export function stepCoherence(
+  current: number,
+  pull: number,
+  recruit: number,
+  release: number,
+  dt: number,
+): number {
+  return Math.min(
+    1,
+    Math.max(0, current + (pull * recruit - release) * dt),
+  );
 }

@@ -7,6 +7,7 @@ import {
   RESPONSE,
   approach,
   initialParams,
+  stepCoherence,
   stepToward,
 } from "./phases.ts";
 
@@ -59,4 +60,23 @@ test("stepping toward a phase converges to it and never overshoots", () => {
   for (let i = 0; i < 600; i++) p = stepToward(p, "lenox", 1 / 60);
   assert.ok(Math.abs(p.targetInfluence - PHASES.lenox.targetInfluence) < 1e-6);
   assert.ok(p.targetInfluence <= PHASES.lenox.targetInfluence + 1e-9);
+});
+
+test("coherence recruits locally and releases outside the kernel", () => {
+  assert.ok(stepCoherence(0, 1, 1.6, 0.42, 1 / 60) > 0);
+  assert.ok(stepCoherence(0.5, 0, 1.6, 0.42, 1 / 60) < 0.5);
+});
+
+test("coherence turnover continues with a stationary pointer", () => {
+  const held = stepCoherence(1, 1, 1.6, 0.42, 1);
+  const released = stepCoherence(held, 0, 1.6, 0.42, 1);
+  assert.ok(released < held);
+});
+
+test("coherence lifecycle is frame-rate independent before clamping", () => {
+  const oneStep = stepCoherence(0.25, 0.6, 1.2, 0.4, 1 / 60);
+  let twoHalfSteps = 0.25;
+  twoHalfSteps = stepCoherence(twoHalfSteps, 0.6, 1.2, 0.4, 1 / 120);
+  twoHalfSteps = stepCoherence(twoHalfSteps, 0.6, 1.2, 0.4, 1 / 120);
+  assert.ok(Math.abs(oneStep - twoHalfSteps) < 1e-12);
 });

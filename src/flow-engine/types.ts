@@ -201,6 +201,34 @@ export interface FlowEngineApi {
   ) => Promise<EnvironmentCost>;
   /** Substance tint over the existing silver law. `strength` 0 = untouched. */
   setSubstance: (hexColor: number, strength: number) => void;
+  /**
+   * The coherent cohort: which matter is currently behaving as LENOX.
+   *
+   * Recruitment is a smooth radial kernel centred on the pointer's existing
+   * simulation-space position — full inside `inner`, zero beyond `outer`. The
+   * `release` floor applies everywhere and unconditionally, so the cohort turns
+   * over even while the pointer is still; without it the core settles into a
+   * clump and stops reading as alive.
+   *
+   * This is membership, NOT age. A single scalar cannot express residence time.
+   * `recruit: 0` disables the lifecycle entirely and is the legacy default.
+   */
+  setCoherenceField: (field: {
+    inner?: number;
+    outer?: number;
+    recruit?: number;
+    release?: number;
+    motion?: boolean;
+    curl?: boolean;
+  }) => void;
+  /** Diagnostic: current recruitment centre in simulation space. */
+  getCoherenceCenter: () => [number, number, number] | null;
+  /** Debug: render coherence as a tint so the cohort is visible while tuning. */
+  setCoherenceDebug: (enabled: boolean) => void;
+  /** A.1c: coherence controls the range between atmospheric fringe and core. */
+  setCoherenceMaterial: (enabled: boolean) => void;
+  /** A.1d: compare the inherited shard against the living billboard primitive. */
+  setParticlePrimitive: (primitive: "shard" | "billboard") => void;
   /** Instant signature world (boot / reduced motion). Lenox mode only. */
   setSignature: (id: LenoxSignatureId) => void;
   /** Arm the world behind the reconstruction front. Lenox mode only. */
