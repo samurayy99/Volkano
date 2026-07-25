@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   useCallback,
@@ -16,7 +15,7 @@ import { FallbackEyes } from "../FallbackEyes";
 import { createFilmScrubber, type FilmScrubber } from "../stage/filmScrubber";
 import { useCompositionMode } from "../stage/compositionMode";
 import type { StationPose } from "../stage/stations";
-import { aiModules, cases, chapters, copy, type CaseStudy } from "./content";
+import { chapters, copy } from "./content";
 import {
   DESIGN_IDS,
   getDesign,
@@ -37,7 +36,6 @@ import {
   type StudioStation,
 } from "./studioDirector";
 import { buildMailtoHref } from "./studioLinks";
-import { WebsiteIntelligence } from "./WebsiteIntelligence";
 import styles from "./StudioExperience.module.css";
 
 const HERO_POSTER = "/studio/world/hero-keyframe.jpg";
@@ -82,14 +80,14 @@ const STUDIO_STATIONS: readonly StudioStation[] = [
     },
   },
   {
-    id: "work",
+    id: "principle",
     pose: {
-      side: { zoom: 1.08, shiftX: 0.28, shiftY: 0.02 },
-      banded: { zoom: 1.22, shiftX: 0, shiftY: -0.2 },
+      side: { zoom: 0.88, shiftX: -0.24, shiftY: 0 },
+      banded: { zoom: 1.06, shiftX: 0, shiftY: -0.2 },
     },
   },
   {
-    id: "services",
+    id: "capabilities",
     pose: {
       side: { zoom: 0.68, shiftX: -0.3, shiftY: -0.02 },
       banded: { zoom: 1.12, shiftX: 0, shiftY: -0.24 },
@@ -100,27 +98,6 @@ const STUDIO_STATIONS: readonly StudioStation[] = [
     pose: {
       side: { zoom: 0.62, shiftX: 0.22, shiftY: 0.02 },
       banded: { zoom: 0.96, shiftX: 0, shiftY: -0.2 },
-    },
-  },
-  {
-    id: "ai-systems",
-    pose: {
-      side: { zoom: 0.76, shiftX: -0.28, shiftY: 0 },
-      banded: { zoom: 1.15, shiftX: 0, shiftY: -0.22 },
-    },
-  },
-  {
-    id: "volkan",
-    pose: {
-      side: { zoom: 1.45, shiftX: 0.3, shiftY: 0.04 },
-      banded: { zoom: 1.42, shiftX: 0, shiftY: -0.08 },
-    },
-  },
-  {
-    id: "recompose",
-    pose: {
-      side: { zoom: 0.88, shiftX: -0.24, shiftY: 0 },
-      banded: { zoom: 1.06, shiftX: 0, shiftY: -0.2 },
     },
   },
   {
@@ -162,13 +139,10 @@ function StudioHeader({
     <header className={styles.header}>
       <button className={styles.brand} type="button" onClick={() => onNavigate("hero")}>
         <strong>{copy.studioName}</strong>
-        <span>{copy.studioDescriptor[locale]}</span>
       </button>
       <nav aria-label="Primary navigation">
         {chapters
-          .filter((chapter) =>
-            ["work", "services", "lenox", "ai-systems", "contact"].includes(chapter.id),
-          )
+          .filter((chapter) => chapter.id !== "hero")
           .map((chapter) => (
             <button key={chapter.id} type="button" onClick={() => onNavigate(chapter.id)}>
               {chapter.nav[locale]}
@@ -199,33 +173,48 @@ function StudioHeader({
   );
 }
 
+/**
+ * The entry never covers the field. The MLS-MPM play state is live and pointer-
+ * reactive from the first paint; this layer only adds the words and the two ways in.
+ */
 function EntryGate({
   locale,
   phase,
-  onWake,
+  onPlay,
+  onEnterStudio,
+  onChoose,
   onSkip,
 }: {
   locale: Locale;
   phase: IntroPhase;
-  onWake: () => void;
+  onPlay: () => void;
+  onEnterStudio: () => void;
+  onChoose: (design: DesignId) => void;
   onSkip: () => void;
 }) {
   if (phase === "entered") return null;
   return (
     <div className={styles.entry} data-phase={phase}>
-      <div className={styles.distantAtmosphere} />
       <div className={styles.entryCopy}>
-        <p>{copy.gateEyebrow[locale]}</p>
-        <p className={styles.entryTitle}>{copy.gateTitle[locale]}</p>
-        <span>{copy.gateBody[locale]}</span>
         {phase === "gate" ? (
           <div className={styles.entryActions}>
-            <button type="button" onClick={onWake}>{copy.wake[locale]}</button>
-            <button type="button" onClick={onSkip}>{copy.skip[locale]}</button>
+            <button type="button" onClick={onPlay}>{copy.play[locale]}</button>
+            <button type="button" onClick={onEnterStudio}>{copy.enterStudio[locale]}</button>
+          </div>
+        ) : phase === "select" ? (
+          <div className={styles.realityChoice}>
+            <p>{copy.selectTitle[locale]}</p>
+            <div role="group" aria-label={copy.selectTitle[locale]}>
+              {DESIGN_IDS.map((id) => (
+                <button key={id} type="button" onClick={() => onChoose(id)}>
+                  {getDesign(id).label}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className={styles.arrivalReadout}>
-            <span>{phase === "arrival" ? "DESCENT / 06 SEC" : "HANDOFF / LENOX"}</span>
+            <span>{copy.wake[locale]}</span>
             <i />
           </div>
         )}
@@ -239,112 +228,67 @@ function EntryGate({
   );
 }
 
-function CasePanel({ study, locale }: { study: CaseStudy; locale: Locale }) {
-  const tabId = `case-tab-${study.id}`;
-  const panelId = `case-panel-${study.id}`;
+function Lines({ text }: { text: string }) {
   return (
-    <article
-      id={panelId}
-      role="tabpanel"
-      aria-labelledby={tabId}
-      className={styles.casePanel}
-      style={{ "--case-color": study.color } as CSSProperties}
-    >
-      <div className={styles.caseMedia}>
-        <Image src={study.image} alt={study.imageAlt[locale]} fill sizes="(max-width: 800px) 92vw, 48vw" />
-        <span>{study.index}</span>
-      </div>
-      <div className={styles.caseDetails}>
-        <header>
-          <h3>{study.title}</h3>
-          <div className={styles.caseMeta}>
-            <p>{study.discipline[locale]}</p>
-            <span>{study.provenance[locale]}</span>
-          </div>
-        </header>
-        <div className={styles.evidenceGrid}>
-          {study.evidence.map((item) => (
-            <div key={item.label}>
-              <span>{item.label}</span>
-              <p>{item.text[locale]}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </article>
+    <>
+      {text.split("\n").map((line) => (
+        <span key={line}>{line}</span>
+      ))}
+    </>
   );
 }
 
-function WorkChapter({ locale }: { locale: Locale }) {
-  const { state, dispatch } = useExperience();
-  const active = cases.find((item) => item.id === state.selectedCase) ?? cases[0];
-  const selectCase = (index: number) => {
-    const next = cases[index];
-    dispatch({ type: "SELECT_CASE", selectedCase: next.id });
-    window.requestAnimationFrame(() => document.getElementById(`case-tab-${next.id}`)?.focus());
-  };
-  const onCaseKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const current = cases.findIndex((study) => study.id === active.id);
-    let next = current;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % cases.length;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + cases.length) % cases.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = cases.length - 1;
-    else return;
-    event.preventDefault();
-    selectCase(next);
-  };
+function PrincipleChapter({
+  locale,
+  design,
+  onMorph,
+}: {
+  locale: Locale;
+  design: DesignId;
+  onMorph: (design: DesignId) => void;
+}) {
   return (
-    <div className={styles.workChapter}>
-      <div className={styles.chapterIntro}>
-        <SplitTitle>{copy.work.title[locale]}</SplitTitle>
-        <p>{copy.work.body[locale]}</p>
-      </div>
+    <div className={styles.principleChapter}>
+      <SplitTitle>{copy.principle.title[locale]}</SplitTitle>
+      <p><Lines text={copy.principle.body[locale]} /></p>
       <div
-        className={styles.caseSelector}
-        role="tablist"
-        aria-label={locale === "en" ? "Selected work" : "Ausgewählte Arbeiten"}
-        onKeyDown={onCaseKeyDown}
+        className={styles.designChoices}
+        role="group"
+        aria-label={copy.principle.switchLabel[locale]}
       >
-        {cases.map((study) => (
+        {DESIGN_IDS.map((id) => (
           <button
-            key={study.id}
-            id={`case-tab-${study.id}`}
+            key={id}
             type="button"
-            role="tab"
-            aria-selected={active.id === study.id}
-            aria-controls={`case-panel-${study.id}`}
-            tabIndex={active.id === study.id ? 0 : -1}
-            onClick={() => dispatch({ type: "SELECT_CASE", selectedCase: study.id })}
+            aria-current={id === design}
+            onClick={() => onMorph(id)}
           >
-            <span>{study.index}</span>
-            {study.title}
+            {getDesign(id).shortLabel}
           </button>
         ))}
       </div>
-      <CasePanel study={active} locale={locale} />
     </div>
   );
 }
 
-function ServicesChapter({ locale }: { locale: Locale }) {
-  const services = [
-    ["01", "WEB DESIGN", locale === "en" ? "New digital identities built from strategy to production." : "Neue digitale Identitäten von Strategie bis Produktion."],
-    ["02", "STRATEGIC REDESIGN", locale === "en" ? "Reframe what already exists, then rebuild only what earns its place." : "Bestehendes neu rahmen und nur das neu bauen, was seinen Platz verdient."],
-    ["03", "INTERACTIVE SYSTEMS", locale === "en" ? "Motion, spatial interfaces and AI behaviour integrated as product logic." : "Motion, räumliche Interfaces und AI-Verhalten als Produktlogik integriert."],
-  ];
+function CapabilitiesChapter({ locale }: { locale: Locale }) {
   return (
-    <div className={styles.servicesChapter}>
+    <div className={styles.capabilitiesChapter}>
       <div className={styles.chapterIntro}>
-        <SplitTitle>{copy.services.title[locale]}</SplitTitle>
-        <p>{copy.services.body[locale]}</p>
+        <SplitTitle>{copy.capabilities.title[locale]}</SplitTitle>
       </div>
-      <div className={styles.serviceLines}>
-        {services.map(([index, title, body]) => (
-          <article key={title}>
-            <span>{index}</span>
-            <h3>{title}</h3>
-            <p>{body}</p>
+      <div className={styles.capabilityLines}>
+        {copy.capabilities.items.map((item) => (
+          <article key={item.index}>
+            <span>{item.index}</span>
+            <h3>
+              {item.index === "03" ? (
+                <Link href="/ai-systems">{item.title[locale]}</Link>
+              ) : (
+                item.title[locale]
+              )}
+            </h3>
+            <p>{item.body[locale]}</p>
           </article>
         ))}
       </div>
@@ -352,68 +296,22 @@ function ServicesChapter({ locale }: { locale: Locale }) {
   );
 }
 
-function LenoxChapter({ locale }: { locale: Locale }) {
-  const abilities = locale === "en"
-    ? ["Perceives attention", "Guides the next action", "Preserves context", "Recomposes the interface"]
-    : ["Erkennt Aufmerksamkeit", "Führt zur nächsten Aktion", "Bewahrt Kontext", "Komponiert das Interface neu"];
+function LenoxChapter({ locale, onBrief }: { locale: Locale; onBrief: () => void }) {
   return (
     <div className={styles.lenoxChapter}>
-      <div className={styles.chapterIntro}>
-        <SplitTitle>{copy.lenox.title[locale]}</SplitTitle>
-        <p>{copy.lenox.body[locale]}</p>
-      </div>
-      <ol className={styles.abilityList}>
-        {abilities.map((ability, index) => (
-          <li key={ability}><span>0{index + 1}</span>{ability}</li>
-        ))}
-      </ol>
+      <SplitTitle>{copy.lenox.title[locale]}</SplitTitle>
+      <p><Lines text={copy.lenox.body[locale]} /></p>
+      <button className={styles.primaryAction} type="button" onClick={onBrief}>
+        {copy.lenox.action[locale]}
+      </button>
     </div>
   );
 }
 
-function AiChapter({ locale }: { locale: Locale }) {
-  return (
-    <div className={styles.aiChapter}>
-      <div className={styles.chapterIntro}>
-        <SplitTitle>{copy.ai.title[locale]}</SplitTitle>
-        <p>{copy.ai.body[locale]}</p>
-      </div>
-      <WebsiteIntelligence locale={locale} />
-      <div className={styles.moduleTeasers}>
-        {aiModules.slice(1).map((module) => (
-          <article key={module.title}>
-            <span>{module.index}</span>
-            <div><h3>{module.title}</h3><p>{module.body[locale]}</p></div>
-            <small>{module.state}</small>
-          </article>
-        ))}
-      </div>
-      <Link className={styles.inlineLink} href="/ai-systems">
-        {locale === "en" ? "EXPLORE ALL AI SYSTEMS" : "ALLE AI-SYSTEME ENTDECKEN"}
-      </Link>
-    </div>
-  );
-}
-
-function VolkanChapter({ locale }: { locale: Locale }) {
-  return (
-    <div className={styles.volkanChapter}>
-      <div className={styles.chapterIntro}>
-        <SplitTitle>{copy.volkan.title[locale]}</SplitTitle>
-        <p>{copy.volkan.body[locale]}</p>
-      </div>
-      <div className={styles.roleMatrix}>
-        {[
-          ["STRATEGY", "01"], ["ART DIRECTION", "02"], ["DESIGN", "03"], ["ENGINEERING", "04"],
-        ].map(([label, index]) => <div key={label}><span>{index}</span>{label}</div>)}
-      </div>
-    </div>
-  );
-}
-
-function ContactChapter({ locale, onAnalysis }: { locale: Locale; onAnalysis: () => void }) {
+function ContactChapter({ locale }: { locale: Locale }) {
   const { state, dispatch } = useExperience();
   const briefOpen = state.projectBrief.open;
+  const fields = copy.contact.fields;
   const update = <Field extends keyof typeof state.projectBrief>(
     field: Field,
     value: (typeof state.projectBrief)[Field],
@@ -426,32 +324,32 @@ function ContactChapter({ locale, onAnalysis }: { locale: Locale; onAnalysis: ()
   const briefBody = `${state.projectBrief.name}\n${state.projectBrief.company}\n${state.projectBrief.email}\n\n${state.projectBrief.message}`;
   return (
     <div className={styles.contactChapter}>
-      <div className={styles.chapterIntro}>
-        <SplitTitle>{copy.contact.title[locale]}</SplitTitle>
-      </div>
-      <div className={styles.contactActions}>
-        <button
-          type="button"
-          aria-expanded={briefOpen}
-          aria-controls="project-brief-form"
-          onClick={() => update("open", !briefOpen)}
-        >
-          {copy.contact.brief[locale]}
-        </button>
-        <button type="button" onClick={onAnalysis}>{copy.contact.analysis[locale]}</button>
-        <a href={buildMailtoHref("hello@volkano.dev", "Project inquiry")}>{copy.contact.book[locale]}</a>
-      </div>
+      <SplitTitle>{copy.contact.title[locale]}</SplitTitle>
+      <p>{copy.contact.body[locale]}</p>
+      <button
+        className={styles.primaryAction}
+        type="button"
+        aria-expanded={briefOpen}
+        aria-controls="project-brief-form"
+        onClick={() => update("open", !briefOpen)}
+      >
+        {copy.contact.action[locale]}
+      </button>
       {briefOpen ? (
         <form id="project-brief-form" className={styles.briefForm} onSubmit={(event) => event.preventDefault()}>
-          <input aria-label="Name" placeholder="NAME" value={state.projectBrief.name} onChange={(event) => update("name", event.target.value)} />
-          <input aria-label="Company" placeholder="COMPANY" value={state.projectBrief.company} onChange={(event) => update("company", event.target.value)} />
-          <input aria-label="Email" type="email" placeholder="EMAIL" value={state.projectBrief.email} onChange={(event) => update("email", event.target.value)} />
-          <textarea aria-label="Project" placeholder="WHAT SHOULD EXIST NEXT?" value={state.projectBrief.message} onChange={(event) => update("message", event.target.value)} />
+          <input aria-label={fields.name[locale]} placeholder={fields.name[locale]} value={state.projectBrief.name} onChange={(event) => update("name", event.target.value)} />
+          <input aria-label={fields.company[locale]} placeholder={fields.company[locale]} value={state.projectBrief.company} onChange={(event) => update("company", event.target.value)} />
+          <input aria-label={fields.email[locale]} type="email" placeholder={fields.email[locale]} value={state.projectBrief.email} onChange={(event) => update("email", event.target.value)} />
+          <textarea aria-label={fields.message[locale]} placeholder={fields.message[locale]} value={state.projectBrief.message} onChange={(event) => update("message", event.target.value)} />
           <a href={buildMailtoHref("hello@volkano.dev", "Project inquiry", briefBody)}>
-            {locale === "en" ? "OPEN EMAIL WITH THIS BRIEF" : "E-MAIL MIT DIESEM BRIEF ÖFFNEN"}
+            {fields.send[locale]}
           </a>
         </form>
       ) : null}
+      <footer className={styles.studioFooter}>
+        <span>{copy.studioName} · {copy.footer.location[locale]}</span>
+        <span>{copy.footer.credit}</span>
+      </footer>
     </div>
   );
 }
@@ -481,41 +379,32 @@ function JourneyContent({
   onMorph: (design: DesignId) => void;
   onNavigate: (chapter: ChapterId) => void;
 }) {
-  const availableDesigns = DESIGN_IDS.filter((id) => id !== design);
+  const { state, dispatch } = useExperience();
+  const briefLenox = () => {
+    dispatch({ type: "SET_PROJECT_BRIEF", brief: { ...state.projectBrief, open: true } });
+    onNavigate("contact");
+  };
   return (
     <>
       <ChapterShell id="hero">
         <div className={styles.heroChapter}>
-          <p>I’M LENOX. WELCOME INSIDE THE WORK.</p>
           <SplitTitle level={1}>{copy.hero.title[locale]}</SplitTitle>
-          <span>{copy.hero.body[locale]}</span>
-        </div>
-      </ChapterShell>
-      <ChapterShell id="work"><WorkChapter locale={locale} /></ChapterShell>
-      <ChapterShell id="services"><ServicesChapter locale={locale} /></ChapterShell>
-      <ChapterShell id="lenox"><LenoxChapter locale={locale} /></ChapterShell>
-      <ChapterShell id="ai-systems"><AiChapter locale={locale} /></ChapterShell>
-      <ChapterShell id="volkan"><VolkanChapter locale={locale} /></ChapterShell>
-      <ChapterShell id="recompose">
-        <div className={styles.recomposeChapter}>
-          <SplitTitle>{copy.recompose.title[locale]}</SplitTitle>
-          <p>{copy.recompose.body[locale]}</p>
-          <div
-            className={styles.designChoices}
-            role="group"
-            aria-label={locale === "en" ? "Choose another design" : "Anderes Design wählen"}
+          <span><Lines text={copy.hero.body[locale]} /></span>
+          <button
+            className={styles.primaryAction}
+            type="button"
+            onClick={() => onNavigate("contact")}
           >
-            {availableDesigns.map((id) => (
-              <button key={id} type="button" onClick={() => onMorph(id)}>
-                {copy.recompose.action[locale]} · {getDesign(id).label}
-              </button>
-            ))}
-          </div>
+            {copy.hero.action[locale]}
+          </button>
         </div>
       </ChapterShell>
-      <ChapterShell id="contact">
-        <ContactChapter locale={locale} onAnalysis={() => onNavigate("ai-systems")} />
+      <ChapterShell id="principle">
+        <PrincipleChapter locale={locale} design={design} onMorph={onMorph} />
       </ChapterShell>
+      <ChapterShell id="capabilities"><CapabilitiesChapter locale={locale} /></ChapterShell>
+      <ChapterShell id="lenox"><LenoxChapter locale={locale} onBrief={briefLenox} /></ChapterShell>
+      <ChapterShell id="contact"><ContactChapter locale={locale} /></ChapterShell>
     </>
   );
 }
@@ -668,6 +557,9 @@ export function StudioExperience() {
     const bridge = new FlowEngineBridge(host, {
       lenoxMode: true,
       lenoxReducedMotion: reduced,
+      // Each reality owns its own background; the canvas contributes particles
+      // and LENOX on transparency and nothing else.
+      lenoxBackdrop: false,
       onLenoxStateChange: setEngineState,
       onLenoxSignals: writeSignals,
       onDeviceLost: () => setGpuPath("fallback"),
@@ -723,12 +615,30 @@ export function StudioExperience() {
     timers.current.push(window.setTimeout(markIntroSeen, reduced ? 0 : 900));
   }, [dispatch, markIntroSeen, reduced]);
 
+  /** WAKE hands over to the reality choice, not straight into a design. */
+  const revealSelection = useCallback(() => {
+    timers.current.forEach(window.clearTimeout);
+    timers.current = [];
+    dispatch({ type: "SET_INTRO", phase: "select" });
+  }, [dispatch]);
+
   useEffect(() => {
     if (state.introPhase !== "arrival") return;
     if (!ARRIVAL_SOURCE) {
-      timers.current.push(window.setTimeout(finishIntro, reduced ? 0 : 700));
+      timers.current.push(window.setTimeout(revealSelection, reduced ? 0 : 1400));
     }
-  }, [finishIntro, reduced, state.introPhase]);
+  }, [reduced, revealSelection, state.introPhase]);
+
+  const chooseReality = useCallback((design: DesignId) => {
+    dispatch({ type: "SET_DESIGN", design });
+    finishIntro();
+  }, [dispatch, finishIntro]);
+
+  /** The direct door: no ritual, straight into SIGNAL. */
+  const enterStudio = useCallback(() => {
+    dispatch({ type: "SET_DESIGN", design: "design-02" });
+    finishIntro();
+  }, [dispatch, finishIntro]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -753,8 +663,9 @@ export function StudioExperience() {
     const unlock = worldVideoRef.current?.play();
     unlock?.then(() => worldVideoRef.current?.pause()).catch(() => {});
     dispatch({ type: "SET_INTRO", phase: "arrival" });
-    if (ARRIVAL_SOURCE) void arrivalVideoRef.current?.play().catch(finishIntro);
-  }, [dispatch, finishIntro]);
+    bridgeRef.current?.setLenoxState("waking");
+    if (ARRIVAL_SOURCE) void arrivalVideoRef.current?.play().catch(revealSelection);
+  }, [dispatch, revealSelection]);
 
   const navigate = useCallback((chapter: ChapterId) => {
     if (state.introPhase !== "entered") {
@@ -810,12 +721,12 @@ export function StudioExperience() {
       }, 180);
     }
     if (!changed) return;
-    const intent = position.chapter === "work" || position.chapter === "ai-systems"
+    const intent = position.chapter === "principle" || position.chapter === "capabilities"
       ? { kind: "guide" as const, arm: "right" as const, targetNdc: { x: 0.34, y: 0 }, reach: 0.78 }
       : { kind: "observe" as const };
     bridgeRef.current?.setLenoxIntent(intent);
     bridgeRef.current?.setLenoxEmotion(
-      position.chapter === "ai-systems" || position.chapter === "recompose" ? "thinking" : "curious",
+      position.chapter === "principle" || position.chapter === "lenox" ? "thinking" : "curious",
     );
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${position.chapter}`);
   }, [dispatch]);
@@ -919,7 +830,7 @@ export function StudioExperience() {
           disablePictureInPicture
         />
       </div>
-      <div className={styles.lenoxLayer} data-visible={state.introPhase === "entered" || state.introPhase === "handoff"}>
+      <div className={styles.lenoxLayer} data-visible="true">
         {gpuPath === "fallback" ? (
           <FallbackEyes state={engineState} />
         ) : (
@@ -959,7 +870,14 @@ export function StudioExperience() {
         onDirector={onDirector}
         onMorph={morph}
       />
-      <EntryGate locale={state.locale} phase={state.introPhase} onWake={wake} onSkip={finishIntro} />
+      <EntryGate
+        locale={state.locale}
+        phase={state.introPhase}
+        onPlay={wake}
+        onEnterStudio={enterStudio}
+        onChoose={chooseReality}
+        onSkip={finishIntro}
+      />
       <div className={styles.morphCurtain} data-active={morphTarget !== null} aria-hidden>
         <span>{morphTarget ? getDesign(morphTarget).label : getDesign(state.design).label}</span>
       </div>

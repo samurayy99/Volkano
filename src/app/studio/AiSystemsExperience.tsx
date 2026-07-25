@@ -19,7 +19,7 @@ export function AiSystemsExperience() {
       <header className={styles.header}>
         <Link href="/">{copy.studioName}</Link>
         <nav>
-          <Link href="/#work">WORK</Link>
+          <Link href="/#capabilities">STUDIO</Link>
           <Link href="/#contact">CONTACT</Link>
           <button
             type="button"

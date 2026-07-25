@@ -30,7 +30,7 @@ type Hooks = {
 
 let registered = false;
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
-const CLIP_B_START_CHAPTER: ChapterId = "volkan";
+const CLIP_B_START_CHAPTER: ChapterId = "contact";
 
 function lerpPose(a: StationPose, b: StationPose, t: number): StationPose {
   return {

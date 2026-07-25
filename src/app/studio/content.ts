@@ -1,56 +1,31 @@
-import type { CaseId, ChapterId, Locale } from "./experienceState";
+import type { ChapterId, Locale } from "./experienceState";
 
 type Localized = Record<Locale, string>;
 
-export type CaseStudy = {
-  id: CaseId;
-  index: string;
-  title: string;
-  discipline: Localized;
-  provenance: Localized;
-  imageAlt: Localized;
-  image: string;
-  color: string;
-  evidence: {
-    label: "THE PROBLEM" | "THE DECISION" | "THE BUILD" | "THE RESULT";
-    text: Localized;
-  }[];
-};
-
+/**
+ * The content kernel. One set of words, five chapters, two locales — shared by every
+ * registered design. A design may change type, colour, rhythm and composition; it may
+ * never change a sentence. Contract: docs/product/studio-content-contract.md
+ */
 export const chapters: ReadonlyArray<{
   id: ChapterId;
   nav: Localized;
   spanVh: number;
 }> = [
   { id: "hero", nav: { en: "Studio", de: "Studio" }, spanVh: 140 },
-  { id: "work", nav: { en: "Work", de: "Arbeiten" }, spanVh: 330 },
-  { id: "services", nav: { en: "Web Design", de: "Webdesign" }, spanVh: 180 },
+  { id: "principle", nav: { en: "Principle", de: "Prinzip" }, spanVh: 200 },
+  { id: "capabilities", nav: { en: "Capabilities", de: "Leistungen" }, spanVh: 220 },
   { id: "lenox", nav: { en: "Lenox", de: "Lenox" }, spanVh: 180 },
-  { id: "ai-systems", nav: { en: "AI Systems", de: "AI-Systeme" }, spanVh: 240 },
-  { id: "volkan", nav: { en: "Volkan", de: "Volkan" }, spanVh: 140 },
-  { id: "recompose", nav: { en: "Recompose", de: "Neu komponieren" }, spanVh: 120 },
-  { id: "contact", nav: { en: "Contact", de: "Kontakt" }, spanVh: 120 },
+  { id: "contact", nav: { en: "Contact", de: "Kontakt" }, spanVh: 140 },
 ] as const;
 
 export const copy = {
   studioName: "VOLKAN AI STUDIO",
-  studioDescriptor: {
-    en: "Independent design and AI studio",
-    de: "Unabhängiges Design- und AI-Studio",
-  },
-  gateEyebrow: {
-    en: "INDEPENDENT DESIGN & AI STUDIO",
-    de: "UNABHÄNGIGES DESIGN- & AI-STUDIO",
-  },
-  gateTitle: {
-    en: "WEBSITES WITH A MIND OF THEIR OWN.",
-    de: "WEBSITES MIT EINEM EIGENEN VERSTAND.",
-  },
-  gateBody: {
-    en: "High-end web design, strategic redesign and custom AI systems.",
-    de: "High-End-Webdesign, strategisches Redesign und individuelle AI-Systeme.",
-  },
+  /** The protected entry: the field is alive before a word is read. */
+  play: { en: "PLAY WITH ME", de: "SPIEL MIT MIR" },
   wake: { en: "WAKE LENOX", de: "LENOX WECKEN" },
+  enterStudio: { en: "ENTER STUDIO", de: "STUDIO BETRETEN" },
+  selectTitle: { en: "CHOOSE A REALITY", de: "REALITÄT WÄHLEN" },
   skip: { en: "SKIP", de: "ÜBERSPRINGEN" },
   hero: {
     title: {
@@ -58,208 +33,82 @@ export const copy = {
       de: "WEBSITES, DIE BLEIBEN.\nAI-SYSTEME, DIE WEITERARBEITEN.",
     },
     body: {
-      en: "Strategy, art direction, design and engineering, shaped by one accountable mind.",
-      de: "Strategie, Art Direction, Design und Engineering, geformt von einer verantwortlichen Person.",
+      en: "Independent studio for digital design,\nstrategic redesign and applied AI.",
+      de: "Unabhängiges Studio für digitales Design,\nstrategisches Redesign und angewandte AI.",
     },
+    action: { en: "START A PROJECT", de: "PROJEKT STARTEN" },
   },
-  work: {
-    title: { en: "BUILT.\nNOT PITCHED.", de: "GEBAUT.\nNICHT BEHAUPTET." },
+  principle: {
+    title: { en: "THE STUDIO IS THE DEMO.", de: "DAS STUDIO IST DIE DEMO." },
     body: {
-      en: "Three systems. Three identities. Each decision visible in the work.",
-      de: "Drei Systeme. Drei Identitäten. Jede Entscheidung wird in der Arbeit sichtbar.",
+      en: "One message. Three complete websites.\nThe content stays fixed. Everything else changes.",
+      de: "Eine Botschaft. Drei vollständige Websites.\nDer Inhalt bleibt. Alles andere wechselt.",
     },
+    switchLabel: { en: "Choose a design", de: "Design wählen" },
   },
-  services: {
-    title: {
-      en: "FROM FORGETTABLE\nTO UNMISSABLE.",
-      de: "VON AUSTAUSCHBAR\nZU UNÜBERSEHBAR.",
-    },
-    body: {
-      en: "No templates. No recycled layouts. Every experience is shaped around the identity, ambition and business behind it.",
-      de: "Keine Templates. Keine recycelten Layouts. Jede Experience entsteht aus Identität, Ambition und Geschäft der Marke.",
-    },
+  capabilities: {
+    title: { en: "WHAT WE BUILD.", de: "WAS WIR BAUEN." },
+    items: [
+      {
+        index: "01",
+        title: { en: "SIGNATURE WEBSITES", de: "SIGNATURE-WEBSITES" },
+        body: {
+          en: "Positioning, art direction, design and engineering as one system.",
+          de: "Positionierung, Art Direction, Design und Engineering als ein System.",
+        },
+      },
+      {
+        index: "02",
+        title: { en: "STRATEGIC REDESIGN", de: "STRATEGISCHES REDESIGN" },
+        body: {
+          en: "Reframe what exists. Rebuild only what earns its place.",
+          de: "Neu denken, was existiert. Neu bauen, was es verdient.",
+        },
+      },
+      {
+        index: "03",
+        title: { en: "APPLIED AI SYSTEMS", de: "ANGEWANDTE AI-SYSTEME" },
+        body: {
+          en: "Turn knowledge, requests and decisions into reliable workflows.",
+          de: "Wissen, Anfragen und Entscheidungen werden zu verlässlichen Abläufen.",
+        },
+      },
+    ],
   },
   lenox: {
     title: {
-      en: "NOT A CHATBOT.\nA LIVING INTERFACE.",
-      de: "KEIN CHATBOT.\nEIN LEBENDIGES INTERFACE.",
+      en: "AI-ACCELERATED.\nHUMAN-DIRECTED.",
+      de: "AI-BESCHLEUNIGT.\nMENSCHLICH GEFÜHRT.",
     },
     body: {
-      en: "LENOX sees context, guides attention and turns intent into the next useful action.",
-      de: "LENOX erkennt Kontext, führt Aufmerksamkeit und übersetzt Absicht in die nächste sinnvolle Aktion.",
+      en: "LENOX researches, structures, compares and tests.\nVolkan directs the work and approves what ships.",
+      de: "LENOX recherchiert, strukturiert, vergleicht und testet.\nVolkan führt die Arbeit und gibt frei, was rausgeht.",
     },
-  },
-  ai: {
-    title: {
-      en: "SYSTEMS THAT\nUNDERSTAND, DECIDE\nAND ACT.",
-      de: "SYSTEME, DIE\nVERSTEHEN, ENTSCHEIDEN\nUND HANDELN.",
-    },
-    body: {
-      en: "Start with Website Intelligence. Extend into business scenarios, project intake and communication systems.",
-      de: "Start mit Website Intelligence. Danach folgen Business-Szenarien, Projekt-Briefings und Kommunikationssysteme.",
-    },
-  },
-  volkan: {
-    title: { en: "ONE PERSON.\nEND TO END.", de: "EINE PERSON.\nEND TO END." },
-    body: {
-      en: "A direct line from the first strategic question to the last production detail. No layers between the idea and the person building it.",
-      de: "Eine direkte Linie von der ersten strategischen Frage bis zum letzten Produktionsdetail. Keine Ebenen zwischen Idee und Umsetzung.",
-    },
-  },
-  recompose: {
-    title: {
-      en: "YOU HAVE SEEN THE WORLD.\nNOW SEE THE SYSTEM.",
-      de: "DU HAST DIE WELT GESEHEN.\nJETZT SIEH DAS SYSTEM.",
-    },
-    body: {
-      en: "Same studio. Same work. A different reality.",
-      de: "Dasselbe Studio. Dieselbe Arbeit. Eine andere Realität.",
-    },
-    action: { en: "RECOMPOSE THE EXPERIENCE", de: "EXPERIENCE NEU KOMPONIEREN" },
-    restore: { en: "RETURN TO THE REEF", de: "GRAVITY WIEDERHERSTELLEN" },
+    action: { en: "BRIEF LENOX", de: "LENOX BRIEFEN" },
   },
   contact: {
     title: {
-      en: "LENOX CAN INTRODUCE\nYOU TO VOLKAN.",
-      de: "LENOX KANN DICH\nVOLKAN VORSTELLEN.",
+      en: "BUILD WHAT YOUR COMPANY\nSHOULD BECOME NEXT.",
+      de: "BAUEN, WAS AUS IHREM\nUNTERNEHMEN WERDEN SOLL.",
     },
-    brief: { en: "DESCRIBE YOUR PROJECT", de: "PROJEKT BESCHREIBEN" },
-    analysis: { en: "REQUEST AN ANALYSIS", de: "ANALYSE ANFRAGEN" },
-    book: { en: "BOOK A CALL", de: "GESPRÄCH ANFRAGEN" },
+    body: { en: "Tell us what must change.", de: "Sagen Sie uns, was sich ändern muss." },
+    action: { en: "START A PROJECT", de: "PROJEKT STARTEN" },
+    fields: {
+      name: { en: "NAME", de: "NAME" },
+      company: { en: "COMPANY", de: "UNTERNEHMEN" },
+      email: { en: "EMAIL", de: "E-MAIL" },
+      message: { en: "WHAT MUST CHANGE?", de: "WAS MUSS SICH ÄNDERN?" },
+      send: {
+        en: "OPEN EMAIL WITH THIS BRIEF",
+        de: "E-MAIL MIT DIESEM BRIEF ÖFFNEN",
+      },
+    },
+  },
+  footer: {
+    location: { en: "SWITZERLAND", de: "SCHWEIZ" },
+    credit: "CREATIVE DIRECTION & ENGINEERING — VOLKAN",
   },
 } as const;
-
-export const cases: readonly CaseStudy[] = [
-  {
-    id: "klein-paris",
-    index: "01",
-    title: "KLEIN PARIS",
-    discipline: { en: "Digital relaunch and booking journey", de: "Digitaler Relaunch und Buchungsreise" },
-    provenance: { en: "STUDIO PROJECT · IN DEVELOPMENT", de: "STUDIOPROJEKT · IN ENTWICKLUNG" },
-    imageAlt: {
-      en: "Klein Paris digital relaunch preview with a cinematic entrance",
-      de: "Vorschau des digitalen Klein-Paris-Relaunchs mit cineastischem Einstieg",
-    },
-    image: "/studio/cases/klein-paris.jpg",
-    color: "#d62d76",
-    evidence: [
-      {
-        label: "THE PROBLEM",
-        text: {
-          en: "A distinctive venue needed a digital presence with clearer orientation and a more deliberate first impression.",
-          de: "Ein eigenständiger Ort brauchte einen digitalen Auftritt mit klarerer Orientierung und einem bewussteren ersten Eindruck.",
-        },
-      },
-      {
-        label: "THE DECISION",
-        text: {
-          en: "Build the journey around atmosphere, privacy and direct choices instead of a generic catalogue.",
-          de: "Die Journey folgt Atmosphäre, Privatsphäre und direkten Entscheidungen statt einem generischen Katalog.",
-        },
-      },
-      {
-        label: "THE BUILD",
-        text: {
-          en: "A responsive cinematic entry, public-safe content architecture and focused action paths.",
-          de: "Ein responsiver cineastischer Einstieg, eine datensichere Inhaltsarchitektur und fokussierte Handlungswege.",
-        },
-      },
-      {
-        label: "THE RESULT",
-        text: {
-          en: "A coherent public experience that makes its tone and next step legible without exposing private operations.",
-          de: "Eine kohärente öffentliche Experience, die Ton und nächsten Schritt lesbar macht, ohne interne Abläufe offenzulegen.",
-        },
-      },
-    ],
-  },
-  {
-    id: "manaleaf",
-    index: "02",
-    title: "MANALEAF",
-    discipline: { en: "Brand world and product system", de: "Markenwelt und Produktsystem" },
-    provenance: { en: "STUDIO PROJECT · IN DEVELOPMENT", de: "STUDIOPROJEKT · IN ENTWICKLUNG" },
-    imageAlt: {
-      en: "Manaleaf digital brand world derived from the physical packaging system",
-      de: "Digitale Manaleaf-Markenwelt aus dem physischen Packaging-System",
-    },
-    image: "/studio/cases/manaleaf.webp",
-    color: "#e17a40",
-    evidence: [
-      {
-        label: "THE PROBLEM",
-        text: {
-          en: "A rich packaging identity needed a digital system capable of holding many products without flattening the brand.",
-          de: "Eine starke Packaging-Identität brauchte ein digitales System für viele Produkte, ohne die Marke zu verflachen.",
-        },
-      },
-      {
-        label: "THE DECISION",
-        text: {
-          en: "Treat product discovery as a sensory material journey, then impose a precise information hierarchy beneath it.",
-          de: "Die Produktsuche wird zur sinnlichen Materialreise und darunter durch eine präzise Informationshierarchie geordnet.",
-        },
-      },
-      {
-        label: "THE BUILD",
-        text: {
-          en: "A cinematic hero, reusable product components and a responsive visual language derived from the physical packs.",
-          de: "Ein cineastischer Hero, wiederverwendbare Produktkomponenten und eine responsive Sprache aus dem physischen Packaging.",
-        },
-      },
-      {
-        label: "THE RESULT",
-        text: {
-          en: "A recognisable digital shelf whose structure can grow with the catalogue while preserving the product personalities.",
-          de: "Ein wiedererkennbares digitales Regal, das mit dem Sortiment wachsen kann und die Produktpersönlichkeiten bewahrt.",
-        },
-      },
-    ],
-  },
-  {
-    id: "lenox-rnd",
-    index: "03",
-    title: "LENOX R&D",
-    discipline: { en: "Living interface and spatial web", de: "Living Interface und räumliches Web" },
-    provenance: { en: "INTERNAL R&D · ACTIVE PROTOTYPE", de: "INTERNES R&D · AKTIVER PROTOTYP" },
-    imageAlt: {
-      en: "Gravity Reef world created for the LENOX living-interface prototype",
-      de: "Gravity-Reef-Welt für den LENOX-Living-Interface-Prototyp",
-    },
-    image: "/studio/world/hero-keyframe.jpg",
-    color: "#69d7c3",
-    evidence: [
-      {
-        label: "THE PROBLEM",
-        text: {
-          en: "Most AI websites describe intelligence through chat windows while the rest of the interface stays inert.",
-          de: "Die meisten AI-Websites beschreiben Intelligenz in Chatfenstern, während der Rest des Interfaces starr bleibt.",
-        },
-      },
-      {
-        label: "THE DECISION",
-        text: {
-          en: "Make the website itself the demonstration and let one persistent character connect cinema, code and action.",
-          de: "Die Website selbst wird zur Demonstration und eine persistente Figur verbindet Film, Code und Handlung.",
-        },
-      },
-      {
-        label: "THE BUILD",
-        text: {
-          en: "One scroll authority drives a scrubbed world film, a live WebGPU presence and semantic content layers.",
-          de: "Eine Scroll-Autorität steuert Weltfilm, Live-WebGPU-Präsenz und semantische Inhaltsebenen.",
-        },
-      },
-      {
-        label: "THE RESULT",
-        text: {
-          en: "A working research platform where the interface can observe, guide and recompose without faking external automation.",
-          de: "Eine funktionierende Forschungsplattform, die beobachten, führen und neu komponieren kann, ohne externe Automation vorzutäuschen.",
-        },
-      },
-    ],
-  },
-] as const;
 
 export const aiModules = [
   {

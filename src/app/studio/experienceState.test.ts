@@ -9,17 +9,13 @@ import {
 import { mapScrollToClipProgress } from "./studioTimeline.ts";
 import { buildMailtoHref } from "./studioLinks.ts";
 
-const initialExperienceState = createInitialExperienceState("reef");
+const initialExperienceState = createInitialExperienceState("design-01");
 
 test("morph preserves semantic position and interaction state", () => {
   let state = experienceReducer(initialExperienceState, {
     type: "SET_POSITION",
-    chapter: "work",
+    chapter: "capabilities",
     localProgress: 0.64,
-  });
-  state = experienceReducer(state, {
-    type: "SELECT_CASE",
-    selectedCase: "klein-paris",
   });
   state = experienceReducer(state, {
     type: "SET_PROJECT_BRIEF",
@@ -29,12 +25,11 @@ test("morph preserves semantic position and interaction state", () => {
       message: "A persistent project brief",
     },
   });
-  state = experienceReducer(state, { type: "SET_DESIGN", design: "signal" });
+  state = experienceReducer(state, { type: "SET_DESIGN", design: "design-02" });
 
-  assert.equal(state.design, "signal");
-  assert.equal(state.activeChapter, "work");
+  assert.equal(state.design, "design-02");
+  assert.equal(state.activeChapter, "capabilities");
   assert.equal(state.localProgress, 0.64);
-  assert.equal(state.selectedCase, "klein-paris");
   assert.equal(state.projectBrief.open, true);
   assert.equal(state.projectBrief.message, "A persistent project brief");
 });
@@ -45,7 +40,7 @@ test("semantic restoration maps local progress into a differently sized section"
 });
 
 test("only canonical chapter hashes are accepted", () => {
-  assert.equal(chapterFromHash("#ai-systems"), "ai-systems");
+  assert.equal(chapterFromHash("#capabilities"), "capabilities");
   assert.equal(chapterFromHash("#unknown"), null);
 });
 

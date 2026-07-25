@@ -10,6 +10,7 @@
   --paper-deep: #e5e0d5;
   --ink: #171714;
   --signal: #e34f35;
+  --field-ink: #14201f;
   position: fixed;
   inset: 0;
   isolation: isolate;
@@ -111,13 +112,6 @@
   letter-spacing: 0.08em;
 }
 
-.brand span {
-  font: 400 8px/1.2 var(--font-mono);
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  opacity: 0.64;
-}
-
 .header nav {
   display: flex;
   align-items: center;
@@ -215,55 +209,64 @@
   box-shadow: 0 0 14px var(--amber);
 }
 
-.root[data-design="signal"] .header {
+.root[data-design="design-02"] .header {
   color: var(--ink);
   border-color: rgb(23 23 20 / 22%);
   background: rgb(240 237 229 / 88%);
 }
 
+.root[data-design="design-03"] .header {
+  color: var(--field-ink);
+  border-color: rgb(20 32 31 / 26%);
+  background: rgb(255 255 255 / 72%);
+}
+
+/*
+ * The entry is a caption over a living field, never a curtain in front of it.
+ * It contributes no background and no pointer capture: the MLS-MPM play state
+ * stays visible and reactive underneath from the first paint.
+ */
 .entry {
   position: fixed;
   inset: 0;
   z-index: 60;
   display: grid;
-  place-items: center;
+  /* Bottom-left: the hero's body line is right-aligned, so this corner stays free. */
+  place-items: end start;
+  padding: 0 clamp(22px, 6vw, 96px) clamp(34px, 8vh, 78px);
   overflow: hidden;
-  background: #b7dce3;
-}
-
-.distantAtmosphere {
-  position: absolute;
-  inset: -8%;
-  background:
-    radial-gradient(circle at 50% 64%, rgb(255 228 176 / 72%), transparent 18%),
-    radial-gradient(ellipse at 50% 110%, rgb(255 255 255 / 100%) 0 22%, transparent 50%),
-    radial-gradient(ellipse at 18% 72%, rgb(242 255 254 / 88%), transparent 30%),
-    radial-gradient(ellipse at 82% 78%, rgb(244 222 221 / 78%), transparent 30%),
-    linear-gradient(#86c9e5, #e8f5f2 61%, #fff4e1);
-  filter: saturate(0.92);
-  transform: scale(1.08);
-  transition: transform 6s cubic-bezier(0.2, 0.6, 0.1, 1), filter 1s ease;
-}
-
-.entry[data-phase="arrival"] .distantAtmosphere,
-.entry[data-phase="handoff"] .distantAtmosphere {
-  transform: scale(1.55);
-  filter: saturate(1.1) brightness(1.08);
+  pointer-events: none;
 }
 
 .entry[data-phase="handoff"] {
   animation: handoffFade 900ms var(--ease-out-expo) forwards;
 }
 
+/*
+ * A threshold plate, not a page: it carries its own contrast so it stays readable
+ * over any reality behind it, and it never grows wider than its content.
+ */
 .entryCopy {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: min(880px, calc(100vw - 40px));
-  color: #08292d;
+  max-width: calc(100vw - 32px);
+  padding: 18px clamp(18px, 3vw, 34px);
+  color: var(--reef-copy);
+  border: 1px solid rgb(230 255 248 / 22%);
+  background: rgb(5 19 21 / 78%);
+  backdrop-filter: blur(20px) saturate(1.2);
   text-align: center;
+}
+
+.entryCopy > p,
+.entryCopy > span,
+.entryActions,
+.realityChoice,
+.arrivalReadout {
+  pointer-events: auto;
 }
 
 .entryCopy > p {
@@ -273,8 +276,9 @@
 }
 
 .entryTitle {
-  max-width: 14ch;
-  font: 400 clamp(58px, 8.5vw, 132px)/0.82 var(--font-display);
+  display: flex;
+  flex-direction: column;
+  font: 400 clamp(48px, 6.6vw, 106px)/0.84 var(--font-display);
   letter-spacing: -0.055em;
   text-wrap: balance;
 }
@@ -290,14 +294,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 36px;
 }
 
 .entryActions button,
-.recomposeChapter button,
-.contactActions button,
-.contactActions a,
-.audit-input-row button,
+.primaryAction,
+.designChoices button,
 .briefForm a {
   display: inline-flex;
   align-items: center;
@@ -312,18 +313,72 @@
   transition: color 180ms ease, background 180ms ease, transform 180ms ease;
 }
 
+/* The two doors carry their own contrast: whatever the world does behind them,
+   they stay legible. */
 .entryActions button:first-child {
   color: #ecfffb;
   border-color: #0b3438;
   background: #0b3438;
 }
 
+.entryActions button + button {
+  color: #08292d;
+  border-color: rgb(255 255 255 / 88%);
+  background: rgb(255 255 255 / 88%);
+}
+
+/* At the gate there are exactly two ways in; the hero's own action waits. */
+.root:not([data-intro="entered"]) .heroChapter .primaryAction {
+  display: none;
+}
+
+/* The threshold plate gets reserved room instead of covering the hero copy. */
+.root:not([data-intro="entered"]) .chapterSticky {
+  padding-bottom: 168px;
+}
+
 .entryActions button:hover,
-.recomposeChapter button:hover,
-.contactActions button:hover,
-.contactActions a:hover,
-.audit-input-row button:hover,
+.primaryAction:hover,
+.designChoices button:hover,
 .briefForm a:hover {
+  transform: translateY(-2px);
+}
+
+.realityChoice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.realityChoice > p {
+  margin-bottom: 14px;
+  font: 500 9px/1 var(--font-mono);
+  letter-spacing: 0.22em;
+}
+
+.realityChoice > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.realityChoice button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 132px;
+  min-height: 52px;
+  padding: 0 22px;
+  color: #ecfffb;
+  border: 1px solid #0b3438;
+  background: #0b3438;
+  font: 500 9px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.realityChoice button:hover {
   transform: translateY(-2px);
 }
 
@@ -358,8 +413,14 @@
   position: absolute;
   right: 30px;
   bottom: 26px;
+  left: auto;
+  justify-self: end;
+  align-self: end;
   min-height: 44px;
-  color: #08292d;
+  padding-inline: 12px;
+  color: var(--reef-copy);
+  background: rgb(5 19 21 / 72%);
+  pointer-events: auto;
   font: 500 9px/1 var(--font-mono);
   letter-spacing: 0.12em;
 }
@@ -386,16 +447,7 @@
   min-height: 100%;
 }
 
-.reefRenderer {
-  color: var(--reef-copy);
-}
-
-.signalRenderer {
-  color: var(--ink);
-  background:
-    linear-gradient(90deg, transparent 0 calc(8.333% - 1px), rgb(23 23 20 / 8%) calc(8.333% - 1px) 8.333%, transparent 8.333% 91.666%, rgb(23 23 20 / 8%) 91.666% calc(91.666% + 1px), transparent calc(91.666% + 1px)),
-    var(--paper);
-}
+/* ── Shared chapter structure ─────────────────────────────────────────────── */
 
 .chapter {
   position: relative;
@@ -418,15 +470,8 @@
   pointer-events: auto;
 }
 
-.reefRenderer .chapterSticky > * {
-  opacity: calc(0.38 + min(var(--sp, 0), 0.62));
-  transform: translate3d(0, calc((1 - min(var(--sp, 0), 1)) * 32px), 0);
-  transition: opacity 240ms linear;
-}
-
 .chapter h2,
-.chapter h1,
-.heroChapter h2 {
+.chapter h1 {
   display: flex;
   flex-direction: column;
   font: 400 clamp(60px, 9.2vw, 152px)/0.8 var(--font-display);
@@ -441,23 +486,23 @@
   gap: clamp(28px, 5vw, 90px);
 }
 
-.chapterIntro > p,
 .heroChapter > span,
-.recomposeChapter > p {
+.principleChapter > p,
+.lenoxChapter > p,
+.contactChapter > p {
+  display: flex;
+  flex-direction: column;
   max-width: 48ch;
   font-size: clamp(15px, 1.45vw, 21px);
   line-height: 1.55;
 }
 
-.reefRenderer .chapterIntro,
-.reefRenderer .heroChapter,
-.reefRenderer .recomposeChapter,
-.reefRenderer .contactChapter {
-  padding: clamp(24px, 4vw, 58px);
-  border: 1px solid var(--reef-line);
-  background: var(--reef-panel);
-  box-shadow: 0 28px 80px rgb(1 10 12 / 25%);
-  backdrop-filter: blur(24px) saturate(1.2);
+.heroChapter,
+.principleChapter,
+.capabilitiesChapter,
+.lenoxChapter,
+.contactChapter {
+  width: 100%;
 }
 
 .heroChapter {
@@ -465,193 +510,54 @@
   margin-left: auto;
 }
 
-.heroChapter > p {
-  margin-bottom: 28px;
-  color: var(--seafoam);
-  font: 500 9px/1 var(--font-mono);
-  letter-spacing: 0.18em;
-}
-
 .heroChapter h1 {
   font-size: clamp(66px, 9.5vw, 156px);
 }
 
 .heroChapter > span {
-  display: block;
   margin: 34px 0 0 auto;
 }
 
-.workChapter,
-.servicesChapter,
-.lenoxChapter,
-.aiChapter,
-.volkanChapter,
-.contactChapter {
-  width: 100%;
+.primaryAction {
+  margin-top: 34px;
 }
 
-.workChapter {
-  align-self: flex-start;
-  padding-top: 8svh;
+.heroChapter .primaryAction {
+  margin-left: auto;
 }
 
-.caseSelector {
+/* 02 — the switch is the argument; it sits directly under the claim. */
+.principleChapter h2 {
+  font-size: clamp(58px, 8.5vw, 138px);
+}
+
+.principleChapter > p {
+  margin-top: 30px;
+}
+
+.designChoices {
   display: flex;
-  justify-content: flex-end;
-  margin: 44px 0 18px;
-}
-
-.caseSelector button {
-  min-width: 150px;
-  min-height: 52px;
-  padding-inline: 16px;
-  color: inherit;
-  border-block: 1px solid currentColor;
-  font: 500 10px/1 var(--font-mono);
-  letter-spacing: 0.08em;
-  opacity: 0.46;
-}
-
-.caseSelector button + button {
-  border-left: 1px solid currentColor;
-}
-
-.caseSelector button[aria-selected="true"] {
-  opacity: 1;
-  background: rgb(156 233 218 / 10%);
-}
-
-.caseSelector button span {
-  margin-right: 10px;
-  color: var(--case-color, currentColor);
-}
-
-.casePanel {
-  --case-color: var(--seafoam);
-  display: grid;
-  grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr);
-  min-height: 56svh;
-  border-top: 4px solid var(--case-color);
-  color: var(--reef-copy);
-  background: var(--reef-panel);
-  backdrop-filter: blur(26px);
-}
-
-.caseMedia {
-  position: relative;
-  min-height: 460px;
-  overflow: hidden;
-}
-
-.caseMedia img {
-  object-fit: cover;
-  filter: saturate(0.88) contrast(1.05);
-  transition: transform 700ms var(--ease-out-expo), filter 500ms ease;
-}
-
-.casePanel:hover .caseMedia img {
-  transform: scale(1.025);
-  filter: saturate(1) contrast(1.02);
-}
-
-.caseMedia > span {
-  position: absolute;
-  top: 18px;
-  left: 18px;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  color: #081416;
-  background: var(--case-color);
-  font: 500 10px/1 var(--font-mono);
-}
-
-.caseDetails {
-  display: flex;
-  flex-direction: column;
-  padding: clamp(28px, 4vw, 58px);
-}
-
-.caseDetails header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid var(--reef-line);
-}
-
-.caseDetails h3 {
-  font: 400 clamp(44px, 5vw, 82px)/0.86 var(--font-display);
-  letter-spacing: -0.045em;
-}
-
-.caseDetails header p {
-  max-width: 25ch;
-  font: 400 10px/1.45 var(--font-mono);
-  text-align: right;
-  text-transform: uppercase;
-  opacity: 0.68;
-}
-
-.caseMeta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
+  margin-top: 40px;
 }
 
-.caseMeta > span {
-  color: var(--case-color);
-  font: 500 8px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
-  text-align: right;
+.designChoices button {
+  min-width: 88px;
 }
 
-.evidenceGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: auto;
+.designChoices button[aria-current="true"] {
+  color: var(--reef-ink);
+  background: var(--seafoam);
+  border-color: var(--seafoam);
 }
 
-.evidenceGrid > div {
-  min-height: 145px;
-  padding: 24px 20px 20px 0;
-  border-bottom: 1px solid var(--reef-line);
-}
-
-.evidenceGrid > div:nth-child(even) {
-  padding-left: 20px;
-  border-left: 1px solid var(--reef-line);
-}
-
-.evidenceGrid span,
-.demo-disclosure,
-.audit-result-head,
-.moduleTeasers small {
-  color: var(--seafoam);
-  font: 500 8px/1 var(--font-mono);
-  letter-spacing: 0.14em;
-}
-
-.evidenceGrid p {
-  margin-top: 13px;
-  font-size: 13px;
-  line-height: 1.5;
-  opacity: 0.82;
-}
-
-.serviceLines,
-.abilityList,
-.moduleTeasers,
-.roleMatrix {
+/* 03 */
+.capabilityLines {
   margin-top: 52px;
 }
 
-.serviceLines article,
-.moduleTeasers article {
+.capabilityLines article {
   display: grid;
   grid-template-columns: 72px minmax(180px, 0.8fr) minmax(280px, 1fr);
   align-items: baseline;
@@ -660,231 +566,41 @@
   border-top: 1px solid currentColor;
 }
 
-.serviceLines article > span,
-.moduleTeasers article > span,
-.abilityList span,
-.roleMatrix span {
+.capabilityLines article > span {
   font: 500 9px/1 var(--font-mono);
   opacity: 0.58;
 }
 
-.serviceLines h3,
-.moduleTeasers h3 {
+.capabilityLines h3 {
   font: 400 clamp(28px, 3.4vw, 54px)/0.9 var(--font-display);
   letter-spacing: -0.035em;
 }
 
-.serviceLines p,
-.moduleTeasers p {
+.capabilityLines h3 a {
+  color: inherit;
+  border-bottom: 1px solid currentColor;
+}
+
+.capabilityLines p {
   font-size: 14px;
   line-height: 1.5;
   opacity: 0.74;
 }
 
-.reefRenderer .servicesChapter,
-.reefRenderer .lenoxChapter,
-.reefRenderer .aiChapter,
-.reefRenderer .volkanChapter {
-  padding: clamp(28px, 4.5vw, 64px);
-  border: 1px solid var(--reef-line);
-  background: var(--reef-panel);
-  backdrop-filter: blur(24px);
-}
-
-.abilityList {
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  border-top: 1px solid currentColor;
-}
-
-.abilityList li {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  min-height: 104px;
-  padding: 20px;
-  border-bottom: 1px solid currentColor;
-  font: 400 clamp(22px, 3vw, 44px)/1 var(--font-display);
-}
-
-.abilityList li:nth-child(odd) {
-  border-right: 1px solid currentColor;
-}
-
-:global(.intelligence-demo) {
-  margin-top: 54px;
-  padding: clamp(24px, 3.2vw, 46px);
-  color: var(--reef-copy);
-  background: #061416;
-  border: 1px solid rgb(156 233 218 / 30%);
-}
-
-:global(.demo-disclosure) {
-  color: var(--coral);
-  font: 500 8px/1 var(--font-mono);
-  letter-spacing: 0.15em;
-}
-
-:global(.intelligence-demo form) {
-  margin-top: 30px;
-}
-
-:global(.intelligence-demo label) {
-  display: block;
-  margin-bottom: 12px;
-  font: 500 9px/1 var(--font-mono);
-  letter-spacing: 0.14em;
-}
-
-:global(.audit-input-row) {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  border-bottom: 1px solid rgb(238 252 248 / 54%);
-}
-
-:global(.audit-input-row input) {
-  min-width: 0;
-  min-height: 72px;
-  padding: 0;
-  color: var(--reef-copy);
-  font: 400 clamp(28px, 4vw, 58px)/1 var(--font-display);
-  letter-spacing: -0.03em;
-}
-
-:global(.audit-input-row button) {
-  align-self: center;
-}
-
-:global(.field-error) {
-  margin-top: 10px;
-  color: var(--coral);
-  font: 500 10px/1.4 var(--font-mono);
-}
-
-:global(.audit-result) {
-  margin-top: 36px;
-}
-
-:global(.audit-result-head) {
-  display: flex;
-  justify-content: space-between;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgb(238 252 248 / 22%);
-  color: var(--seafoam);
-  font: 500 8px/1 var(--font-mono);
-  letter-spacing: 0.12em;
-}
-
-:global(.audit-findings) {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-}
-
-:global(.audit-findings article) {
-  min-height: 150px;
-  padding: 22px 20px 20px 0;
-  border-bottom: 1px solid rgb(238 252 248 / 18%);
-}
-
-:global(.audit-findings article:not(:nth-child(3n + 1))) {
-  padding-left: 20px;
-  border-left: 1px solid rgb(238 252 248 / 18%);
-}
-
-:global(.audit-findings span) {
-  color: var(--amber);
-  font: 500 8px/1 var(--font-mono);
-  letter-spacing: 0.12em;
-}
-
-:global(.audit-findings p),
-:global(.audit-note) {
-  margin-top: 14px;
-  font-size: 12px;
-  line-height: 1.5;
-  opacity: 0.72;
-}
-
-.moduleTeasers article {
-  grid-template-columns: 62px 1fr auto;
-}
-
-.inlineLink {
-  display: inline-block;
-  margin-top: 28px;
-  padding-bottom: 8px;
-  color: inherit;
-  border-bottom: 1px solid currentColor;
-  font: 500 9px/1 var(--font-mono);
-  letter-spacing: 0.12em;
-}
-
-.roleMatrix {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  border-top: 1px solid currentColor;
-  border-bottom: 1px solid currentColor;
-}
-
-.roleMatrix div {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 180px;
-  padding: 20px;
-  font: 400 clamp(24px, 3vw, 44px)/0.95 var(--font-display);
-}
-
-.roleMatrix div + div {
-  border-left: 1px solid currentColor;
-}
-
-.recomposeChapter {
-  width: min(1180px, 90vw);
-  margin-inline: auto;
-  text-align: center;
-}
-
-.recomposeChapter h2 {
-  font-size: clamp(58px, 8.5vw, 138px);
-}
-
-.recomposeChapter p {
-  margin: 32px auto;
-}
-
-.designChoices {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-}
-
-.recomposeChapter button {
-  color: var(--reef-copy);
-  background: #0b3538;
-}
-
+/* 05 */
 .contactChapter {
   margin-top: auto;
 }
 
-.contactActions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  margin-top: 36px;
-}
-
-.contactActions > * + * {
-  border-left: 0;
+.contactChapter > p {
+  margin-top: 26px;
 }
 
 .briefForm {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1px;
-  margin-top: 1px;
+  margin-top: 24px;
   background: var(--reef-line);
 }
 
@@ -909,95 +625,166 @@
   background: var(--reef-panel);
 }
 
-.signalRenderer .chapterSticky {
+.studioFooter {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 54px;
+  padding-top: 18px;
+  border-top: 1px solid currentColor;
+  font: 500 8px/1.4 var(--font-mono);
+  letter-spacing: 0.14em;
+  opacity: 0.7;
+}
+
+/* ── DESIGN 01 — dark islands floating on the world film ──────────────────── */
+
+.renderer01 {
+  color: var(--reef-copy);
+}
+
+.renderer01 .chapterSticky > * {
+  opacity: calc(0.38 + min(var(--sp, 0), 0.62));
+  transform: translate3d(0, calc((1 - min(var(--sp, 0), 1)) * 32px), 0);
+  transition: opacity 240ms linear;
+}
+
+/* Before entry no director runs, so --sp is unset: the hero must not sit at 0.38. */
+.root:not([data-intro="entered"]) .renderer01 .chapterSticky > * {
+  opacity: 1;
+  transform: none;
+}
+
+.renderer01 .heroChapter,
+.renderer01 .principleChapter,
+.renderer01 .capabilitiesChapter,
+.renderer01 .lenoxChapter,
+.renderer01 .contactChapter {
+  padding: clamp(24px, 4vw, 58px);
+  border: 1px solid var(--reef-line);
+  background: var(--reef-panel);
+  box-shadow: 0 28px 80px rgb(1 10 12 / 25%);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+
+/* ── DESIGN 02 — editorial paper, hairline grid, one signal colour ─────────── */
+
+.renderer02 {
+  color: var(--ink);
+  background:
+    linear-gradient(90deg, transparent 0 calc(8.333% - 1px), rgb(23 23 20 / 8%) calc(8.333% - 1px) 8.333%, transparent 8.333% 91.666%, rgb(23 23 20 / 8%) 91.666% calc(91.666% + 1px), transparent calc(91.666% + 1px)),
+    var(--paper);
+}
+
+.renderer02 .chapterSticky {
   padding-inline: 8.333vw;
 }
 
-.signalRenderer .chapterSticky > * {
+.renderer02 .chapterSticky > * {
   width: 100%;
 }
 
-.signalRenderer .chapterIntro,
-.signalRenderer .heroChapter,
-.signalRenderer .recomposeChapter,
-.signalRenderer .contactChapter {
-  padding: 0;
-}
-
-.signalRenderer .chapter h2,
-.signalRenderer .chapter h1,
-.signalRenderer .heroChapter h1 {
+.renderer02 .chapter h2,
+.renderer02 .chapter h1 {
   color: var(--ink);
   font-size: clamp(74px, 11vw, 180px);
   line-height: 0.76;
 }
 
-.signalRenderer .heroChapter {
+.renderer02 .heroChapter {
   width: 100%;
   margin: 0;
 }
 
-.signalRenderer .heroChapter > p {
-  color: var(--signal);
-}
-
-.signalRenderer .heroChapter > span {
+.renderer02 .heroChapter > span {
   margin-left: 50%;
 }
 
-.signalRenderer .casePanel {
-  color: var(--ink);
-  background: transparent;
-  border-bottom: 1px solid var(--ink);
-}
-
-.signalRenderer .caseSelector button[aria-selected="true"] {
-  color: var(--paper);
-  background: var(--ink);
-}
-
-.signalRenderer .caseDetails header,
-.signalRenderer .evidenceGrid > div,
-.signalRenderer .evidenceGrid > div:nth-child(even) {
-  border-color: rgb(23 23 20 / 28%);
-}
-
-.signalRenderer .evidenceGrid span {
-  color: var(--signal);
-}
-
-.signalRenderer .servicesChapter,
-.signalRenderer .lenoxChapter,
-.signalRenderer .aiChapter,
-.signalRenderer .volkanChapter {
-  padding: 0;
-}
-
-.signalRenderer :global(.intelligence-demo) {
-  border-color: var(--ink);
-}
-
-.signalRenderer .recomposeChapter button {
+.renderer02 .designChoices button[aria-current="true"] {
   color: var(--paper);
   background: var(--signal);
   border-color: var(--signal);
 }
 
-.signalRenderer .contactActions button,
-.signalRenderer .contactActions a,
-.signalRenderer .briefForm a {
-  color: var(--ink);
+.renderer02 .capabilityLines h3 {
+  color: var(--signal);
 }
 
-.signalRenderer .briefForm {
+.renderer02 .briefForm {
   background: rgb(23 23 20 / 24%);
 }
 
-.signalRenderer .briefForm input,
-.signalRenderer .briefForm textarea,
-.signalRenderer .briefForm a {
+.renderer02 .briefForm input,
+.renderer02 .briefForm textarea,
+.renderer02 .briefForm a {
   color: var(--ink);
   background: var(--paper);
+}
+
+/* ── DESIGN 03 — colour field, one saturated plane per chapter ─────────────── */
+
+.renderer03 {
+  color: var(--field-ink);
+  background: #f2efe6;
+}
+
+.renderer03 .chapter {
+  background: var(--field, #f2efe6);
+  transition: background 700ms var(--ease-out-expo);
+}
+
+.renderer03 .chapter[data-chapter="hero"] { --field: #ffd9a0; }
+.renderer03 .chapter[data-chapter="principle"] { --field: #b8e0d2; }
+.renderer03 .chapter[data-chapter="capabilities"] { --field: #ffb8a8; }
+.renderer03 .chapter[data-chapter="lenox"] { --field: #cdd8f0; }
+.renderer03 .chapter[data-chapter="contact"] { --field: #f2efe6; }
+
+.renderer03 .chapterSticky {
+  align-items: flex-end;
+  padding-bottom: clamp(38px, 8vh, 96px);
+}
+
+.renderer03 .chapter h2,
+.renderer03 .chapter h1 {
+  font-size: clamp(72px, 12.5vw, 210px);
+  line-height: 0.74;
+  letter-spacing: -0.06em;
+}
+
+.renderer03 .heroChapter {
+  width: 100%;
+  margin: 0;
+}
+
+.renderer03 .heroChapter > span,
+.renderer03 .heroChapter .primaryAction {
+  margin-left: 0;
+}
+
+.renderer03 .chapterIntro {
+  display: block;
+}
+
+.renderer03 .capabilityLines article {
+  border-top-color: rgb(20 32 31 / 30%);
+}
+
+.renderer03 .designChoices button[aria-current="true"] {
+  color: #f6f4ee;
+  background: var(--field-ink);
+  border-color: var(--field-ink);
+}
+
+.renderer03 .briefForm {
+  background: rgb(20 32 31 / 22%);
+}
+
+.renderer03 .briefForm input,
+.renderer03 .briefForm textarea,
+.renderer03 .briefForm a {
+  color: var(--field-ink);
+  background: #faf8f3;
 }
 
 .morphCurtain {
@@ -1048,10 +835,6 @@
     display: none;
   }
 
-  .brand span {
-    display: none;
-  }
-
   .status {
     min-width: 0;
   }
@@ -1061,20 +844,36 @@
     padding: 44svh 16px max(28px, env(safe-area-inset-bottom));
   }
 
+  .root:not([data-intro="entered"]) .chapterSticky {
+    padding-bottom: 210px;
+  }
+
+  .entry {
+    padding: 0 12px max(14px, env(safe-area-inset-bottom));
+  }
+
+  .entryCopy {
+    width: 100%;
+  }
+
+  .entryActions {
+    width: 100%;
+  }
+
+  .entryActions button {
+    flex: 1;
+  }
+
   .chapterIntro {
     display: block;
   }
 
-  .chapterIntro > p {
-    margin-top: 24px;
-  }
-
   .chapter h2,
   .chapter h1,
-  .heroChapter h2,
-  .signalRenderer .chapter h2,
-  .signalRenderer .chapter h1,
-  .signalRenderer .heroChapter h2 {
+  .renderer02 .chapter h2,
+  .renderer02 .chapter h1,
+  .renderer03 .chapter h2,
+  .renderer03 .chapter h1 {
     font-size: clamp(48px, 14.5vw, 94px);
     line-height: 0.82;
   }
@@ -1088,124 +887,34 @@
     transform: scale(1.14);
   }
 
-  .heroChapter,
-  .workChapter,
-  .servicesChapter,
-  .lenoxChapter,
-  .aiChapter,
-  .volkanChapter,
-  .contactChapter {
+  .heroChapter {
     width: 100%;
+    margin: 0;
   }
 
-  .reefRenderer .chapterIntro,
-  .reefRenderer .heroChapter,
-  .reefRenderer .recomposeChapter,
-  .reefRenderer .contactChapter,
-  .reefRenderer .servicesChapter,
-  .reefRenderer .lenoxChapter,
-  .reefRenderer .aiChapter,
-  .reefRenderer .volkanChapter {
+  .heroChapter > span,
+  .heroChapter .primaryAction {
+    margin-left: 0;
+  }
+
+  .renderer01 .heroChapter,
+  .renderer01 .principleChapter,
+  .renderer01 .capabilitiesChapter,
+  .renderer01 .lenoxChapter,
+  .renderer01 .contactChapter {
     padding: 22px;
   }
 
-  .caseSelector {
-    justify-content: flex-start;
-    overflow-x: auto;
-    margin-top: 24px;
-  }
-
-  .caseSelector button {
-    min-width: 142px;
-  }
-
-  .casePanel {
-    grid-template-columns: 1fr;
-  }
-
-  .caseMedia {
-    min-height: 34svh;
-  }
-
-  .caseDetails {
-    padding: 24px;
-  }
-
-  .caseDetails header {
-    align-items: flex-start;
-  }
-
-  .caseDetails header p {
-    text-align: left;
-  }
-
-  .evidenceGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .evidenceGrid > div,
-  .evidenceGrid > div:nth-child(even) {
-    min-height: 0;
-    padding: 18px 0;
-    border-left: 0;
-  }
-
-  .serviceLines article,
-  .moduleTeasers article {
+  .capabilityLines article {
     grid-template-columns: 42px 1fr;
   }
 
-  .serviceLines article p,
-  .moduleTeasers article small {
+  .capabilityLines article p {
     grid-column: 2;
   }
 
-  .abilityList,
-  .roleMatrix {
-    grid-template-columns: 1fr;
-  }
-
-  .abilityList li:nth-child(odd),
-  .roleMatrix div + div {
-    border-right: 0;
-    border-left: 0;
-  }
-
-  .roleMatrix div {
-    min-height: 74px;
-    flex-direction: row;
-  }
-
-  :global(.audit-input-row) {
-    grid-template-columns: 1fr;
-  }
-
-  :global(.audit-input-row button) {
-    margin-bottom: 14px;
-  }
-
-  :global(.audit-findings) {
-    grid-template-columns: 1fr;
-  }
-
-  :global(.audit-findings article),
-  :global(.audit-findings article:not(:nth-child(3n + 1))) {
-    min-height: 0;
-    padding: 18px 0;
-    border-left: 0;
-  }
-
-  .contactActions,
   .briefForm {
     grid-template-columns: 1fr;
-  }
-
-  .contactActions > * + *,
-  .briefForm input,
-  .briefForm textarea,
-  .briefForm a {
-    border-left: 1px solid currentColor;
-    border-top: 0;
   }
 
   .briefForm textarea,
@@ -1213,12 +922,16 @@
     grid-column: 1;
   }
 
-  .signalRenderer .chapterSticky {
+  .renderer02 .chapterSticky {
     padding-inline: 16px;
   }
 
-  .signalRenderer .heroChapter > span {
+  .renderer02 .heroChapter > span {
     margin-left: 0;
+  }
+
+  .studioFooter {
+    flex-direction: column;
   }
 }
 
@@ -1240,7 +953,7 @@
   }
 
   .entryTitle {
-    font-size: clamp(50px, 16vw, 82px);
+    font-size: clamp(40px, 11.5vw, 66px);
   }
 
   .entryCopy > span {
@@ -1256,14 +969,6 @@
   .entryActions button {
     width: 100%;
   }
-
-  .caseDetails header {
-    display: block;
-  }
-
-  .caseDetails header p {
-    margin-top: 12px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1276,7 +981,7 @@
     transition-duration: 1ms !important;
   }
 
-  .reefRenderer .chapterSticky > * {
+  .renderer01 .chapterSticky > * {
     opacity: 1;
     transform: none;
   }
