@@ -1,5 +1,11 @@
 # LENOX — THE GRAVITY REEF · Scroll Score (LOCKED 2026-07-18)
 
+> **SUPERSEDED AS VISUAL DIRECTION — 2026-07-25.** The reef world is retired: see
+> `design-01-living-surface.md`. The background is no longer a place but one living
+> material. What remains valid here is the **production discipline** (one master still,
+> image-to-image consistency, no camera reversal in transitions) should film ever be
+> used again in a later chapter.
+
 **Status:** Team-locked (Volkan + Fable + ChatGPT + Codex; Gemini's shader-background proposal rejected as architecture conflict). This document is the binding beat contract for the first scroll-background film. Supersedes the three underwater pitches of 2026-07-18.
 
 ## World Definition

@@ -1,5 +1,9 @@
 # GRAVITY Creative Contract
 
+> **SUPERSEDED AS VISUAL DIRECTION — 2026-07-25.** See `design-01-living-surface.md`.
+> The collapse beats and behavioural grammar below remain a useful reference; the
+> world they describe is retired.
+
 **Approved:** 2026-07-16 by Volkan (continuation approval on the recommended pair; individual calls below remain revisitable at video review).
 **Basis:** `docs/concepts/gravity-transition-concepts-2026-07-16.md` (concepts + Codex feasibility verdict) and the storyboard board `docs/concepts/gravity-collapse-storyboard-2026-07-16.html`.
 **Scope:** This contract binds the visible result. Implementation technique is the executor's domain within the Codex-verified boundaries.
