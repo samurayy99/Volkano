@@ -11,31 +11,52 @@ One writer to the tree at a time. Do not invent extra agent roles to divide task
 
 ## Product Truth
 
-The website itself is the AI demonstration. LENOX is the persistent living interface. The protected entry is `PLAY WITH ME -> WAKE LENOX`.
+The website itself is the AI demonstration. The studio sells two connected things:
+signature digital experiences, and custom AI intake/workflow systems. The page proves
+the first by being it, and the second in the customer moment.
 
-**The architecture is a three-layer hybrid, one scroll driving all layers:**
+**LENOX is the behaviour of the website, not a character on it.** No mascot, no face,
+no body, no authored character asset. The visitor recognises LENOX by what the page
+does, never by anatomy.
 
-1. **World (back):** a bright, surreal wonder-world as a pre-rendered, scroll-scrubbed camera flight — floating islands, rivers flowing upward, warm volumetric light, rich saturated color. Gravity visibly bent: that is what GRAVITY means now.
-2. **LENOX (middle):** rendered live on a transparent WebGPU canvas over the film. The world is cinema; the being in it is real — it notices the visitor (gaze first ~150 ms, then core, then limbs, root last). LENOX is NEVER baked into video.
-3. **Content (front):** semantic DOM. Native scroll-timelines (transform/opacity only), OKLCH tokens, content as compact dark islands floating on the loud world — never dim the world for readability.
+**Two layers, one scroll:**
 
-**LOOK — FINAL, confirmed three times by Volkan:** bright and colorful. The dark graphite/black/cyan "quiet, expensive, controlled power" direction is retired permanently — not as default, not as placeholder, not as mood. Emotion target: awe and wonder (reference: Volkan's FPV video 2026-07-17, Wallow color dramaturgy).
+1. **Matter (back):** the live WebGPU engine. One particle population, one material.
+2. **Content (front):** semantic DOM — copy, navigation, language, accessibility. It
+   always sits above the renderer and never reaches into it.
 
-**Composition rules:** the page is designed as one vertical composition first (World Strip), with a typed Scroll Score (beats carrying worldState, lenoxState, contentState, accent, energy) driving film, lattice, LENOX and DOM from one source. A living WebGPU lattice binds the film clips into one universe. Macro-dives alternate with wide panoramas for rhythm.
+**Words are fixed, design is not.** One content kernel serves every design, bilingual
+and word-identical: `docs/product/studio-content-contract.md` is binding. Designs are
+different *disciplines*, not different colours.
 
-ATELIER and SIGNAL remain future directions. OBSIDIAN/ALABASTER are historical experiments, not the thesis. A future world switch (THE BLINK) is not built until a second world exists.
+> **Art direction is deliberately not in this file.** It changes on visible material
+> and would rot here. Current direction: `docs/product/design-01-living-surface.md`.
+> Current tree and decisions: `docs/agent-system/CURRENT.md`.
 
-## Production Pipeline
+## Media Pipeline (conditional)
 
-Kling (generate) → Remotion (assemble as code) → FSV (deliver frame-exact) → live WebGPU overlay → DOM.
+Not used by design 01, which is fully computed. If a later chapter needs imagery or
+film, this is the route and its rules still apply:
 
-- **Generation:** one master still fixes world/light/palette → scene stills via image-to-image (one universe) → dive clips via image-to-video (slow continuous forward glide, one environment per clip, stable first/last frames) → transitions keyframed from REAL boundary frames of adjacent clips. Never prompt camera reversal or pull-up in transitions. Generated clips contain world only: no characters, no LENOX, no text, no logos.
-- **Scrub delivery:** `plutotcool/fsv` is the candidate core (WebCodecs, frame-accurate, alpha support). Gate before commitment: real iPhone Safari performance test. Fallback: classic `currentTime` scrubbing behind the same interface.
-- **Assembly:** Remotion (skills installed, see below). Company license must be clarified before commercial renders. VideoFlow (Apache-2.0) is the fallback.
+Kling (generate) → Remotion (assemble as code) → frame-exact delivery → DOM.
+
+- **Generation:** one master still fixes world/light/palette → scene stills via
+  image-to-image (one universe) → clips via image-to-video (slow continuous glide, one
+  environment per clip, stable first/last frames) → transitions keyframed from REAL
+  boundary frames. Never prompt camera reversal in transitions. Generated clips contain
+  world only: no characters, no text, no logos.
+- **Scrub delivery:** encode with one keyframe per frame (`-g 1`) or the scrub stutters.
+  Gate before commitment: real iPhone Safari test.
+- **Portrait is produced, never cropped.** A landscape clip cut to 9:16 reads as
+  cropped, because it is.
 
 ## Engine Truth
 
-The existing WebGPU engine in `src/flow-engine/` is the live layer. Preserve: single render loop, `engineBridge` contract, Three.js `0.175.0`, one scroll authority (`src/app/studio/studioDirector.ts` — the older `journeyDirector` was removed with the unreachable stage code on 2026-07-25). React sends discrete intents (`setLenoxIntent`: rest/observe/guide/confirm); the engine owns all continuous easing. Canonical signals (energy/attention/tension) drive body material, field and throttled CSS tokens from one source. The current body is a Phase-1 procedural silhouette (2 lead + 4 support arms) awaiting the bright-world reskin; the authored GLB comes after the silhouette passes Volkan's judgment.
+The existing WebGPU engine in `src/flow-engine/` is the live layer. Preserve: single render loop, `engineBridge` contract, Three.js `0.175.0`, one scroll authority (`src/app/studio/studioDirector.ts` — the older `journeyDirector` was removed with the unreachable stage code on 2026-07-25). React sends discrete intents; the engine owns all continuous easing. Canonical signals (energy/attention/tension) drive material, field and throttled CSS tokens from one source.
+
+**One solver, one particle population, one material language, multiple force and target states.** The MLS-MPM simulation and its ray-based pointer path are preserved; the field-only runtime on `origin/codex/living-agency-v1` is rejected and must not return.
+
+The procedural body (`lenoxBody.js`, 2 lead + 4 support arms) and the authored character path are **retired as of 2026-07-25** but still present in the engine — they are dead direction, not dead code, and will be removed once the phase-field proof replaces them.
 
 Read `docs/agent-system/TASK.md` for the active assignment and `docs/agent-system/CURRENT.md` for tree state before directing work.
 

@@ -26,13 +26,38 @@ mapped onto the chapters. One solver, one particle population, one material
 language, multiple force and target states. Design 01 may be dark; designs 02 and
 03 carry the bright register.
 
-**P1 (opening) is engineering-passed and visually rejected** — see `/proto/opening`
-and the commit body of `46ed58c`. Do not start P2 before the opening choreography
-has a second pass.
+**P1 (opening) is engineering-passed and visually rejected.** `/proto/opening` is a
+legacy engineering proof — keep it as evidence, **do not extend it**. The old
+P1 → P2 sequence is void.
+
+**The order is now A → B → C** (`docs/agent-system/TASK.md` carries the active one):
+
+```
+A  PHASE FIELD    /proto/phase-field   AMBIENT · ATTENTION · LENOX + the material question
+B  CONDENSATE     directed, optically coherent, no face and no blob
+C  OPENING        the validated material opens into the first story scene
+```
+
+You cannot choreograph the opening of a substance that has not been defined.
+
+**Chapters versus beats:** six semantic chapters carry copy, URLs, navigation and
+state — `hero`, `principle`, `capabilities`, `lenox`, `diagnosis`, `contact`. *Arrival*
+and *opening* are motion beats inside `hero`, not chapters. Five are shipped;
+`diagnosis` is the one still to build.
+
+**Documentation split:** stable architecture rules live in `CLAUDE.md` / `AGENTS.md`.
+Evolving visual direction lives here and in `design-01-living-surface.md`. Art
+direction was removed from the two rule files on 2026-07-25 — it had rotted there
+for a week and would have kept sending agents back to the reef and the cephalopod.
+
+**Retired but still in the engine:** `lenoxBody.js` (2 lead + 4 support arms),
+`lenoxAuthoredCharacter.js`, `docs/character/lenox-canonical-reference.png`, and the
+wake path that still shows the vetoed robot face before the authored character fades
+in. Dead direction, live code. Removed once Proof A replaces it — do not extend.
 
 **Open and unproven:** particles holding a readable form *while breathing*; particle
 motion coupled to scroll rather than pointer; reduced-motion and non-WebGPU paths
-for the new direction.
+for the new direction; material quality with no imagery to hide behind.
 
 ## ONE-MAIN CONSOLIDATION (2026-07-20, Codex)
 

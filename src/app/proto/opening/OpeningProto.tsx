@@ -6,14 +6,25 @@ import { copy } from "../../studio/content";
 import styles from "./OpeningProto.module.css";
 
 /**
- * P1 — THE OPENING (prototype)
+ * P1 — THE OPENING
  *
- * Proves one thing and nothing else: the full-bleed world can contract into a panel,
- * revealing the page beneath, while the live LENOX canvas stays mounted and visible
- * through the whole transition — on desktop and on a real phone.
+ * LEGACY ENGINEERING PROOF · VISUALLY REJECTED 2026-07-25 · DO NOT EXTEND
  *
- * Deliberately NOT here: the seven-chapter journey, the content kernel, the design
- * registry, the gate. Those stay untouched until this gate passes.
+ * Kept as evidence, not as a starting point. It proved the transition is technically
+ * affordable (worst frame 9.3 ms at 120 fps, reverse scrub clean) and failed its
+ * visual gate: the world shrinks to a picture-in-picture card instead of opening,
+ * LENOX is scaled by the same formula instead of crossing a boundary, and everything
+ * rides one interpolation instead of distinct beats.
+ *
+ * It also predates the direction change — it drives an authored character through the
+ * old wake sequence, which the phase-field direction retires entirely.
+ *
+ * The successor is a NEW route, `/proto/phase-field`, built material-first. Reusing
+ * these CSS transforms and swapping the image for particles would reproduce the same
+ * rejected transition in a new colour.
+ *
+ * Direction: docs/product/design-01-living-surface.md
+ * Active task: docs/agent-system/TASK.md
  */
 
 const CLIP = "/flow-assets/gravity-clip-a-v2-dense.mp4";

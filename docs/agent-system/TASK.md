@@ -1,46 +1,90 @@
-# ACTIVE TASK: LENOX Core Presence + Reef Reskin
+# ACTIVE TASK: PROOF A — PHASE FIELD MATERIAL STATES
 
-**Assigned:** 2026-07-19, by Volkan. Codex `gpt-5.6-sol` is sole runtime writer. Fable wrote this briefing.
-**Mode:** MOMENTUM. No intermediate gates, no per-step video proofs, no verification pauses. Code the full scope in one run; author self-checks stay light (types compile, build boots). One joint test session at the end.
+**Assigned:** 2026-07-25 by Volkan, after the team round on Design 01.
+**Direction:** `docs/product/design-01-living-surface.md` (read it first).
+**Route:** `/proto/phase-field` — a new route. Do **not** extend `/proto/opening`.
 
-The design-system pass is closed (N-design registry, axes carried into CSS, gate leak fixed, timers clean, 30/30 tests, build green). It is **architecture-complete and not visually accepted** — no polish there until the final debugging session.
+## WHY THIS FIRST
 
-## WHY THIS, NOW
+The opening choreography cannot be designed for a material that does not exist yet.
+P1 proved the transition is technically affordable (9.3 ms worst frame) and failed
+visually — partly because there was no defined material to open. Everything else in
+the build order waits on this.
 
-The three-layer composition cannot be judged with the middle layer missing. The scrubbed film is verifiable on its own, but whether the dark content islands hold over the loud world, where LENOX sits in frame, and whether the three layers read as one image — none of that is answerable today. This pass puts the being into the frame so the final session has something to judge.
+## THE BINDING FRAME
 
-## SCOPE — everything codable in one run
+```
+no body            no arms              no face
+no mascot          no octopus           no robot
+no authored character asset             no GLB handoff
+no character representation of any kind
+```
 
-1. **Reskin to the bright world.** Pearl-opal materials replace the retired graphite/cyan values on body and eye rig. Uniforms and OKLCH tokens stay swappable parameters — the LOOK DECISION below is binding and not reopened.
-2. **The face.** Build against `docs/character/lenox-canonical-reference.png` — the canonical LENOX, in-repo. It carries **both** a tiny nose and a small closed-lip mouth (a faint upward curve, not a grin), plus the traits that make the soul: huge green glass eyes with a bright specular highlight, webbed fin-ears, pearl-droplet crown over the dome, seafoam pearl skin with iridescent speckling, and eight soft spiral arms with pale suckers. Decided 2026-07-18, never built — `lenoxBody.js` currently has arms only.
+**One solver, one particle population, one material language, multiple force and
+target states.** The MLS-MPM simulation and its ray-based pointer path are preserved.
+The field-only runtime on `origin/codex/living-agency-v1` is rejected.
 
-   **Expression channels (from the 2026-07-19 motion study).** A generated emotion clip was reviewed frame by frame. It is **not** a character reference — that character drifted (spiked crest, drawn-out snout, open cartoon mouth) and the PNG remains the shape law. What it did prove is the channel hierarchy, which is worth building to:
+LENOX is a **directed condensate state** inside the population — never an object
+placed in front of a background.
 
-   - **Brow leads.** Inner brow ends tilting up carried the entire read of concern; the mouth only confirmed it.
-   - **The fin-ears are an emotion channel.** They lift and spread on positive states, drop and fold on negative ones. Cheap to rig, and it survives at 64–96 px where mouth movement does not.
-   - **The eye highlight stays fixed** while the lid shape changes. That is what keeps the gaze alive rather than rendered.
-   - **The mouth stays closed-lip.** Joy is a change in curvature, never an open grin — otherwise "no smiling during serious creation beats" becomes unbuildable.
+## SCOPE
 
-   Not adopted from the clip: shifting anatomy, eyelashes, tears, heavy eyebrows, belly plating, cartoon mouth shapes. Sadness in particular is not a system state — `LenoxEmotion` communicates what LENOX is doing, not how it feels; the negative register is `concerned`.
+Three states of the same particles, visibly different by **behaviour**:
 
-   **The runtime rig does not change.** The reference has eight arms; the rig stays 2 lead + 4 support. The authored character's visible arm styling follows the reference and maps onto that rig. The reference is the target for material, proportion and face; it is not a modelling spec to reproduce literally.
-3. **Presence across the studio journey.** LENOX already survives the design morph (the bridge effect is keyed to `[reduced, writeSignals]`, and the layer sits outside `StudioJourney`) — **verify this, do not rebuild it.** What is missing: consuming the registry's `lenoxPresence` axis in the engine, and per-chapter placement through the existing station poses.
-4. **Vocabulary cleanup, narrow.** Drop the four legacy aliases from `LenoxProofState` (`idle`/`attract`/`waking`/`alive`) once the proof harness no longer needs them, and derive the studio's `LenoxStatus` from the engine vocabulary instead of paralleling it. No new type replaces them.
-5. **Reduced motion and banded composition.** Mobile is its own composition, per GOAL item 7 below.
+```
+AMBIENT    passive. distributed, slow irregular drift, no visible loop.
+           returns to rest. moves by itself when nobody touches it.
 
-## OUT OF SCOPE — do not build
+ATTENTION  the field notices the visitor. local response within ~150 ms of the
+           first pointer or touch, the rest follows. velocity matters: fast tears,
+           slow pushes.
 
-- **No fourth state machine.** `LenoxProofState` / `LenoxEmotion` / `LenoxIntent` are layered by design and stay authoritative. "Second state machine" is Rejected For Good.
-- **No per-emotion parameter tables.** Wire the transitions and hooks; leave the values coarse. Eye openness, iris position, blink rate, head tilt and mouth state get tuned in the final session with the image present — tuning them blind is the parameter circle that has cost this project twice.
-- ~~No authored Blender GLB~~ — **superseded 2026-07-19 by Volkan.** The Blender path is now in scope and running in parallel: a reproducible generator (`tools/blender/generate_lenox_blockout.py`) drives the blockout, artifacts land in `artifacts/lenox-blender/`. Silhouette iterations are judged from renders, not from description. Renders must be shot **on a bright background** — a pearl character on near-black misrepresents how it reads over the reef film, and the bright world is decided.
-- No visual acceptance, no browser gates, no screenshots requested along the way.
-- No Journey rebuild, no design-system polish, no old-stage cleanup.
+LENOX      directed. local density rises, motion gains intent, matter connects
+           optically. attentive without eyes.
+```
 
-## DONE WHEN (checked once, at the joint session)
+Plus the material question that decides everything else: **what is the substance?**
+Show the same matter in a small number of temperatures so Volkan can choose on moving
+material, not on description. Ultramarine · oxide/amber · dark mineral are the
+starting candidates; dark is permitted for design 01 because 02 and 03 carry the
+bright register.
 
-Desktop, mobile 390×844, reduced motion, both designs, and a morph with LENOX present throughout. `npx tsc --noEmit`, `npm test`, `npm run build` green; console clean on the golden path.
+## MUST PROVE
 
-Boundaries below still bind — especially: no commit, push, deploy or dependency change without Volkan's approval, and one writer at a time.
+1. Three states, unmistakably different, same particles.
+2. No mascot, no blob, no accidental face.
+3. Material reads as substance, not dust — light travelling through density.
+4. Pointer interaction stable; the field alive when untouched.
+5. A readable concentration that **holds and breathes** — the project's central
+   unproven risk.
+
+## OUT OF SCOPE
+
+Opening choreography. Journey wiring. Target maps. Diagnosis. Chapter work of any
+kind. Six render passes — add passes one at a time with a measured cost.
+
+## DONE WHEN
+
+Video to Volkan. Judged on moving material, never on stills or a written report —
+stills are exactly how P1's incoherent wake sequence was missed.
+
+Particle counts are adaptive tiers determined by visual testing. No fixed number is
+specified here.
+
+## AFTER THIS (do not start early)
+
+```
+Proof B — CONDENSATE   density → optical connection → attentive form → clean release
+Proof C — OPENING      the validated material opens into the first story scene
+then     TARGET MAPS, then the journey
+```
+
+## BOUNDARIES
+
+One writer at a time. Short isolated branch for this proof with small commits — the
+earlier lesson was uncommitted work, not branches as such. No commit, push, deploy or
+dependency change without Volkan's explicit approval.
+
 
 ---
 

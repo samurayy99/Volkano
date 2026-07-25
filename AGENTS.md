@@ -10,47 +10,49 @@ Only one agent writes to this working tree at a time.
 
 ## Product Truth
 
-VOLKAN AI STUDIO's website is itself the AI demonstration. LENOX is the persistent living interface. The protected entry is `PLAY WITH ME -> WAKE LENOX`.
+VOLKAN AI STUDIO's website is itself the AI demonstration. It sells two connected things: signature digital experiences, and custom AI intake/workflow systems.
 
-**The architecture is a three-layer hybrid, one scroll driving all layers:**
+**LENOX is the behaviour of the website, not a character on it.** No mascot, no face, no body, no arms, no authored character asset. Recognisable by what the page does, never by anatomy.
 
-1. **World (back):** a bright, surreal wonder-world as a pre-rendered, scroll-scrubbed camera flight — floating islands, rivers flowing upward, warm volumetric light, rich saturated color. Gravity visibly bent: that is what GRAVITY means now.
-2. **LENOX (middle):** rendered live on a transparent WebGPU canvas over the film. The world is cinema; the being in it is real. LENOX is NEVER baked into video, and generated clips never contain characters, text, logos, or UI.
-3. **Content (front):** semantic DOM. Native scroll-timelines (transform/opacity only), OKLCH tokens, content as compact dark islands floating on the loud world — never dim the world for readability.
+**Two layers, one scroll:**
 
-**LOOK — FINAL, confirmed three times by Volkan:** bright and colorful. The dark graphite/black/cyan "quiet, expensive, controlled power" direction is retired permanently — not as default, not as placeholder. Never resurrect a vetoed direction. Emotion target: awe and wonder.
+1. **Matter (back):** the live WebGPU engine. One particle population, one material.
+2. **Content (front):** semantic DOM — copy, navigation, language, accessibility. Always above the renderer, never reaching into it.
 
-**Composition:** the page is designed as one vertical composition (World Strip) with a typed Scroll Score — beats carrying worldState, lenoxState, contentState, accent, energy — driving film, lattice, LENOX and DOM from one source. A living WebGPU lattice binds the film clips into one universe.
+**Words are fixed, design is not.** One bilingual content kernel serves every design, word-identical: `docs/product/studio-content-contract.md` is binding. Designs are different disciplines, not different colours.
 
-ATELIER and SIGNAL remain future directions; OBSIDIAN/ALABASTER are historical experiments. THE BLINK (world switch) is not built until a second world exists. Canonical product definition: `docs/product/lenox-design-playground-manifesto.md`.
+> **Art direction is deliberately not in this file** — it changes on visible material and would rot here. Current direction: `docs/product/design-01-living-surface.md`. Current tree and decisions: `docs/agent-system/CURRENT.md`.
 
-## Production Pipeline
+## Media Pipeline (conditional)
 
-Kling (generate) → Remotion (assemble as code; skills in `.agents/skills/`) → FSV (deliver frame-exact) → live WebGPU overlay → DOM.
+Not used by design 01, which is fully computed. If a later chapter needs imagery:
 
-- Master still → scene stills (image-to-image, one universe) → dive clips (slow continuous forward glide, one environment per clip, stable boundary frames) → transitions keyframed from REAL boundary frames of adjacent clips. Never camera reversal or pull-up in transitions.
-- Scrub core candidate: `plutotcool/fsv` (WebCodecs, frame-accurate, alpha). Gate before commitment: real iPhone Safari performance. Fallback: `currentTime` scrubbing behind the same interface.
+Kling (generate) → Remotion (assemble as code; skills in `.agents/skills/`) → frame-exact delivery → DOM.
+
+- Master still → scene stills (image-to-image, one universe) → clips (slow continuous glide, stable boundary frames) → transitions keyframed from REAL boundary frames. Never camera reversal in transitions. Clips contain world only — no characters, text or logos.
+- Encode one keyframe per frame (`-g 1`) or the scrub stutters. Gate: real iPhone Safari.
+- Portrait is produced, never cropped.
 
 ## LENOX
 
-The identity is the existing core plus a cephalopodic gravity body (Phase-1 procedural: 2 lead + 4 support arms) awaiting the bright-world reskin; an authored Blender GLB comes only after the silhouette passes Volkan's judgment.
-Response hierarchy: perception surface first (~80–120 ms) → core → lead arms → support arms last. Idle uses layered incommensurate frequencies; arms never move synchronously. Silhouette must never read as starfish, spider, or noodles.
-React sends discrete intents (`setLenoxIntent`: rest/observe/guide/confirm); the engine owns all continuous easing. Canonical signals (energy/attention/tension) drive body material, field, and throttled CSS tokens from one source.
-The signal-grammar mechanic stays (a state color and a confirm color driven by engine state); exact colors come from the bright art direction. The confirm color appears only on genuinely confirmed actions; simulated actions remain disclosed.
-Avoid emoji acting, cute winks in serious beats, bouncy mascot motion, generic robot UI, and accidental clipping.
+One solver, one particle population, one material language, multiple force and target states. LENOX is a **directed condensate state** inside that population: local density rises, motion becomes directed, matter connects optically. It never becomes a face, a mascot or a generic blob.
+
+React sends discrete intents; the engine owns all continuous easing. Canonical signals (energy/attention/tension) drive material, field, and throttled CSS tokens from one source.
+
+The procedural body (`lenoxBody.js`, 2 lead + 4 support arms) and the authored character path are **retired as of 2026-07-25**; still present in the engine, to be removed once the phase-field proof replaces them. Do not extend them.
 
 ## Current Working Tree
 
-Active branch: `codex/lenox-design-playground`. Substantial uncommitted work from multiple feature lines — never reset, revert, discard, or overwrite changes you did not create.
-The untracked `docs/review/wallow-reference-2026-07-15/` captures are reference material; do not delete or silently commit them. Do not modify the protected WAKE materialization.
-Before editing, inspect `git status`, relevant diffs, and `docs/agent-system/CURRENT.md`. If unexpected external edits appear while you work, stop and report.
+One branch: `main`, in sync with `origin/main`. `origin/codex/living-agency-v1` is archived — it holds the rejected field-only runtime and the only v006 Blender pipeline; do not merge it back.
+
+Never reset, revert, discard or overwrite changes you did not create. Before editing, inspect `git status`, relevant diffs, and `docs/agent-system/CURRENT.md`. If unexpected external edits appear while you work, stop and report.
 No commit, push, deploy, dependency change, plugin change, or production action without explicit instruction.
 
 ## Architecture
 
 `src/flow-engine/` owns WebGPU rendering, simulation, particles, materials, camera, and the engine bridge. React stage modules own semantic content, interface state, responsive composition, and orchestration calls into the bridge.
 Preserve: one render loop, one renderer, one authoritative source per continuous progression (`src/app/studio/studioDirector.ts` for engine-coupled scroll; the older `journeyDirector` was removed with the unreachable stage code on 2026-07-25), the `engineBridge` contract, Three.js `0.175.0`, no per-frame React writes.
-Mobile is its own composition (banded, LENOX top-third, arms outside the text column, DPR ≤ ~1.5), not a scaled-down desktop.
+Mobile is its own composition (banded, its own portrait assets, DPR ≤ ~1.5), not a scaled-down desktop.
 
 ## Coding Discipline
 

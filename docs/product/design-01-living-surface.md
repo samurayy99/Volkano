@@ -49,17 +49,24 @@ CRYSTAL    clusters, routes, priorities, handoffs — named structure
 CALM       complexity drops, residual matter, the page settles
 ```
 
-Mapped onto the seven chapters:
+**Chapters versus beats — resolved 2026-07-25.** There are **six semantic chapters**
+and they are the only things that carry copy, URLs, navigation and state. *Arrival*
+and *opening* are **motion beats inside `hero`**, not chapters: they have no words of
+their own. Anything else is two competing information architectures and ends in
+scroll and state chaos.
 
-| Chapter | Phase | What the visitor sees |
-|---|---|---|
-| 01 arrival | GAS → FLUID | the field is alive before anything is clicked |
-| 02 opening | FLUID → open space | the surface opens, the page was underneath |
-| 03 principle | one core → three realities | same words, another material |
-| 04 capabilities | image-led | matter as connective tissue, not decoration |
-| 05 lenox | → CONDENSATE | attention without a face |
-| 06 diagnosis | → CRYSTAL | chaos becomes a named system |
-| 07 contact | → CALM | matter withdraws, one clear action remains |
+| # | Chapter (semantic) | Beats inside it | Phase |
+|---|---|---|---|
+| 01 | `hero` | arrival · opening | GAS → FLUID → open space |
+| 02 | `principle` | — | one core → three realities |
+| 03 | `capabilities` | three scenes | image-led, matter as connective tissue |
+| 04 | `lenox` | — | → CONDENSATE, attention without a face |
+| 05 | `diagnosis` | intake · qualification · routing · handoff | → CRYSTAL |
+| 06 | `contact` | — | → CALM |
+
+Shipped today: five chapters (`hero`, `principle`, `capabilities`, `lenox`, `contact`).
+**`diagnosis` is the one addition still to build** — the customer moment, and the only
+part of the page that actually sells.
 
 ---
 
@@ -133,20 +140,20 @@ TAA against fewer raymarch steps. Density passes at reduced resolution.
 
 | Chapter | Mechanic | Reference |
 |---|---|---|
-| 01 | rest field + origin return; self-motion when nobody touches | R2#6, R1#9 |
-| 01 | pointer force texture | R2#1 (K3) |
-| 01 | volumetric density as depth — **as atmosphere, never as visible clouds** | clouds ZIP |
-| 02 | distinct beats: hold → open → transfer → settle → copy | R2#3 |
-| 02 | the field itself opens; **no scale-down, no picture-in-picture** | P1 failure |
-| 03 | same words rebuilt in another material | R1#7 |
-| 03 | surface fragments into the next reality — rebuilt with particles, not 350 SVG nodes | R1#8 |
-| 03 | typographic state selector for the three designs | R1#2 |
-| 04 | elements assemble, one takes ownership and expands | R1#4 |
-| 05 | radial attention signature — focus, not pupils | R1#1 |
-| 05 | condensate: density → optical connection | R1#9, K4 |
-| 06 | target maps: enquiry → qualification → routing → handoff | R2#1, K1 |
-| 06 | compact selection expands into a system surface | R2#3 |
-| 07 | matter loses complexity, one brief expansion remains | — |
+| hero | rest field + origin return; self-motion when nobody touches | R2#6, R1#9 |
+| hero | pointer force texture | R2#1 (K3) |
+| hero | volumetric density as depth — **as atmosphere, never as visible clouds** | clouds ZIP |
+| hero | distinct beats: hold → open → transfer → settle → copy | R2#3 |
+| hero | the field itself opens; **no scale-down, no picture-in-picture** | P1 failure |
+| principle | same words rebuilt in another material | R1#7 |
+| principle | surface fragments into the next reality — rebuilt with particles, not 350 SVG nodes | R1#8 |
+| principle | typographic state selector for the three designs | R1#2 |
+| capabilities | elements assemble, one takes ownership and expands | R1#4 |
+| lenox | radial attention signature — focus, not pupils | R1#1 |
+| lenox | condensate: density → optical connection | R1#9, K4 |
+| diagnosis | target maps: enquiry → qualification → routing → handoff | R2#1, K1 |
+| diagnosis | compact selection expands into a system surface | R2#3 |
+| contact | matter loses complexity, one brief expansion remains | — |
 
 ---
 
@@ -155,27 +162,32 @@ TAA against fewer raymarch steps. Density passes at reduced resolution.
 > **CONTRACT** — nothing later starts before the earlier gate passes.
 
 ```
-1  OPENING CHOREOGRAPHY (P1 second pass)
-   one authored LENOX state, no model switching, no PiP result,
-   world stays a large plane, page revealed underneath or beside it,
-   boundary crossing with real occlusion, copy last.
-
-2  PHASE FIELD (P2)   /proto/phase-field
+A  PHASE FIELD          /proto/phase-field
    same particles, three visibly different behaviours: AMBIENT · ATTENTION · LENOX.
-   Must prove: no mascot, stable pointer interaction, premium material.
+   plus the material question: what is the substance, in a few temperatures.
+   must prove: no mascot, stable pointer interaction, matter not dust.
 
-3  CONDENSATE
-   density rises → optical connection → attentive form → clean dissolution.
+B  CONDENSATE
+   density rises → optical connection → attentive form → clean release.
+   no face, no mascot, no generic blob.
 
-4  TARGET MAPS
-   K1 pipeline, first real use in 06.
+C  OPENING
+   the validated material opens into the first story scene.
+   no scale-down, no picture-in-picture, boundary crossing with real occlusion,
+   distinct beats, copy last.
 
-5  JOURNEY
-   the seven chapters wired to the phase model.
+D  TARGET MAPS          K1 pipeline, first real use in the diagnosis chapter.
+
+E  JOURNEY              chapters wired to the phase model.
 ```
 
-Both P1 and P2 are judged **on video by Volkan**. Not on a report, not on stills —
-stills lie about motion, which is exactly how P1's incoherent wake sequence was missed.
+**The opening comes after the material, not before it.** An earlier draft of this
+document had it first — that was the retired sequence carried forward. You cannot
+choreograph the opening of a substance you have not defined. `/proto/opening` is a
+visually rejected legacy engineering proof: keep it as evidence, do not extend it.
+
+Every gate is judged **on video by Volkan**. Not on a report, not on stills — stills
+lie about motion, which is exactly how P1's incoherent wake sequence was missed.
 
 ---
 
