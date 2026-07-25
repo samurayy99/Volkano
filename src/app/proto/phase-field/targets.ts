@@ -145,6 +145,42 @@ export function focusField(
   return out;
 }
 
+/**
+ * LENOX is a state INSIDE the field, not a replacement for it.
+ *
+ * The first version wrote either ambient anchors or the focus field for the
+ * whole population, which proved a global mode switch — exactly what the
+ * direction says LENOX is not. Here a coherent fraction takes focus targets
+ * while everything else stays in the advected ambient field, so both exist at
+ * once and the visitor sees matter that has become locally intelligent rather
+ * than matter that has been replaced.
+ *
+ * Which particles join is deterministic per index, so a particle does not
+ * flicker between roles frame to frame.
+ */
+export function blendedTargets(
+  count: number,
+  bounds: Bounds,
+  time: number,
+  drift: number,
+  focus: FocusParams,
+  coherence: number,
+): Float32Array {
+  const ambient = ambientAnchors(count, bounds, time, drift);
+  if (coherence <= 0) return ambient;
+
+  const focused = focusField(count, bounds, focus);
+  const share = Math.min(1, coherence);
+  for (let i = 0; i < count; i++) {
+    // Stable membership: the same indices always form the concentration.
+    if (hash01(i, 91.7) > share) continue;
+    ambient[i * 3 + 0] = focused[i * 3 + 0];
+    ambient[i * 3 + 1] = focused[i * 3 + 1];
+    ambient[i * 3 + 2] = focused[i * 3 + 2];
+  }
+  return ambient;
+}
+
 /** Clamp a generated set into the solver's safe interior. */
 export function clampToBounds(points: Float32Array, bounds: Bounds): Float32Array {
   const [minX, minY, minZ] = bounds.min;

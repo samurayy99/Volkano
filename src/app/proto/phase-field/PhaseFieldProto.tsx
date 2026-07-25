@@ -14,11 +14,12 @@ import {
 import {
   DEFAULT_FOCUS,
   ambientAnchors,
+  blendedTargets,
   clampToBounds,
-  focusField,
   type Bounds,
   type FocusParams,
 } from "./targets";
+import type { EnvironmentCost } from "../../../flow-engine/types";
 import styles from "./PhaseFieldProto.module.css";
 
 /**
@@ -83,15 +84,20 @@ export function PhaseFieldProto() {
   const lastWasFocusRef = useRef(false);
   const focusDirtyRef = useRef(true);
   const boundsRef = useRef<Bounds>(FALLBACK_BOUNDS);
+  const coherenceRef = useRef(0.34);
 
   const [ready, setReady] = useState<"probing" | "webgpu" | "fallback">("probing");
   const [phase, setPhase] = useState<PhaseName>("ambient");
   const [substance, setSubstance] = useState<string>("pearl");
   const [env, setEnv] = useState<EnvSource>("procedural");
-  const [envBytes, setEnvBytes] = useState(0);
+  const [envCost, setEnvCost] = useState<EnvironmentCost | null>(null);
+  const [envRotation, setEnvRotation] = useState(0);
+  const [envIntensity, setEnvIntensity] = useState(1);
   const [tier, setTier] = useState<Tier>("medium");
   const [material, setMaterial] = useState({ ...MATERIAL_DEFAULTS });
   const [focus, setFocus] = useState<FocusParams>({ ...DEFAULT_FOCUS });
+  /** Fraction of the population that joins the concentration. */
+  const [coherence, setCoherence] = useState(0.34);
   const [probe, setProbe] = useState({
     fps: 0,
     worst: 0,
@@ -104,6 +110,11 @@ export function PhaseFieldProto() {
     focusRef.current = focus;
     focusDirtyRef.current = true;
   }, [focus]);
+
+  useEffect(() => {
+    coherenceRef.current = coherence;
+    focusDirtyRef.current = true;
+  }, [coherence]);
 
   useEffect(() => {
     focusDirtyRef.current = true;
@@ -141,7 +152,9 @@ export function PhaseFieldProto() {
         });
         const b = bridge.getSimBounds();
         if (b) boundsRef.current = b;
-        bridge.setEnvironment("procedural").then((n) => setEnvBytes(n));
+        bridge
+          .setEnvironment("procedural")
+          .then((c) => c.applied && setEnvCost(c));
       })
       .catch((e) => {
         console.warn("[phase-field] WebGPU unavailable", e);
@@ -219,11 +232,21 @@ export function PhaseFieldProto() {
       const wantFocus = phaseRef.current === "lenox";
       const focusDirty = focusDirtyRef.current || wantFocus !== lastWasFocusRef.current;
 
+      // One bank always, blended. In LENOX a coherent fraction takes focus
+      // targets while the rest stays in the ambient field — the whole point is
+      // that both exist at the same time.
       if (wantFocus) {
         if (focusDirty) {
           bridge.setParticleTargets(
             clampToBounds(
-              focusField(count, boundsRef.current, focusRef.current),
+              blendedTargets(
+                count,
+                boundsRef.current,
+                anchorClockRef.current,
+                p.anchorDrift,
+                focusRef.current,
+                coherenceRef.current,
+              ),
               boundsRef.current,
             ),
             count,
@@ -295,10 +318,17 @@ export function PhaseFieldProto() {
     });
   }, [material, ready]);
 
-  const chooseEnv = useCallback((next: EnvSource) => {
-    setEnv(next);
-    bridgeRef.current?.setEnvironment(next).then((b) => setEnvBytes(b));
-  }, []);
+  const chooseEnv = useCallback(
+    (next: EnvSource, rot = envRotation, intensity = envIntensity) => {
+      setEnv(next);
+      bridgeRef.current
+        ?.setEnvironment(next, rot, intensity)
+        // A superseded switch reports applied: false and is ignored, so a slow
+        // HDRI cannot overwrite a newer choice or its cost readout.
+        .then((c) => c.applied && setEnvCost(c));
+    },
+    [envRotation, envIntensity],
+  );
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     lastTouchRef.current = performance.now();
@@ -400,6 +430,42 @@ export function PhaseFieldProto() {
         </div>
 
         <div className={styles.group}>
+          <b>ENV ORIENTATION — ONE FIXED ANGLE IS NOT A COMPARISON</b>
+          <label className={styles.slider}>
+            <span>rotation</span>
+            <input
+              type="range"
+              min={0}
+              max={6.28}
+              step={0.01}
+              value={envRotation}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setEnvRotation(v);
+                chooseEnv(env, v, envIntensity);
+              }}
+            />
+            <span>{envRotation.toFixed(2)}</span>
+          </label>
+          <label className={styles.slider}>
+            <span>intensity</span>
+            <input
+              type="range"
+              min={0.1}
+              max={3}
+              step={0.05}
+              value={envIntensity}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setEnvIntensity(v);
+                chooseEnv(env, envRotation, v);
+              }}
+            />
+            <span>{envIntensity.toFixed(2)}</span>
+          </label>
+        </div>
+
+        <div className={styles.group}>
           <b>PARTICLE TIER</b>
           <div className={styles.row}>
             {(["low", "medium", "high"] as Tier[]).map((t) => (
@@ -443,6 +509,18 @@ export function PhaseFieldProto() {
 
         <div className={styles.group}>
           <b>FOCUS FORM — HYPOTHESIS, NOT A DECISION</b>
+          <label className={styles.slider}>
+            <span>coherence</span>
+            <input
+              type="range"
+              min={0.05}
+              max={1}
+              step={0.01}
+              value={coherence}
+              onChange={(e) => setCoherence(Number(e.target.value))}
+            />
+            <span>{coherence.toFixed(2)}</span>
+          </label>
           {slider("anisotropy", "anisotropy", 1, 5, 0.05)}
           {slider("arcCompleteness", "arc", 0.08, 1, 0.01)}
           {slider("asymmetry", "asymmetry", 0, 1, 0.01)}
@@ -458,7 +536,11 @@ export function PhaseFieldProto() {
           {phase.toUpperCase()} · {substance.toUpperCase()} · {env.toUpperCase()}
         </span>
         <span>
-          ENV BYTES <b>{envBytes === 0 ? "0 (computed)" : envBytes.toLocaleString()}</b>
+          SOURCE FILE <b>{(envCost?.sourceFileBytes ?? 0).toLocaleString()}</b> B
+        </span>
+        <span>
+          DECODED <b>{Math.round((envCost?.decodedBytes ?? 0) / 1024)}</b> KB · GPU
+          EST <b>{Math.round((envCost?.gpuEstimateBytes ?? 0) / 1024)}</b> KB
         </span>
         <span>
           FPS <b>{probe.fps}</b> · WORST IN TRANSITION{" "}

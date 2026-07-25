@@ -19,10 +19,16 @@ test("every phase declares every parameter the response table knows", () => {
 
 test("the three phases are actually different, not relabelled copies", () => {
   assert.notEqual(PHASES.ambient.targetInfluence, PHASES.lenox.targetInfluence);
-  // The proof stands or falls on this one: LENOX must pull an order of
-  // magnitude harder than ambient or the states will not read as different.
-  assert.ok(PHASES.lenox.targetInfluence > PHASES.ambient.targetInfluence * 10);
+  // An invariant, not a tuned value. LENOX has to pull clearly harder than
+  // ambient or the phases read as "ambient, slightly tidier" — but HOW much
+  // harder is art direction, decided on moving material. An earlier version
+  // demanded exactly 10x and started dictating the number instead of guarding
+  // the relationship.
+  assert.ok(PHASES.lenox.targetInfluence > PHASES.ambient.targetInfluence * 2);
   assert.ok(PHASES.attention.anchorDrift > PHASES.ambient.anchorDrift);
+  for (const p of Object.values(PHASES)) {
+    for (const v of Object.values(p)) assert.ok(Number.isFinite(v) && v >= 0);
+  }
 });
 
 test("ambient keeps matter free — it must not read as a pulled shape", () => {

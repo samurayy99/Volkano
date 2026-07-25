@@ -14,6 +14,7 @@ import type {
   LenoxReaction,
   LenoxSignals,
   LenoxSignatureId,
+  EnvironmentCost,
   PostEnterDebugSnapshot,
   PostEnterStage,
 } from "./types";
@@ -43,7 +44,16 @@ function sourcePlayEngineRuntime() {
 export class FlowEngineBridge implements FlowEngineApi {
   private readonly container: HTMLElement;
   private readonly options: FlowEngineBridgeOptions;
+  /*
+   * `App` and the WebGPU renderer backend are plain JS with no type surface, so
+   * these stay `any` until the engine is typed — a real refactor, not something
+   * to smuggle into a visual proof. The disables are narrow and named so the
+   * rest of this file is genuinely linted rather than the whole file ignored,
+   * which is how four unchecked errors survived here in the first place.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private renderer: any | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private app: any | null = null;
   private clock = new THREE.Clock();
   private rafId = 0;
@@ -75,6 +85,8 @@ export class FlowEngineBridge implements FlowEngineApi {
    */
   private pointerSpeed = 0;
   private lastPointerSample: { x: number; y: number; t: number } | null = null;
+  /** Guards against a slow environment load overwriting a newer choice. */
+  private environmentToken = 0;
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
@@ -100,11 +112,13 @@ export class FlowEngineBridge implements FlowEngineApi {
 
     await renderer.init();
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (!(renderer.backend as any)?.isWebGPUBackend) {
       throw new Error("Could not initialize a WebGPU backend.");
     }
 
     this.renderer = renderer;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const device = (renderer.backend as any)?.device as GPUDevice | undefined;
     if (device && !this.deviceLossArmed) {
       this.deviceLossArmed = true;
@@ -273,34 +287,55 @@ export class FlowEngineBridge implements FlowEngineApi {
    * never touched from here.
    */
 
-  setParticleTargets(positions: Float32Array, count?: number): void {
-    if (this.disposed) return;
-    const n = count ?? Math.floor(positions.length / 3);
-    this.app?.mlsMpmSim?.buildLenoxShellTargets?.(positions, n);
+  setParticleTargets(positions: Float32Array, count?: number): number {
+    if (this.disposed) return 0;
+    const sim = this.app?.mlsMpmSim;
+    const capacity = sim?.settleTargetBuffer?.length ?? 0;
+    if (!capacity) return 0;
+
+    const requested = Math.floor(count ?? positions.length / 3);
+    const n = Math.max(
+      0,
+      Math.min(requested, capacity, Math.floor(positions.length / 3)),
+    );
+    if (n === 0) return 0;
+
+    // A single NaN reaching the solver poisons the whole grid on the next
+    // step, and it is silent — the field simply stops existing.
+    for (let i = 0; i < n * 3; i++) {
+      if (!Number.isFinite(positions[i])) return 0;
+    }
+    return sim.buildLenoxShellTargets(positions, n) ? n : 0;
   }
 
+  /**
+   * How hard matter is pulled to whatever target bank is loaded. Damping is
+   * ramped with the pull rather than switched on at a threshold: a binary jump
+   * from 0 to 12 lands a discontinuity in the middle of a phase transition.
+   */
   setTargetInfluence(value: number): void {
     if (this.disposed) return;
     const sim = this.app?.mlsMpmSim;
     if (!sim?.uniforms) return;
-    sim.uniforms.settleWeight.value = Math.max(0, value);
-    // Uniform damping: with w = 0 everywhere only the shell rate is ever read,
-    // but both are set so a stale focal value can never leak in.
-    const damp = value > 0.0005 ? 12 : 0;
+    const v = Math.min(2, Math.max(0, Number.isFinite(value) ? value : 0));
+    sim.uniforms.settleWeight.value = v;
+    // With w = 0 everywhere only the shell rate is ever read, but both are set
+    // so a stale focal value from another host can never leak in.
+    const damp = Math.min(12, v * 24);
     sim.uniforms.settleDampingShell.value = damp;
     sim.uniforms.settleDampingFocal.value = damp;
   }
 
-  setReturnInfluence(value: number): void {
-    this.setTargetInfluence(value);
-  }
-
   /**
-   * Pointer speed shapes the response curve. Slow motion produces a tiny
-   * `mouseForce` on its own and would barely displace anything, so influence is
-   * raised at low speed (push) and tapered at high speed (tear without
-   * exploding). The first sample after idle, and any jump larger than a touch
-   * could plausibly travel, produces no impulse at all.
+   * Pointer speed MODULATES the existing displacement response. It is not yet
+   * two separate mechanics: the solver applies one force derived from the
+   * position delta, so fast motion already pushes harder on its own and what
+   * this adds is a curve that keeps slow motion from doing nothing, a ceiling
+   * so a flick cannot explode the field, and guards for idle resume and touch
+   * jumps. Distinct push-versus-tear behaviour would need radius, shear or
+   * viscosity to move as well, which means solver uniforms this proof does not
+   * touch. Do not describe this as "slow pushes, fast tears" — it is one
+   * response, shaped.
    */
   setPointerSample(clientX: number, clientY: number): void {
     if (this.disposed) return;
@@ -364,12 +399,43 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.app?.particleRenderer?.setSubstance?.(hexColor, strength);
   }
 
-  /** Returns the real byte cost of the chosen source (0 for procedural). */
+  /**
+   * Switching is async because an HDRI has to be fetched. A fast A/B can land
+   * out of order — pick studio, pick procedural, studio finishes last and
+   * silently overwrites the choice. Each request carries a token; a superseded
+   * one reports `applied: false` and applies nothing.
+   */
   async setEnvironment(
     source: "procedural" | "studio" | "meadow",
-  ): Promise<number> {
-    if (this.disposed || !this.app) return 0;
-    return (await this.app.setEnvironmentSource(source)) as number;
+    rotationY = 0,
+    intensity = 1,
+  ): Promise<EnvironmentCost> {
+    const miss: EnvironmentCost = {
+      source,
+      sourceFileBytes: 0,
+      decodedBytes: 0,
+      gpuEstimateBytes: 0,
+      applied: false,
+    };
+    if (this.disposed || !this.app) return miss;
+
+    const token = ++this.environmentToken;
+    try {
+      const cost = (await this.app.setEnvironmentSource(
+        source,
+        rotationY,
+        intensity,
+      )) as EnvironmentCost;
+      if (token !== this.environmentToken || this.disposed) {
+        // Superseded mid-flight. The scene may have been written by the newer
+        // request already; re-assert it so the last choice wins.
+        return miss;
+      }
+      return cost;
+    } catch (error) {
+      this.options.onError?.(error);
+      return miss;
+    }
   }
 
   /** A/B what he reflects: the void studio (true) or the legacy meadow HDRI. */

@@ -14,8 +14,11 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     ".agents/**",
     "docs+examples/**",
-    // WebGPU flow-engine is plain JS; lint separately when tightening rules.
-    "src/flow-engine/**",
+    // The WebGPU solver and renderers are plain JS written against TSL and are
+    // not linted here — that is a separate pass. The engine's TYPESCRIPT
+    // surface is linted: it is the contract every host codes against, and it
+    // was silently unchecked while the riskiest changes landed in it.
+    "src/flow-engine/**/*.js",
   ]),
 ]);
 

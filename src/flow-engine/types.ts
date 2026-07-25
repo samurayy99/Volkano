@@ -115,6 +115,24 @@ export type PostEnterDebugSnapshot = {
   postEnterRiftFlightActive: boolean;
 };
 
+/**
+ * "1K" says nothing about real cost, so the three numbers are kept apart:
+ * what crosses the network, what the decoded float image occupies, and an
+ * estimate of the prefiltered cube the GPU actually samples. Only the first is
+ * a file size; the other two are the ones that matter on a phone.
+ */
+export type EnvironmentCost = {
+  source: "procedural" | "studio" | "meadow";
+  /** Transferred bytes, measured at runtime. 0 when nothing is fetched. */
+  sourceFileBytes: number;
+  /** Decoded RGBA-float image in CPU memory. */
+  decodedBytes: number;
+  /** Estimated prefiltered environment texture on the GPU. */
+  gpuEstimateBytes: number;
+  /** False when a newer switch superseded this one before it resolved. */
+  applied: boolean;
+};
+
 export interface FlowEngineApi {
   setInteractiveEnabled: (enabled: boolean) => void;
   setPointer: (x: number, y: number, isDown: boolean) => void;
@@ -159,20 +177,28 @@ export interface FlowEngineApi {
    * engine should inherit that vocabulary, hence these names.
    */
 
-  /** Absolute sim-space target positions (xyz triples). Written with w = 0. */
-  setParticleTargets: (positions: Float32Array, count?: number) => void;
-  /** How hard matter is pulled to its targets. 0 = free fluid. */
+  /**
+   * Absolute sim-space target positions (xyz triples). Written with w = 0.
+   * Returns the number of targets actually written — non-finite values and
+   * anything past the buffer are rejected rather than corrupting the solver.
+   */
+  setParticleTargets: (positions: Float32Array, count?: number) => number;
+  /** How hard matter is pulled to its targets. 0 = free fluid. Clamped 0..2. */
   setTargetInfluence: (value: number) => void;
-  /** Ambient anchoring — a weak pull that stabilises without freezing. */
-  setReturnInfluence: (value: number) => void;
   /** Pointer in client pixels; the bridge derives smoothed, clamped speed. */
   setPointerSample: (clientX: number, clientY: number) => void;
   /** Smoothed pointer speed in px/s, for the lab HUD. */
   getPointerSpeed: () => number;
   /** Patch engine runtime (noise/speed/gravity/viscosity/particles/size...). */
   applyEngineRuntime: (patch: Record<string, unknown>) => void;
-  /** Environment map source for the K4 A/B. */
-  setEnvironment: (source: "procedural" | "studio" | "meadow") => void;
+  /**
+   * Environment map source for the K4 A/B. Resolves with the cost breakdown of
+   * the source that ended up applied — a rapid switch can land out of order, so
+   * a stale result reports `applied: false` and must be ignored.
+   */
+  setEnvironment: (
+    source: "procedural" | "studio" | "meadow",
+  ) => Promise<EnvironmentCost>;
   /** Substance tint over the existing silver law. `strength` 0 = untouched. */
   setSubstance: (hexColor: number, strength: number) => void;
   /** Instant signature world (boot / reduced motion). Lenox mode only. */

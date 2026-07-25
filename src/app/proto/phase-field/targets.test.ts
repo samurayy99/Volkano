@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   DEFAULT_FOCUS,
   ambientAnchors,
+  blendedTargets,
   clampToBounds,
   focusField,
   type Bounds,
@@ -82,4 +83,29 @@ test("clamping keeps every point inside the solver's safe interior", () => {
     assert.ok(pts[i + 1] >= BOUNDS.min[1] && pts[i + 1] <= BOUNDS.max[1]);
     assert.ok(pts[i + 2] >= BOUNDS.min[2] && pts[i + 2] <= BOUNDS.max[2]);
   }
+});
+
+test("blended targets keep ambient alive — LENOX is a state inside the field", () => {
+  const amb = ambientAnchors(2048, BOUNDS, 0, 0);
+  const blended = blendedTargets(2048, BOUNDS, 0, 0, DEFAULT_FOCUS, 0.34);
+  let moved = 0;
+  for (let i = 0; i < blended.length; i += 3) {
+    if (Math.abs(blended[i] - amb[i]) > 1e-6) moved++;
+  }
+  const share = moved / (blended.length / 3);
+  // A fraction joins the concentration; the rest must stay ambient. A global
+  // mode switch — the failure this replaces — would move all of them.
+  assert.ok(share > 0.2 && share < 0.5, `share ${share.toFixed(2)}`);
+});
+
+test("coherence 0 leaves the field completely untouched", () => {
+  const amb = ambientAnchors(512, BOUNDS, 3, 1);
+  const blended = blendedTargets(512, BOUNDS, 3, 1, DEFAULT_FOCUS, 0);
+  assert.deepEqual(Array.from(blended), Array.from(amb));
+});
+
+test("membership is stable — a particle does not flicker between roles", () => {
+  const a = blendedTargets(512, BOUNDS, 0, 0, DEFAULT_FOCUS, 0.4);
+  const b = blendedTargets(512, BOUNDS, 0, 0, DEFAULT_FOCUS, 0.4);
+  assert.deepEqual(Array.from(a), Array.from(b));
 });

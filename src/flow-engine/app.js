@@ -30,11 +30,8 @@ import {
 } from "./post-enter/postEnterDrive.js";
 
 const HDRI_URL = "/flow-assets/autumn_field_puresky_1k.hdr";
-/** Measured on disk, not estimated — the lab reports real bytes. */
-const MEADOW_HDRI_BYTES = 1092974;
 /** Poly Haven `studio_small_09`, 1k, CC0 (Sergej Majboroda). 18 EV range. */
 const STUDIO_HDRI_URL = "/flow-assets/studio_small_09_1k.hdr";
-const STUDIO_HDRI_BYTES = 1615248;
 
 /**
  * A blur pyramid never returns exactly zero — a faint, near-uniform value
@@ -1090,24 +1087,59 @@ class App {
    * Returns the byte cost of the active source so the lab can report it instead
    * of estimating it.
    */
-  async setEnvironmentSource(source) {
-    if (!this.scene) return 0;
-    if (source === "studio") {
-      if (!this.studioEnvironmentTexture) {
-        this.studioEnvironmentTexture = await loadHdrTexture(STUDIO_HDRI_URL);
+  async setEnvironmentSource(source, rotationY = 0, intensity = 1) {
+    const zero = {
+      source,
+      sourceFileBytes: 0,
+      decodedBytes: 0,
+      gpuEstimateBytes: 0,
+      applied: false,
+    };
+    if (!this.scene) return zero;
+
+    let texture = null;
+    let sourceFileBytes = 0;
+
+    if (source === "studio" || source === "meadow") {
+      const url = source === "studio" ? STUDIO_HDRI_URL : HDRI_URL;
+      const cacheKey =
+        source === "studio" ? "studioEnvironmentTexture" : "environmentTexture";
+      if (!this[cacheKey]) {
+        // Measured at runtime, not hardcoded: a file size written into a
+        // constant stops being true the moment the asset changes.
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`environment fetch failed: ${res.status}`);
+        const buf = await res.arrayBuffer();
+        sourceFileBytes = buf.byteLength;
+        this[`${cacheKey}Bytes`] = sourceFileBytes;
+        this[cacheKey] = await loadHdrTexture(url);
       }
-      this.scene.environment = this.studioEnvironmentTexture;
-      this.scene.environmentRotation.set(0, 0, 0);
-      return STUDIO_HDRI_BYTES;
+      sourceFileBytes = this[`${cacheKey}Bytes`] ?? 0;
+      texture = this[cacheKey];
+    } else {
+      texture = this.getLenoxSignatureEnv(this.lenoxSignatureId);
     }
-    if (source === "meadow") {
-      this.scene.environment = this.environmentTexture;
-      this.scene.environmentRotation.set(0, -2.15, 0);
-      return MEADOW_HDRI_BYTES;
-    }
-    this.scene.environment = this.getLenoxSignatureEnv(this.lenoxSignatureId);
-    this.scene.environmentRotation.set(0, 0, 0);
-    return 0;
+
+    this.scene.environment = texture;
+    this.scene.environmentRotation.set(0, rotationY, 0);
+    this.scene.environmentIntensity = intensity;
+
+    const img = texture?.image;
+    const w = img?.width ?? 0;
+    const h = img?.height ?? 0;
+    // RGBA half-float in memory; the prefiltered cube costs roughly a third
+    // more than its faces because of the mip chain.
+    const decodedBytes = w * h * 4 * 2;
+    const faces = 6 * (h || 0) * (h || 0);
+    const gpuEstimateBytes = Math.round(faces * 4 * 2 * 1.34);
+
+    return {
+      source,
+      sourceFileBytes,
+      decodedBytes,
+      gpuEstimateBytes,
+      applied: true,
+    };
   }
 
   /** Reflection world per signature, generated once, kept for re-calibration. */
