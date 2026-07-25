@@ -109,6 +109,7 @@ export class FlowEngineBridge implements FlowEngineApi {
 
     const app = new App(renderer, {
       visualMode: this.options.lenoxMode ? "void" : "chamber",
+      backdrop: this.options.lenoxBackdrop !== false,
     });
     this.app = app;
     await app.init(width, height);

@@ -172,6 +172,13 @@ export interface FlowEngineBridgeOptions {
   lenoxMode?: boolean;
   /** Compresses the awakening timeline and calms all motion. */
   lenoxReducedMotion?: boolean;
+  /**
+   * Lenox mode only. The lacquer backdrop is an opaque plane and belongs to hosts
+   * where the engine owns the whole picture. A host that composes its own world
+   * behind the canvas passes false and receives particles and Lenox on
+   * transparency. Default true.
+   */
+  lenoxBackdrop?: boolean;
   /** Fires when the effective Lenox state changes (waking auto-advances). */
   onLenoxStateChange?: (state: LenoxProofState) => void;
   /** Throttled engine-owned state for inherited CSS tokens; never per-frame React state. */

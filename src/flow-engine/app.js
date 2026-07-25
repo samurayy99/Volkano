@@ -412,10 +412,16 @@ class App {
   /**
    * @param {"chamber"|"void"} [options.visualMode] "void" keeps the vessel
    * geometry out of the scene (Lenox proof) while anchors/seeding still work.
+   * @param {boolean} [options.backdrop] Void mode only. The lacquer panel is an
+   * opaque plane: it belongs to the legacy/lab composition, where the engine owns
+   * the whole picture. A host that composes its own world behind the canvas
+   * (each reality owns its background) passes false and gets particles and Lenox
+   * on transparency. Default true — legacy callers are unaffected.
    */
   constructor(renderer, options = {}) {
     this.renderer = renderer;
     this.visualMode = options.visualMode === "void" ? "void" : "chamber";
+    this.useLenoxBackdrop = options.backdrop !== false;
   }
 
   resetPostEnterRuntimeChannels() {
@@ -1513,8 +1519,10 @@ class App {
     if (this.visualMode === "void") {
       this.initLenoxGazeRig();
       this.initLenoxVessel();
-      this.lenoxBackdrop = createLenoxBackdrop();
-      this.scene.add(this.lenoxBackdrop.object ?? this.lenoxBackdrop.mesh);
+      if (this.useLenoxBackdrop) {
+        this.lenoxBackdrop = createLenoxBackdrop();
+        this.scene.add(this.lenoxBackdrop.object ?? this.lenoxBackdrop.mesh);
+      }
       this.computeLenoxFramings(width, height);
       this.updateLenoxCamera(0);
     }
