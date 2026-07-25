@@ -35,7 +35,7 @@ Kling (generate) → Remotion (assemble as code) → FSV (deliver frame-exact) �
 
 ## Engine Truth
 
-The existing WebGPU engine in `src/flow-engine/` is the live layer. Preserve: single render loop, `engineBridge` contract, Three.js `0.175.0`, one scroll authority (`journeyDirector`). React sends discrete intents (`setLenoxIntent`: rest/observe/guide/confirm); the engine owns all continuous easing. Canonical signals (energy/attention/tension) drive body material, field and throttled CSS tokens from one source. The current body is a Phase-1 procedural silhouette (2 lead + 4 support arms) awaiting the bright-world reskin; the authored GLB comes after the silhouette passes Volkan's judgment.
+The existing WebGPU engine in `src/flow-engine/` is the live layer. Preserve: single render loop, `engineBridge` contract, Three.js `0.175.0`, one scroll authority (`src/app/studio/studioDirector.ts` — the older `journeyDirector` was removed with the unreachable stage code on 2026-07-25). React sends discrete intents (`setLenoxIntent`: rest/observe/guide/confirm); the engine owns all continuous easing. Canonical signals (energy/attention/tension) drive body material, field and throttled CSS tokens from one source. The current body is a Phase-1 procedural silhouette (2 lead + 4 support arms) awaiting the bright-world reskin; the authored GLB comes after the silhouette passes Volkan's judgment.
 
 Read `docs/agent-system/TASK.md` for the active assignment and `docs/agent-system/CURRENT.md` for tree state before directing work.
 

@@ -1,5 +1,39 @@
 # Current Handoff
 
+## TREE CONSOLIDATED + DESIGN 01 DECIDED (2026-07-25, Fable)
+
+**One branch.** Everything lives on `main`, pushed to `origin/main`. The
+`design01/p1-opening` branch held no commits and is gone. `codex/living-agency-v1`
+is preserved on `origin` and deleted locally — it holds the **rejected**
+field-only runtime (`fieldRuntime.ts`, `legacyEngineBridge.ts`) *and* the only copy
+of the v006 Blender pipeline. Do not resurrect the runtime; the Blender work is
+retrievable if needed.
+
+**43% of the source tree was unreachable and is now removed** (34 files, 7678
+lines): `src/lenox-engine/`, `LenoxExperience`, `SpatialChamber`, `src/app/showroom/`,
+17 of 20 `src/app/stage/` files, `FlowEngineHost`. Only `compositionMode`,
+`filmScrubber` and `stations` survive from stage. All of it remains in history.
+
+**Homepage is now five chapters, one content kernel, three designs** —
+`docs/product/studio-content-contract.md` is binding for the words. Case studies,
+services, ai-systems and volkan chapters are retired; the design switch moved into
+`principle`. `WebsiteIntelligence` left the homepage and stays on `/ai-systems`.
+
+**Design 01 direction decided (team round, 2026-07-25):** LENOX is *behaviour*, not
+a character — no octopus, no robot, no face. The background is not a place but one
+living material. Phase model as the spine: GAS → FLUID → CONDENSATE → CRYSTAL,
+mapped onto the chapters. One solver, one particle population, one material
+language, multiple force and target states. Design 01 may be dark; designs 02 and
+03 carry the bright register.
+
+**P1 (opening) is engineering-passed and visually rejected** — see `/proto/opening`
+and the commit body of `46ed58c`. Do not start P2 before the opening choreography
+has a second pass.
+
+**Open and unproven:** particles holding a readable form *while breathing*; particle
+motion coupled to scroll rather than pointer; reduced-motion and non-WebGPU paths
+for the new direction.
+
 ## ONE-MAIN CONSOLIDATION (2026-07-20, Codex)
 
 The repository is consolidated on local `main`. All local side branches and the

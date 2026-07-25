@@ -49,7 +49,7 @@ No commit, push, deploy, dependency change, plugin change, or production action 
 ## Architecture
 
 `src/flow-engine/` owns WebGPU rendering, simulation, particles, materials, camera, and the engine bridge. React stage modules own semantic content, interface state, responsive composition, and orchestration calls into the bridge.
-Preserve: one render loop, one renderer, one authoritative source per continuous progression (`journeyDirector` for engine-coupled scroll), the `engineBridge` contract, Three.js `0.175.0`, no per-frame React writes.
+Preserve: one render loop, one renderer, one authoritative source per continuous progression (`src/app/studio/studioDirector.ts` for engine-coupled scroll; the older `journeyDirector` was removed with the unreachable stage code on 2026-07-25), the `engineBridge` contract, Three.js `0.175.0`, no per-frame React writes.
 Mobile is its own composition (banded, LENOX top-third, arms outside the text column, DPR ≤ ~1.5), not a scaled-down desktop.
 
 ## Coding Discipline
