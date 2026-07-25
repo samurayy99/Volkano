@@ -602,10 +602,18 @@ const buildUnifiedParticleSurfaceNodes = ({
   const gravityT = uniforms.gravityT.clamp(0, 1).toConst("gravityMaterialT");
   const gravityColor = mix(vec3(0.3, 0.35, 0.42), particleColor, float(0.82))
     .toConst("gravityParticleColor");
+  // Phase field: one substance tint over the finished colour. `substanceT` is 0
+  // everywhere except in the phase-field lab, so every existing path renders
+  // byte-identically. This is the ONLY change to the silver law — the material
+  // question is answered by morphology and environment, not by more shader.
   const surfaceColor = mix(
-    mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT),
-    gravityColor,
-    gravityT,
+    mix(
+      mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT),
+      gravityColor,
+      gravityT,
+    ),
+    uniforms.substanceColor,
+    uniforms.substanceT.clamp(0, 1),
   ).toConst("surfaceColor");
 
   // Die Front streift die Materie: ein schmales Gauss-Band um den Radius
@@ -1086,6 +1094,9 @@ class ParticleRenderer {
     this.uniforms.postEnterFlightT = uniform(0);
     /** 1 = Lenox void look (silver/cyan, no ember read); 0 = chamber thermal look. */
     this.uniforms.lenoxTintT = uniform(0);
+    /** Phase-field substance tint; 0 strength leaves every existing path intact. */
+    this.uniforms.substanceColor = uniform(new THREE.Color(0xffffff));
+    this.uniforms.substanceT = uniform(0);
     /** Focal glint emissive gain (Lenox mode). */
     this.uniforms.lenoxFocalBoost = uniform(1);
     // Lenox silver-material channel — only blended in where lenoxTintT
@@ -1176,6 +1187,16 @@ class ParticleRenderer {
       .normalize();
 
     return target;
+  }
+
+  /**
+   * Phase-field lab only. `strength` 0 restores the untouched silver law, so
+   * the studio page and every other caller are unaffected by this uniform.
+   */
+  setSubstance(hexColor, strength) {
+    if (!this.uniforms?.substanceColor) return;
+    this.uniforms.substanceColor.value.setHex(hexColor);
+    this.uniforms.substanceT.value = Math.min(1, Math.max(0, strength));
   }
 
   applyRuntime(runtime) {

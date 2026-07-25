@@ -149,6 +149,32 @@ export interface FlowEngineApi {
   setLenoxEyeRigEnhanced: (enabled: boolean) => void;
   /** Which way he makes room when the page is built. Lenox mode only. */
   setCompositionMode: (mode: CompositionMode) => void;
+
+  /* ── Phase field (prototype mode) ──────────────────────────────────────
+   * A neutral target surface over the existing settle machinery. The solver's
+   * own vocabulary is the retired eye rig — its target `w` encodes role bands
+   * (shell/aura/lid/focal), `settleOffset` is gaze and `settleSquashT` is
+   * blink. Phase field writes w = 0 throughout, which makes that hierarchy
+   * inert, and never touches the gaze/blink/float channels. Nothing above the
+   * engine should inherit that vocabulary, hence these names.
+   */
+
+  /** Absolute sim-space target positions (xyz triples). Written with w = 0. */
+  setParticleTargets: (positions: Float32Array, count?: number) => void;
+  /** How hard matter is pulled to its targets. 0 = free fluid. */
+  setTargetInfluence: (value: number) => void;
+  /** Ambient anchoring — a weak pull that stabilises without freezing. */
+  setReturnInfluence: (value: number) => void;
+  /** Pointer in client pixels; the bridge derives smoothed, clamped speed. */
+  setPointerSample: (clientX: number, clientY: number) => void;
+  /** Smoothed pointer speed in px/s, for the lab HUD. */
+  getPointerSpeed: () => number;
+  /** Patch engine runtime (noise/speed/gravity/viscosity/particles/size...). */
+  applyEngineRuntime: (patch: Record<string, unknown>) => void;
+  /** Environment map source for the K4 A/B. */
+  setEnvironment: (source: "procedural" | "studio" | "meadow") => void;
+  /** Substance tint over the existing silver law. `strength` 0 = untouched. */
+  setSubstance: (hexColor: number, strength: number) => void;
   /** Instant signature world (boot / reduced motion). Lenox mode only. */
   setSignature: (id: LenoxSignatureId) => void;
   /** Arm the world behind the reconstruction front. Lenox mode only. */
@@ -179,6 +205,19 @@ export interface FlowEngineBridgeOptions {
    * transparency. Default true.
    */
   lenoxBackdrop?: boolean;
+  /**
+   * Phase-field prototype: builds the void visual and the free-fluid seed like
+   * lenoxMode, but constructs no LenoxEyesDrive — that drive owns the retired
+   * wake sequence (dormant → awakening → present) including the vetoed robot
+   * face and the authored-character handoff. The host owns runtime and pointer
+   * influence instead.
+   *
+   * PROTOTYPE MECHANICS, NOT FINAL ARCHITECTURE. If phase field survives its
+   * gate, this and `lenoxMode` should collapse into one explicit
+   * `experienceMode: "legacy-lenox" | "phase-field"` rather than grow into
+   * boolean soup.
+   */
+  phaseField?: boolean;
   /** Fires when the effective Lenox state changes (waking auto-advances). */
   onLenoxStateChange?: (state: LenoxProofState) => void;
   /** Throttled engine-owned state for inherited CSS tokens; never per-frame React state. */

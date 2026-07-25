@@ -30,6 +30,11 @@ import {
 } from "./post-enter/postEnterDrive.js";
 
 const HDRI_URL = "/flow-assets/autumn_field_puresky_1k.hdr";
+/** Measured on disk, not estimated — the lab reports real bytes. */
+const MEADOW_HDRI_BYTES = 1092974;
+/** Poly Haven `studio_small_09`, 1k, CC0 (Sergej Majboroda). 18 EV range. */
+const STUDIO_HDRI_URL = "/flow-assets/studio_small_09_1k.hdr";
+const STUDIO_HDRI_BYTES = 1615248;
 
 /**
  * A blur pyramid never returns exactly zero — a faint, near-uniform value
@@ -1070,6 +1075,40 @@ class App {
   }
 
   /* ── DER BEGLEITER: signature worlds ─────────────────────────────────── */
+
+  /**
+   * Phase field K4 A/B: what the matter reflects decides whether it reads as
+   * substance. Three sources, switched live.
+   *
+   *   procedural — createVoidEnvironment, zero download bytes
+   *   studio     — Poly Haven `studio_small_09_1k.hdr` (CC0, Sergej Majboroda),
+   *                real 18 EV range, which is what produces a specular highlight
+   *   meadow     — the HDRI this engine still boots with. NEGATIVE CONTROL only:
+   *                voidEnvironment.js documents it as the reason the silver never
+   *                read as material. Never a candidate.
+   *
+   * Returns the byte cost of the active source so the lab can report it instead
+   * of estimating it.
+   */
+  async setEnvironmentSource(source) {
+    if (!this.scene) return 0;
+    if (source === "studio") {
+      if (!this.studioEnvironmentTexture) {
+        this.studioEnvironmentTexture = await loadHdrTexture(STUDIO_HDRI_URL);
+      }
+      this.scene.environment = this.studioEnvironmentTexture;
+      this.scene.environmentRotation.set(0, 0, 0);
+      return STUDIO_HDRI_BYTES;
+    }
+    if (source === "meadow") {
+      this.scene.environment = this.environmentTexture;
+      this.scene.environmentRotation.set(0, -2.15, 0);
+      return MEADOW_HDRI_BYTES;
+    }
+    this.scene.environment = this.getLenoxSignatureEnv(this.lenoxSignatureId);
+    this.scene.environmentRotation.set(0, 0, 0);
+    return 0;
+  }
 
   /** Reflection world per signature, generated once, kept for re-calibration. */
   getLenoxSignatureEnv(id) {

@@ -66,6 +66,15 @@ export class FlowEngineBridge implements FlowEngineApi {
   private deviceLossArmed = false;
   private gravityQualityApplied = false;
   private lenoxSignalAccum = 0;
+  /**
+   * Phase field: smoothed pointer speed in px/s. `mouseForce` in the solver is
+   * already the raw per-frame position delta, so direction and base magnitude
+   * follow motion for free — what is missing is smoothing, a ceiling, and a
+   * response curve that lets slow motion push at all. All of that is CPU-side;
+   * the solver is not modified.
+   */
+  private pointerSpeed = 0;
+  private lastPointerSample: { x: number; y: number; t: number } | null = null;
   private lastPostEnterStage: PostEnterStage = "none";
   private postEnterDebugAccum = 0;
   private static readonly POST_ENTER_DEBUG_INTERVAL_SEC = 1 / 12;
@@ -107,15 +116,16 @@ export class FlowEngineBridge implements FlowEngineApi {
     }
     this.container.appendChild(renderer.domElement);
 
+    const voidVisual = this.options.lenoxMode || this.options.phaseField;
     const app = new App(renderer, {
-      visualMode: this.options.lenoxMode ? "void" : "chamber",
+      visualMode: voidVisual ? "void" : "chamber",
       backdrop: this.options.lenoxBackdrop !== false,
     });
     this.app = app;
     await app.init(width, height);
     // Before the first frame: the engine must never compose from its own guess.
     app.setCompositionMode?.(this.pendingCompositionMode);
-    if (this.options.lenoxMode) {
+    if (this.options.lenoxMode && !this.options.phaseField) {
       this.lenoxDrive = new LenoxEyesDrive({
         reducedMotion: this.options.lenoxReducedMotion,
       });
@@ -126,7 +136,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.onResize();
 
     this.app.promoteIdlePopulation();
-    if (this.options.lenoxMode) {
+    if (this.options.lenoxMode || this.options.phaseField) {
       // First contact: one compact central ignition bursts into the same
       // projected viewport box it later ricochets inside. No settle target,
       // reservoir or spring is introduced after the launch.
@@ -254,6 +264,112 @@ export class FlowEngineBridge implements FlowEngineApi {
     if (this.disposed) return;
     this.pendingCompositionMode = mode;
     this.app?.setCompositionMode?.(mode);
+  }
+
+  /* ── Phase field ─────────────────────────────────────────────────────────
+   * Neutral surface over the existing settle machinery. Targets are written
+   * with w = 0 so the solver's role bands (shell/aura/lid/focal) and the gaze
+   * offset they gate stay provably inert; gaze, blink and float channels are
+   * never touched from here.
+   */
+
+  setParticleTargets(positions: Float32Array, count?: number): void {
+    if (this.disposed) return;
+    const n = count ?? Math.floor(positions.length / 3);
+    this.app?.mlsMpmSim?.buildLenoxShellTargets?.(positions, n);
+  }
+
+  setTargetInfluence(value: number): void {
+    if (this.disposed) return;
+    const sim = this.app?.mlsMpmSim;
+    if (!sim?.uniforms) return;
+    sim.uniforms.settleWeight.value = Math.max(0, value);
+    // Uniform damping: with w = 0 everywhere only the shell rate is ever read,
+    // but both are set so a stale focal value can never leak in.
+    const damp = value > 0.0005 ? 12 : 0;
+    sim.uniforms.settleDampingShell.value = damp;
+    sim.uniforms.settleDampingFocal.value = damp;
+  }
+
+  setReturnInfluence(value: number): void {
+    this.setTargetInfluence(value);
+  }
+
+  /**
+   * Pointer speed shapes the response curve. Slow motion produces a tiny
+   * `mouseForce` on its own and would barely displace anything, so influence is
+   * raised at low speed (push) and tapered at high speed (tear without
+   * exploding). The first sample after idle, and any jump larger than a touch
+   * could plausibly travel, produces no impulse at all.
+   */
+  setPointerSample(clientX: number, clientY: number): void {
+    if (this.disposed) return;
+    const now = performance.now();
+    const prev = this.lastPointerSample;
+    this.lastPointerSample = { x: clientX, y: clientY, t: now };
+
+    if (!prev) {
+      this.pointerSpeed = 0;
+      this.app?.setPointerInfluence?.(0);
+      return;
+    }
+    const dt = (now - prev.t) / 1000;
+    if (dt <= 0 || dt > 0.25) {
+      // Resume after idle, or a tab that was hidden: re-seed without an impulse.
+      this.pointerSpeed = 0;
+      this.app?.setPointerInfluence?.(0);
+      return;
+    }
+    const dx = clientX - prev.x;
+    const dy = clientY - prev.y;
+    const raw = Math.sqrt(dx * dx + dy * dy) / dt;
+    const jump = Math.sqrt(dx * dx + dy * dy) > 400;
+    const capped = Math.min(jump ? 0 : raw, 4000);
+    // Short EMA — enough to kill jitter, short enough to stay responsive.
+    this.pointerSpeed = this.pointerSpeed * 0.7 + capped * 0.3;
+
+    const s = this.pointerSpeed;
+    const slowPush = 2.4 / (1 + s / 220);
+    const fastTear = Math.min(s / 900, 1.35);
+    this.app?.setPointerInfluence?.(
+      jump ? 0 : Math.min(slowPush + fastTear, 3.2),
+    );
+  }
+
+  getPointerSpeed(): number {
+    return this.pointerSpeed;
+  }
+
+  /**
+   * The engine's own projection-safe box — the region that actually lands in
+   * the viewport. Guessing this instead of asking put the camera inside the
+   * medium, where a concentration is present but unreadable.
+   */
+  getSimBounds(): { min: [number, number, number]; max: [number, number, number] } | null {
+    const rt = this.app?.runtime;
+    if (!rt?.simBoundsMin || !rt?.simBoundsMax) return null;
+    return {
+      min: [rt.simBoundsMin.x, rt.simBoundsMin.y, rt.simBoundsMin.z],
+      max: [rt.simBoundsMax.x, rt.simBoundsMax.y, rt.simBoundsMax.z],
+    };
+  }
+
+  applyEngineRuntime(patch: Record<string, unknown>): void {
+    if (this.disposed) return;
+    this.app?.applyEngineRuntime?.(patch);
+  }
+
+  setSubstance(hexColor: number, strength: number): void {
+    if (this.disposed) return;
+    this.app?.particleRenderer?.setSubstance?.(hexColor, strength);
+  }
+
+  /** Returns the real byte cost of the chosen source (0 for procedural). */
+  async setEnvironment(
+    source: "procedural" | "studio" | "meadow",
+  ): Promise<number> {
+    if (this.disposed || !this.app) return 0;
+    return (await this.app.setEnvironmentSource(source)) as number;
   }
 
   /** A/B what he reflects: the void studio (true) or the legacy meadow HDRI. */
@@ -476,7 +592,10 @@ export class FlowEngineBridge implements FlowEngineApi {
         }
       }
 
-      if (this.lenoxDrive) {
+      if (this.options.phaseField) {
+        // The phase-field host owns runtime, targets and pointer influence.
+        // No drive runs here — that is the whole point of the mode.
+      } else if (this.lenoxDrive) {
         // Lenox owns runtime + pointer influence in proof mode.
         const state = this.lenoxDrive.update(
           this.app,
@@ -512,7 +631,7 @@ export class FlowEngineBridge implements FlowEngineApi {
           this.interactiveEnabled && !this.postEnterActive ? 1 : 0;
         this.app.setPointerInfluence(pointerInfluence);
       }
-      if (this.lenoxDrive) {
+      if (this.lenoxDrive || this.options.phaseField) {
         // Real engine frame time (CPU-side tick incl. GPU submit) — the
         // React FPS HUD runs its own rAF and does not measure the engine.
         const engineT0 = performance.now();
