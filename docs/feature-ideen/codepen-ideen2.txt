@@ -1,0 +1,2772 @@
+Hier kommen die snippets. 
+
+1. Pure CSS "Eye" (das sieht einfach geil und high tech aus, nichts besonderes)
+https://codepen.io/miocene/pen/rNOVWor
+```
+html:
+<div class="eye"></div>
+
+<div class="circle-1"></div>
+<div class="circle-2"></div>
+<div class="circle-3"></div>
+<div class="circle-4"></div>
+<div class="circle-5"></div>
+<div class="circle-6"></div>
+<div class="circle-7"></div>
+<div class="circle-8"></div>
+<div class="circle-9"></div>
+<div class="circle-10"></div>
+<div class="circle-11"></div>
+<div class="circle-12"></div>
+<div class="circle-13"></div>
+<div class="circle-14"></div>
+
+<div class="glitch"></div>
+
+<div class="fragment-1"></div>
+<div class="fragment-2"></div>
+<div class="fragment-3"></div>
+
+
+<svg width="190" height="190" viewBox="0 0 190 190" fill="none" xmlns="http://www.w3.org/2000/svg">
+	<defs>
+		<clipPath id='bagel1'>
+			<path fill-rule="evenodd" clip-rule="evenodd" d="M95 190C147.467 190 190 147.467 190 95C190 42.533 147.467 0 95 0C42.533 0 0 42.533 0 95C0 147.467 42.533 190 95 190ZM95 120C108.807 120 120 108.807 120 95C120 81.1929 108.807 70 95 70C81.1929 70 70 81.1929 70 95C70 108.807 81.1929 120 95 120Z" />
+		</clipPath>
+		<clipPath id='bagel2'>
+			<path fill-rule="evenodd" clip-rule="evenodd" d="M71 142C110.212 142 142 110.212 142 71C142 31.7878 110.212 0 71 0C31.7878 0 0 31.7878 0 71C0 110.212 31.7878 142 71 142ZM71 139C108.555 139 139 108.555 139 71C139 33.4446 108.555 3 71 3C33.4446 3 3 33.4446 3 71C3 108.555 33.4446 139 71 139Z" />
+		</clipPath>
+		<clipPath id='bagel3'>
+			<path fill-rule="evenodd" clip-rule="evenodd" d="M60 120C93.1372 120 120 93.1372 120 60C120 26.8628 93.1372 0 60 0C26.8628 0 0 26.8628 0 60C0 93.1372 26.8628 120 60 120ZM60 115C90.3757 115 115 90.3757 115 60C115 29.6243 90.3757 5 60 5C29.6243 5 5 29.6243 5 60C5 90.3757 29.6243 115 60 115Z" />
+		</clipPath>
+		<clipPath id='bagel4'>
+			<path fill-rule="evenodd" clip-rule="evenodd" d="M38 76C58.9868 76 76 58.9868 76 38C76 17.0132 58.9868 0 38 0C17.0132 0 0 17.0132 0 38C0 58.9868 17.0132 76 38 76ZM38 72C56.7777 72 72 56.7776 72 38C72 19.2224 56.7777 4 38 4C19.2223 4 4 19.2224 4 38C4 56.7776 19.2223 72 38 72Z" />
+		</clipPath>
+	</defs>
+</svg>
+
+css:
+html, body {
+	padding: 0; margin: 0;
+}
+
+body {
+	position: relative;
+	width: 100vw;
+	min-width: 800px;
+	height: 100vh;
+	min-height: 600px;
+	background: linear-gradient(-45deg, #8691b3, #edeef3);
+}
+	body *, body *:before, body *:after {
+		content: '';
+		position: absolute;
+		top: 50%; left: 50%;
+	}
+
+
+.eye {
+	width: 332px; height: 332px;
+	transform: translate(-50%, -50%);
+	border-radius: 50%;
+	background: #EBEDF3;
+	filter: blur(5px);
+
+	animation: eyeAnimation 4s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes eyeAnimation {
+	0%, 33%, 100% {
+		box-shadow: inset -8px -13px 20px -10px rgba(230, 230, 236, 0.04), 64px 55px 40px -40px #38406A, 20px 18px 30px -10px #38406A, inset -70px -50px 60px -30px #4b6398, inset -90px -90px 70px -90px #697398, inset -70px -50px 100px -40px #697398, inset 80px 50px 80px -50px #eeeef3, -25px -15px 50px -10px #F6F6FB, 14px -1px 50px -10px #7e7ea9, 1px 9px 50px -10px #7e7ea9, inset -90px 40px 60px -20px rgba(116, 66, 255, 0.1), inset -90px -120px 60px -20px rgba(116, 66, 255, 0.1);
+    transform: translate(-50%, -50%) scale(1.25);
+	}
+	65% {
+		box-shadow: inset -8px -13px 60px -10px rgba(230, 230, 236, 0.2), 44px 35px 20px -20px #687294, 11px 9px 9px -4px #6e799d, inset -100px -70px 40px -110px #6A789C, inset -90px -90px 70px -90px #697398, inset -70px -50px 100px -40px #697398, inset 80px 50px 80px -50px #eeeef3, -25px -15px 30px -10px #F6F6FB;
+		transform: translate(-50%, -50%) scale(1);
+	}
+}
+
+
+	.eye::after {
+		width: 160px; height: 160px;
+		border-radius: 50%;
+		box-shadow: inset -50px -20px 30px 0px #e7e2f5, inset 100px 10px 20px -27px #2f2c4c, 0px 0px 10px 7px rgba(231, 226, 245, 1);
+
+		animation: pupilAnimationSize 4s cubic-bezier(1, 0, 1, 1) infinite,
+							 pupilAnimationView 4s ease infinite;
+	}
+@keyframes pupilAnimationSize {
+	0%, 30%, 100% { transform: translate(-50%, -50%) scale(0.85); }
+	40%, 90% 			{ transform: translate(-50%, -50%) scale(0.5); }
+}
+@keyframes pupilAnimationView {
+	0%, 30%, 100% {
+		box-shadow: inset -50px -20px 30px 0px #e7e2f5, inset 100px 10px 20px -27px #2f2c4c, 0px 0px 10px 7px rgba(231, 226, 245, 1);
+	}
+	60%, 66% {
+		box-shadow: inset -50px -20px 30px 0px rgba(231, 226, 245, 0), inset 10px 10px 70px -27px rgba(47, 44, 76, 0), 0px 0px 10px 7px hsla(256, 49%, 92%, 0);
+	}
+	90% {
+		box-shadow: inset -50px -20px 30px 0px #e7e2f5, inset 100px 10px 20px -27px #2f2c4c, 0px 0px 10px 7px rgba(231, 226, 245, 1);
+	}
+}
+
+
+.circle-1 {
+	width: 475px; height: 475px;
+	border-radius: 50%;
+	border: 1px solid transparent;
+	border-right-color: rgba(223, 228, 255, 0.6);
+
+	animation: circle1AnimationOpacity 4s ease infinite,
+						 circle1AnimationMove 4s ease infinite;
+}
+@keyframes circle1AnimationMove {
+	00%, 100% 		{ transform: translate(-50%, -50%) rotate(49deg); }
+	07% 					{ transform: translate(-50%, -50%) rotate(38deg); }
+	12%, 19%, 68% { transform: translate(-50%, -50%) rotate(42deg); }
+	26%, 30% 			{ transform: translate(-50%, -50%) rotate(82deg); }
+	73% 					{ transform: translate(-50%, -50%) rotate(34deg); }
+	87%, 92% 			{ transform: translate(-50%, -50%) rotate(69deg); }
+	94% 					{ transform: translate(-50%, -50%) rotate(65deg); }
+}
+@keyframes circle1AnimationOpacity {
+	00%, 27%, 73%, 100% { opacity: 1; }
+	30%, 70% 						{ opacity: 0; }
+}
+
+
+.circle-2 {
+	width: 475px; height: 475px;
+	border-radius: 50%;
+	border: 1px solid transparent;
+	border-right-color: rgba(223, 228, 255, 0.6);
+
+	animation: circle2AnimationOpacity 4s ease infinite,
+						 circle2AnimationMove 4s ease infinite;
+}
+@keyframes circle2AnimationMove {
+	0%, 100% { transform: translate(-50%, -50%) rotate(229deg); }
+	9% 			 { transform: translate(-50%, -50%) rotate(220deg); }
+	14%, 21% { transform: translate(-50%, -50%) rotate(225deg); }
+	29%, 67% { transform: translate(-50%, -50%) rotate(262deg); }
+	82% 		 { transform: translate(-50%, -50%) rotate(241deg); }
+	90%, 94% { transform: translate(-50%, -50%) rotate(249deg); }
+	99% 		 { transform: translate(-50%, -50%) rotate(245deg); }
+}
+@keyframes circle2AnimationOpacity {
+	0%, 27%, 79%, 100% { opacity: 1; }
+	30%, 76% 					 { opacity: 0; }
+}
+
+
+.circle-3 {
+	left: calc(50% + 93px);
+	top: calc(50% - 189px);
+	width: 106px; height: 280px;
+	overflow: hidden;
+}
+	.circle-3::before {
+		left: -275%;
+		top: -4%;
+		width: 393px;
+		height: 393px;
+		border-radius: 50%;
+		border: 1px solid transparent;
+		border-right-color: rgba(223, 228, 255, 0.6);
+
+		animation: circle3Animation 4s ease infinite;
+	}
+@keyframes circle3Animation {
+	0%   { transform: rotate(-3deg); }
+	20%  { transform: rotate(-107deg); }
+	79%  { transform: rotate(-286deg); }
+	100% { transform: rotate(-364deg); }
+}
+
+
+.circle-4 {
+	width: 295px; height: 295px;
+	border-radius: 50%;
+	border: 1px solid transparent;
+	border-right-color: rgb(251, 251, 251);
+	border-left-color: rgba(251, 251, 251, 0.2);
+
+	animation: circle4AnimationMove 4s cubic-bezier(1, 0, 1, 1) infinite,
+						 circle4AnimationOpacity 4s ease infinite;
+}
+@keyframes circle4AnimationMove {
+	0%, 100% { transform: translate(-50%, -50%) rotate(219deg) scale(1); }
+	6% 			 { transform: translate(-50%, -50%) rotate(221deg) scale(0.9); }
+	16% 		 { transform: translate(-50%, -50%) rotate(302deg) scale(0.9); }
+	22% 		 { transform: translate(-50%, -50%) rotate(307deg) scale(0.9); }
+	29% 		 { transform: translate(-50%, -50%) rotate(312deg) scale(0.93); }
+	33% 		 { transform: translate(-50%, -50%) rotate(310deg) scale(0.93); }
+	36% 		 { transform: translate(-50%, -50%) rotate(300deg) scale(0.7); }
+	39% 		 { transform: translate(-50%, -50%) rotate(220deg) scale(0.92); }
+	50%, 57% { transform: translate(-50%, -50%) rotate(248deg) scale(0.92); }
+	66% 		 { transform: translate(-50%, -50%) rotate(225deg) scale(0.92); }
+	73%, 81% { transform: translate(-50%, -50%) rotate(243deg) scale(0.92); }
+	93% 		 { transform: translate(-50%, -50%) rotate(215deg) scale(1); }
+}
+@keyframes circle4AnimationOpacity {
+	00%, 33%, 50%, 100% { opacity: 1; }
+	36%, 39% { opacity: 0; }
+}
+
+
+.circle-5 {
+	width: 100px; height: 100px;
+	transform: translate(-50%, -50%);
+	
+	animation: circle5AnimationSize 4s cubic-bezier(1, 0, 1, 1) infinite,
+						 circle5AnimationView 4s ease infinite;
+}
+	.circle-5::before {
+		width: 173px; height: 173px;
+		border-radius: 50%;
+		border: 1px solid rgb(251, 251, 251);
+		transform: translate(-50%, -50%);
+	}
+	.circle-5::after {
+		width: 177px; height: 177px;
+		border-radius: 50%;
+		border: 1px solid rgb(251, 251, 251);
+		transform: translate(-50%, -50%);
+	}
+@keyframes circle5AnimationSize {
+	0%, 38%, 82.82%, 100% { transform: translate(-50%, -50%) scale(1); }
+	45%, 75.44% 					{ transform: translate(-50%, -50%) scale(0.7); }
+}
+@keyframes circle5AnimationView {
+	0%, 5.7%, 7.4%, 9.8%, 11.5%, 14%, 15.6%, 18.9%, 21.3%, 23.8%, 25.4%, 28.7%, 35.3%, 42%, 77.9%, 82.7%, 83.6%, 85.2%, 86.1%, 91.8%, 93.5%, 97.6%, 100% { opacity: 1; }
+	2.5%, 6.6%, 8.2%, 10.7%, 14.8%, 18%, 20.5%, 22.1%, 24.6%, 27.9%, 36%, 88.6% { opacity: 0.5; }
+	47%, 77.8%, 82.8%, 83.5%, 85.3%, 86%, 90.2%, 92.7%, 96.8%, 99.2% { opacity: 0; }
+}
+
+
+.circle-6 {
+	top: 50%; left: 50%;
+	width: 190px; height: 190px;
+	background: repeating-conic-gradient(from 0deg, rgba(179, 221, 255, 0.4) 0deg 1deg, transparent 1deg 2deg);
+	clip-path: url(#bagel1);
+	border-radius: 50%;
+
+	animation: circle6Animation 4s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes circle6Animation {
+	0% {
+		transform: translate(-50%, -50%) scale(1);
+	}
+	8%, 35% {
+		transform: translate(-50%, -50%) scale(0.93);
+		opacity: 1;
+	}
+	40%, 90% {
+		transform: translate(-50%, -50%) scale(0.2);
+		opacity: 0;
+	}
+	95%, 100% {
+		transform: translate(-50%, -50%) scale(1);
+		opacity: 1;
+	}
+}
+
+.circle-7 {
+	top: 50%; left: 50%;
+	width: 142px; height: 142px;
+	filter: blur(1px);
+
+	animation: circle6Animation 4s -0.1s cubic-bezier(1, 0, 1, 1) infinite;
+}
+	.circle-7::before {
+		top: 0; left: 0;
+		width: 100%; height: 100%;
+		background: repeating-conic-gradient(from 0deg, rgba(114, 87, 187, 0.6) 0deg 2deg, transparent 2deg 8deg);
+		clip-path: url(#bagel2);
+		border-radius: 50%;
+	}
+
+
+.circle-8 {
+	top: 50%; left: 50%;
+	width: 120px; height: 120px;
+	background: repeating-conic-gradient(from 0deg, rgba(236, 247, 255, 0.68) 0deg 1deg, transparent 1deg 2deg);
+	clip-path: url(#bagel3);
+	border-radius: 50%;
+
+	animation: circle6Animation 4s -0.13s cubic-bezier(1, 0, 1, 1) infinite;
+}
+
+
+.circle-9 {
+	top: 50%; left: 50%;
+	width: 76px; height: 76px;
+	background: repeating-conic-gradient(from 0deg, rgba(236, 247, 255, 0.68) 0deg 1deg, transparent 1deg 2deg);
+	clip-path: url(#bagel4);
+	border-radius: 50%;
+
+	animation: circle6Animation 4s -0.16s cubic-bezier(1, 0, 1, 1) infinite;
+}
+
+
+.circle-10 {
+	top: 50%; left: 50%;
+	width: 190px; height: 190px;
+	background: radial-gradient(rgba(230, 245, 255, 0.6), rgba(201, 243, 255, 0.5), rgba(74, 105, 160, 0.3), transparent 70%);
+	clip-path: url(#bagel1);
+	border-radius: 50%;
+
+	animation: circle10Animation 4s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes circle10Animation {
+	0% {
+		transform: translate(-50%, -50%) scale(1);
+	}
+	4%, 30% {
+		transform: translate(-50%, -50%) scale(0.93);
+		opacity: 1;
+	}
+	35%, 93% {
+		transform: translate(-50%, -50%) scale(0);
+		opacity: 0;
+	}
+	98%, 100% {
+		transform: translate(-50%, -50%) scale(1);
+		opacity: 1;
+	}
+}
+
+
+.circle-11 {
+	top: 50%; left: 50%;
+	width: 190px; height: 190px;
+	background: repeating-conic-gradient(from 0deg, rgba(229, 243, 255, 0.1) 0deg 1deg, transparent 1deg 8deg, rgba(229, 243, 255, 0.3) 8deg 9deg, transparent 9deg 10deg, rgba(229, 243, 255, 0.1) 10deg 11deg, transparent 11deg 72deg);
+	clip-path: url(#bagel1);
+	border-radius: 50%;
+
+	animation: circle11Animation 4s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes circle11Animation {
+	0%, 98%, 100% {
+		transform: translate(-50%, -50%) rotate(0deg);
+		opacity: 1;
+	}
+	15% {
+		transform: translate(-50%, -50%) rotate(45deg);
+	}
+	25% {
+		transform: translate(-50%, -50%) rotate(-10deg);
+	}
+	30% {
+		opacity: 1;
+	}
+	35% {
+		transform: translate(-50%, -50%) rotate(-20deg);
+		opacity: 0;
+	}
+	93% {
+		transform: translate(-50%, -50%) rotate(80deg);
+		opacity: 0;
+	}
+}
+
+
+.circle-12 {
+	top: 50%; left: 50%;
+	width: 190px; height: 190px;
+	background: repeating-conic-gradient(from 0deg, rgba(208, 233, 255, 0.2) 20deg 21deg, transparent 21deg 40deg, rgba(192, 223, 249, 0.25) 40deg 41deg, transparent 41deg 43deg, rgba(179, 220, 255, 0.15) 43deg 44deg, transparent 44deg 76deg);
+	clip-path: url(#bagel1);
+	border-radius: 50%;
+
+	animation: circle12Animation 4s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes circle12Animation {
+	0%, 96%, 100% {
+		transform: translate(-50%, -50%) rotate(0deg);
+		opacity: 1;
+	}
+	10% {
+		transform: translate(-50%, -50%) rotate(45deg);
+	}
+	25% {
+		transform: translate(-50%, -50%) rotate(-45deg);
+	}
+	30% {
+		opacity: 1;
+	}
+	35% {
+		transform: translate(-50%, -50%) rotate(50deg);
+		opacity: 0;
+	}
+	93% {
+		transform: translate(-50%, -50%) rotate(-90deg);
+		opacity: 0;
+	}
+}
+
+
+.circle-13 {
+	width: 100px; height: 100px;
+	transform: translate(-50%, -50%);
+	animation: circle13AnimationSize 4s cubic-bezier(1, 0, 1, 1) infinite,
+						 circle13AnimationView 4s ease infinite;
+}
+	.circle-13::before {
+		width: 110px; height: 110px;
+		border-radius: 50%;
+		border: 1px solid rgb(251, 251, 251);
+		transform: translate(-50%, -50%);
+	}
+	.circle-13::after {
+		width: 120px; height: 120px;
+		border-radius: 50%;
+		border: 1px solid rgba(251, 251, 251, 0.5);
+		transform: translate(-50%, -50%);
+	}
+@keyframes circle13AnimationSize {
+	0%, 32%, 86%, 100% { transform: translate(-50%, -50%) scale(1); }
+	38%, 82% { transform: translate(-50%, -50%) scale(0.2); }
+}
+@keyframes circle13AnimationView {
+	/* подвигать */
+	0% { opacity: 1; }
+	2.5% { opacity: 0.5; }
+	5.7% { opacity: 1; }
+	6.6% { opacity: 0.5; }
+	7.4% { opacity: 1; }
+	8.2% { opacity: 0.5; }
+	9.8% { opacity: 1; }
+	10.7% { opacity: 0.5; }
+	11.5%, 14% { opacity: 1; }
+	14.8% { opacity: 0.5; }
+	15.6% { opacity: 1; }
+	18% { opacity: 0.5; }
+	18.9% { opacity: 1; }
+	20.5% { opacity: 0.5; }
+	21.3% { opacity: 1; }
+	22.1% { opacity: 0.5; }
+	23.8% { opacity: 1; }
+	24.6% { opacity: 0.5; }
+	25.4% { opacity: 1; }
+	27.9% { opacity: 0.5; }
+	28.7%, 32% { opacity: 1; }
+	38% { opacity: 0; }
+	82% { opacity: 0; }
+	86% { opacity: 1; }
+	88.6% { opacity: 0.5; }
+	90.2% { opacity: 0; }
+	91.8% { opacity: 1; }
+	92.7% { opacity: 0; }
+	93.5% { opacity: 1; }
+	96.8% { opacity: 0; }
+	97.6% { opacity: 1; }
+	99.2% { opacity: 0; }
+	100% { opacity: 1; }
+}
+
+.circle-14 {
+	width: 100px; height: 100px;
+	transform: translate(-50%, -50%);
+	animation: circle13AnimationSize 4s -0.15s cubic-bezier(1, 0, 1, 1) infinite,
+						 circle14AnimationView 4s ease infinite;
+}
+	.circle-14::before {
+		width: 70px; height: 70px;
+		border-radius: 50%;
+		border: 1px solid rgba(251, 251, 251, 0.5);
+		transform: translate(-50%, -50%);
+	}
+	.circle-14::after {
+		width: 95px; height: 95px;
+		border-radius: 50%;
+		border: 1px solid rgba(251, 251, 251, 0.3);
+		transform: translate(-50%, -50%);
+	}
+
+@keyframes circle14AnimationView {
+	/* подвигать */
+	0% { opacity: 1; }
+	2.5% { opacity: 0.5; }
+	5.7% { opacity: 1; }
+	6.6% { opacity: 0.5; }
+	7.4% { opacity: 1; }
+	8.2% { opacity: 0.5; }
+	9.8% { opacity: 1; }
+	10.7% { opacity: 0.5; }
+	11.5%, 14% { opacity: 1; }
+	14.8% { opacity: 0.5; }
+	15.6% { opacity: 1; }
+	18% { opacity: 0.5; }
+	18.9% { opacity: 1; }
+	20.5% { opacity: 0.5; }
+	21.3% { opacity: 1; }
+	22.1% { opacity: 0.5; }
+	23.8% { opacity: 1; }
+	24.6% { opacity: 0.5; }
+	25.4% { opacity: 1; }
+	27.9% { opacity: 0.5; }
+	28.7%, 32% { opacity: 1; }
+	38% { opacity: 0; }
+	82% { opacity: 0; }
+	86% { opacity: 1; }
+	88.6% { opacity: 0.5; }
+	90.2% { opacity: 0; }
+	91.8% { opacity: 1; }
+	92.7% { opacity: 0; }
+	93.5% { opacity: 1; }
+	96.8% { opacity: 0; }
+	97.6% { opacity: 1; }
+	99.2% { opacity: 0; }
+	100% { opacity: 1; }
+}
+
+
+.glitch {
+	width: 2px; height: 2px;
+	box-shadow: -21px -75px #8AC7ED, -16px -78px #8AC7ED, -8px -78px #8AC7ED, -5px -77px #8AC7ED, -2px -79px #8AC7ED, 10px -79px #8AC7ED, 25px -73px #8AC7ED, 41px -71px #8AC7ED, 44px -68px #8AC7ED, -26px -72px #8AC7ED, -45px -62px #8AC7ED, -65px -57px #8AC7ED, 59px -49px #8AC7ED, 67px -52px #8AC7ED, 37px -69px #8AC7ED, 43px -62px #8AC7ED, 39px -62px #8AC7ED, 17px -71px #8AC7ED, 28px -67px #8AC7ED, 65px -32px #8AC7ED, 73px -24px #8AC7ED, 67px -25px #8AC7ED, 76px -14px #8AC7ED, 70px -18px #8AC7ED, 82px 21px #8AC7ED, 79px 20px #8AC7ED, 72px 15px #8AC7ED, 55px 45px #8AC7ED, 48px 51px #8AC7ED, 43px 58px #8AC7ED, 37px 57px #8AC7ED, 36px 63px #8AC7ED, 32px 76px #8AC7ED, 35px 70px #8AC7ED, 25px 71px #8AC7ED, 20px 75px #8AC7ED, 5px 70px #8AC7ED, 7px 75px #8AC7ED, -5px 79px #8AC7ED, 3px 78px #8AC7ED, -1px 77px #8AC7ED, -13px 78px #8AC7ED, -15px 82px #8AC7ED, -20px 76px #8AC7ED, -18px 78px #8AC7ED, -17px 75px #8AC7ED, -22px 72px #8AC7ED, -34px 72px #8AC7ED, -36px 69px #8AC7ED, -43px 74px #8AC7ED, -41px 72px #8AC7ED, -42px 69px #8AC7ED, -38px 66px #8AC7ED, -43px 63px #8AC7ED, -37px 61px #8AC7ED, -56px 66px #8AC7ED, -54px 61px #8AC7ED, -58px 54px #8AC7ED, -60px 41px #8AC7ED, -50px 56px #8AC7ED, -54px 57px #8AC7ED, -60px 52px #8AC7ED, -74px 35px #8AC7ED, -76px 18px #8AC7ED, -74px 25px #8AC7ED, -69px 23px #8AC7ED, -84px 13px #8AC7ED, -73px 3px #8AC7ED, -80px -1px #8AC7ED, -79px -4px #8AC7ED, -79px -7px #8AC7ED, -70px -11px #8AC7ED, -67px -23px #8AC7ED, -84px -13px #8AC7ED, -71px -42px #8AC7ED, -61px -49px #8AC7ED, -58px -43px #8AC7ED, -55px -50px #8AC7ED, -32px -72px #8AC7ED, -80px -30px #8AC7ED, -59px -20px #8AC7ED, -79px 12px #8AC7ED, -76px 1px #8AC7ED, 8px 57px #8AC7ED, 59px 36px #8AC7ED, 60px 46px #8AC7ED, 54px 59px #8AC7ED, 44px 52px #8AC7ED, -31px 20px #8AC7ED, -56px 2px #8AC7ED, 47px 35px #8AC7ED, 70px 6px #8AC7ED, 60px -2px #8AC7ED,
+							-21px -75px 0 1px rgba(255, 255, 255, 0.1), -16px -78px 0 1px rgba(255, 255, 255, 0.1), -8px -78px 0 1px rgba(255, 255, 255, 0.1), -5px -77px 0 1px rgba(255, 255, 255, 0.1), -2px -79px 0 1px rgba(255, 255, 255, 0.1), 10px -79px 0 1px rgba(255, 255, 255, 0.1), 25px -73px 0 1px rgba(255, 255, 255, 0.1), 41px -71px 0 1px rgba(255, 255, 255, 0.1), 44px -68px 0 1px rgba(255, 255, 255, 0.1), -26px -72px 0 1px rgba(255, 255, 255, 0.1), -45px -62px 0 1px rgba(255, 255, 255, 0.1), -65px -57px 0 1px rgba(255, 255, 255, 0.1), 59px -49px 0 1px rgba(255, 255, 255, 0.1), 67px -52px 0 1px rgba(255, 255, 255, 0.1), 37px -69px 0 1px rgba(255, 255, 255, 0.1), 43px -62px 0 1px rgba(255, 255, 255, 0.1), 39px -62px 0 1px rgba(255, 255, 255, 0.1), 17px -71px 0 1px rgba(255, 255, 255, 0.1), 28px -67px 0 1px rgba(255, 255, 255, 0.1), 65px -32px 0 1px rgba(255, 255, 255, 0.1), 73px -24px 0 1px rgba(255, 255, 255, 0.1), 67px -25px 0 1px rgba(255, 255, 255, 0.1), 76px -14px 0 1px rgba(255, 255, 255, 0.1), 70px -18px 0 1px rgba(255, 255, 255, 0.1), 82px 21px 0 1px rgba(255, 255, 255, 0.1), 79px 20px 0 1px rgba(255, 255, 255, 0.1), 72px 15px 0 1px rgba(255, 255, 255, 0.1), 55px 45px 0 1px rgba(255, 255, 255, 0.1), 48px 51px 0 1px rgba(255, 255, 255, 0.1), 43px 58px 0 1px rgba(255, 255, 255, 0.1), 37px 57px 0 1px rgba(255, 255, 255, 0.1), 36px 63px 0 1px rgba(255, 255, 255, 0.1), 32px 76px 0 1px rgba(255, 255, 255, 0.1), 35px 70px 0 1px rgba(255, 255, 255, 0.1), 25px 71px 0 1px rgba(255, 255, 255, 0.1), 20px 75px 0 1px rgba(255, 255, 255, 0.1), 5px 70px 0 1px rgba(255, 255, 255, 0.1), 7px 75px 0 1px rgba(255, 255, 255, 0.1), -5px 79px 0 1px rgba(255, 255, 255, 0.1), 3px 78px 0 1px rgba(255, 255, 255, 0.1), -1px 77px 0 1px rgba(255, 255, 255, 0.1), -13px 78px 0 1px rgba(255, 255, 255, 0.1), -15px 82px 0 1px rgba(255, 255, 255, 0.1), -20px 76px 0 1px rgba(255, 255, 255, 0.1), -18px 78px 0 1px rgba(255, 255, 255, 0.1), -17px 75px 0 1px rgba(255, 255, 255, 0.1), -22px 72px 0 1px rgba(255, 255, 255, 0.1), -34px 72px 0 1px rgba(255, 255, 255, 0.1), -36px 69px 0 1px rgba(255, 255, 255, 0.1), -43px 74px 0 1px rgba(255, 255, 255, 0.1), -41px 72px 0 1px rgba(255, 255, 255, 0.1), -42px 69px 0 1px rgba(255, 255, 255, 0.1), -38px 66px 0 1px rgba(255, 255, 255, 0.1), -43px 63px 0 1px rgba(255, 255, 255, 0.1), -37px 61px 0 1px rgba(255, 255, 255, 0.1), -56px 66px 0 1px rgba(255, 255, 255, 0.1), -54px 61px 0 1px rgba(255, 255, 255, 0.1), -58px 54px 0 1px rgba(255, 255, 255, 0.1), -60px 41px 0 1px rgba(255, 255, 255, 0.1), -50px 56px 0 1px rgba(255, 255, 255, 0.1), -54px 57px 0 1px rgba(255, 255, 255, 0.1), -60px 52px 0 1px rgba(255, 255, 255, 0.1), -74px 35px 0 1px rgba(255, 255, 255, 0.1), -76px 18px 0 1px rgba(255, 255, 255, 0.1), -74px 25px 0 1px rgba(255, 255, 255, 0.1), -69px 23px 0 1px rgba(255, 255, 255, 0.1), -84px 13px 0 1px rgba(255, 255, 255, 0.1), -73px 3px 0 1px rgba(255, 255, 255, 0.1), -80px -1px 0 1px rgba(255, 255, 255, 0.1), -79px -4px 0 1px rgba(255, 255, 255, 0.1), -79px -7px 0 1px rgba(255, 255, 255, 0.1), -70px -11px 0 1px rgba(255, 255, 255, 0.1), -67px -23px 0 1px rgba(255, 255, 255, 0.1), -84px -13px 0 1px rgba(255, 255, 255, 0.1), -71px -42px 0 1px rgba(255, 255, 255, 0.1), -61px -49px 0 1px rgba(255, 255, 255, 0.1), -58px -43px 0 1px rgba(255, 255, 255, 0.1), -55px -50px 0 1px rgba(255, 255, 255, 0.1), -32px -72px 0 1px rgba(255, 255, 255, 0.1), -80px -30px 0 1px rgba(255, 255, 255, 0.1), -59px -20px 0 1px rgba(255, 255, 255, 0.1), -79px 12px 0 1px rgba(255, 255, 255, 0.1), -76px 1px 0 1px rgba(255, 255, 255, 0.1), 8px 57px 0 1px rgba(255, 255, 255, 0.1), 59px 36px 0 1px rgba(255, 255, 255, 0.1), 60px 46px 0 1px rgba(255, 255, 255, 0.1), 54px 59px 0 1px rgba(255, 255, 255, 0.1), 44px 52px 0 1px rgba(255, 255, 255, 0.1), -31px 20px 0 1px rgba(255, 255, 255, 0.1), -56px 2px 0 1px rgba(255, 255, 255, 0.1), 47px 35px 0 1px rgba(255, 255, 255, 0.1), 70px 6px 0 1px rgba(255, 255, 255, 0.1), 60px -2px 0 1px rgba(255, 255, 255, 0.1);
+	filter: blur(1px);
+
+	animation: glitchAnimationOpacity 4s cubic-bezier(1, 0, 1, 1) infinite,
+						 glitchAnimationMove 4s cubic-bezier(1, 0, 1, 1) infinite,
+						 glitchAnimationBright 4s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes glitchAnimationOpacity {
+	0%, 30%, 96%, 100% { opacity: 1; }
+	35%, 93% 					 { opacity: 0; }
+}
+@keyframes glitchAnimationMove {
+	0%, 100% { transform: translate(-50%, -50%) rotate(0deg); }
+	35%, 65% { transform: translate(-50%, -50%) rotate(4320deg); }
+}
+@keyframes glitchAnimationBright {
+	0%, 100% { filter: blur(1px); }
+	35%, 65% { filter: blur(1px) brightness(1.8); }
+}
+
+
+.fragment-1::before {
+	width: 6px; height: 6px;
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	border-radius: 2px;
+	
+	animation: fragment1BeforeAnimationMove 4s -0.15s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes fragment1BeforeAnimationMove {
+	0%, 100% {
+		transform: rotate(0deg) translate(71px, -181px);
+		opacity: 1;
+	}
+	37% {
+		transform: rotate(15deg) translate(71px, -181px);
+		opacity: 1;
+	}
+	37.1%, 76.9% {
+		opacity: 0;
+	}
+	77% {
+		transform: rotate(-2deg) translate(71px, -181px);
+		opacity: 1;
+	}
+	90% {
+		transform: rotate(-9deg) translate(71px, -181px);
+	}
+}
+
+
+.fragment-1::after {
+	width: 6px; height: 6px;
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	border-radius: 2px;
+
+	animation: fragment1AfterAnimationMove 4s -0.15s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes fragment1AfterAnimationMove {
+	0%, 100% {
+		transform: rotate(0deg) translate(285px, 48px);
+		opacity: 1;
+	}
+	7% {
+		transform: rotate(5deg) translate(285px, 48px);
+	}
+	22% {
+		transform: rotate(-1deg) translate(285px, 48px);
+	}
+	40% {
+		transform: rotate(-3deg) translate(285px, 48px);
+		opacity: 1;
+	}
+	40.1%, 81.9% {
+		opacity: 0;
+	}
+	82% {
+		transform: rotate(-15deg) translate(285px, 48px);
+		opacity: 1;
+	}
+}
+
+
+.fragment-2::after {
+	width: 6px; height: 6px;
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	border-radius: 2px;
+
+	animation: fragment2AfterAnimationMove 4s -0.15s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes fragment2AfterAnimationMove {
+	0%, 100% {
+		transform: rotate(0deg) translate(-220px, 162px);
+		opacity: 1;
+	}
+	46% {
+		transform: rotate(-8deg) translate(-220px, 162px);
+		opacity: 1;
+	}
+	46.1%, 97.9% {
+		opacity: 0;
+	}
+	98% {
+		transform: rotate(2deg) translate(-220px, 162px);
+		opacity: 1;
+	}
+}
+
+
+.fragment-2::before {
+	width: 6px; height: 6px;
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	border-radius: 2px;
+
+	animation: fragment2BeforeAnimationMove 4s -0.15s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes fragment2BeforeAnimationMove {
+	0%, 100% {
+		transform: rotate(0deg) translate(284px, 111px);
+		opacity: 1;
+	}
+	2% {
+		transform: rotate(2deg) translate(284px, 111px);
+	}
+	9% {
+		transform: rotate(-5deg) translate(284px, 111px);
+	}
+	15%, 22% {
+		transform: rotate(-3deg) translate(284px, 111px);
+	}
+	27% {
+		transform: rotate(-2deg) translate(284px, 111px);
+		opacity: 1;
+	}
+	38.9% {
+		transform: rotate(-9deg) translate(284px, 111px);
+	}
+	39%, 76.9% {
+		opacity: 0;
+	}
+	77% {
+		transform: rotate(-9deg) translate(284px, 111px);
+		opacity: 1;
+	}
+}
+
+
+.fragment-3::after {
+	width: 6px; height: 6px;
+	background: rgba(255, 255, 255, 0.3);
+	border-radius: 2px;
+
+	animation: fragment3AfterAnimationMove 4s -0.15s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes fragment3AfterAnimationMove {
+	0%, 4.9%, 65.1%, 100% {
+		opacity: 0;
+	}
+	5% {
+		transform: rotate(0deg) translate(183px, 198px);
+		opacity: 1;
+	}
+	16% {
+		transform: rotate(-9deg) translate(284px, 111px);
+		opacity: 1;
+	}
+	16.1%, 60.9% {
+		opacity: 0;
+	}
+	61% {
+		transform: rotate(5deg) translate(284px, 111px);
+		opacity: 1;
+	}
+	65% {
+		transform: rotate(10deg) translate(284px, 111px);
+		opacity: 1;
+	}
+}
+
+
+.fragment-3::before {
+	width: 6px; height: 6px;
+	background: rgba(255, 255, 255, 0.3);
+	border-radius: 2px;
+
+	animation: fragment3BeforeAnimationMove 4s -0.15s cubic-bezier(1, 0, 1, 1) infinite;
+}
+@keyframes fragment3BeforeAnimationMove {
+	0%, 100% {
+		transform: rotate(0deg) translate(-253px, -126px);
+		opacity: 1;
+	}
+	22% {
+		transform: rotate(25deg) translate(-253px, -126px);
+		opacity: 1;
+	}
+	22.1%, 95.9% {
+		opacity: 0;
+	}
+	96% {
+		transform: rotate(-5deg) translate(-253px, -126px);
+		opacity: 1;
+	}
+}
+
+js:
+// based on image by Gleb Kuznetsov https://dribbble.com/shots/10117266-Eye-visual
+```
+
+2. Scaling Letter Toggle (auch nichts elementares aber diese on off ist einfach stylish)
+https://codepen.io/jkantner/pen/QwEvMKE
+```
+html:
+<div id="root"></div>
+
+css:
+* {
+	border: 0;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+:root {
+	--gray50: hsl(223 10% 95%);
+	--gray950: hsl(223 10% 5%);
+	--trans-dur: 0.3s;
+	--trans-timing: cubic-bezier(0.65, 0, 0.35, 1);
+	color-scheme: light dark;
+	font-size: clamp(48px, 2.85rem + 0.75vw, 60px);
+}
+
+body,
+input {
+	color: light-dark(var(--gray950), var(--gray50));
+	font: 1em / 1.5 "Archivo Black", sans-serif;
+}
+
+body {
+	background-color: light-dark(var(--gray50), var(--gray950));
+	display: grid;
+	place-items: center;
+	height: 100vh;
+	transition:
+		background-color var(--trans-dur),
+		color var(--trans-dur);
+}
+
+.switch {
+	display: grid;
+	grid-template: {
+		columns: 1.5em 2em;
+		rows: repeat(2, 1.5em);
+	};
+
+	&,
+	&__input {
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	&__input {
+		box-shadow:
+			0 0 0 max(0.05em, 1px) light-dark(var(--gray950), var(--gray50)) inset;
+		border-radius: 0.75em;
+		display: block;
+		grid-row: 1 / 3;
+		width: 1.5em;
+		height: 3em;
+		-webkit-appearance: none;
+		appearance: none;
+		transition:
+			background-color var(--trans-dur),
+			box-shadow var(--trans-dur),
+			color var(--trans-dur);
+
+		&::before {
+			background-color: light-dark(var(--gray950), var(--gray50));
+			border-radius: 50%;
+			content: "";
+			display: block;
+			margin: 0.15em;
+			width: 1.2em;
+			height: 1.2em;
+			transform: translateY(1.5em);
+			transition:
+				background-color var(--trans-dur),	
+				transform var(--trans-dur) var(--trans-timing);
+		}
+
+		&:checked {
+			&::before {
+				transform: translateY(0);
+			}
+		}
+	}
+
+	&__letters {
+		display: block;
+		font-size: 3.125em;
+		letter-spacing: -1px;
+		line-height: 0.415;
+		justify-self: center;
+		pointer-events: none;
+		transform: scale(0.64);
+		transform-origin: 50% 0;
+		transition: transform var(--trans-dur) var(--trans-timing);
+		-webkit-user-select: none;
+		-moz-user-select: none;
+		user-select: none;
+
+		& + & {
+			font-size: 2.5em;
+			line-height: 0.667;
+			align-self: end;
+			transform: scale(1);
+			transform-origin: 50% 100%;
+		}
+	}
+
+	&__sr {
+		overflow: hidden;
+		position: absolute;
+		width: 1px;
+		height: 1px;
+	}
+
+	// checked state
+	&__input:checked + &__letters {
+		transform: scale(1);
+	}
+
+	&__input:checked + &__letters + &__letters {
+		transform: scale(0.67);
+	}
+}
+
+js:
+import React, { StrictMode, useState } from "https://esm.sh/react";
+import { createRoot } from "https://esm.sh/react-dom/client";
+
+createRoot(document.getElementById("root")!).render(
+	<StrictMode>
+		<ScalingLetterToggle label="Dummy" />
+	</StrictMode>
+);
+
+interface ScalingLetterToggleProps {
+	label: string;
+	checked?: boolean;
+}
+
+function ScalingLetterToggle({
+	label,
+	checked = false
+}: Readonly<ScalingLetterToggleProps>) {
+	const [isChecked, setIsChecked] = useState<boolean>(checked);
+
+	return (
+		<label data-testid="switch" className="switch">
+			<input
+				data-testid="switch-input"
+				className="switch__input"
+				type="checkbox"
+				role="switch"
+				checked={isChecked}
+				onChange={() => setIsChecked(val => !val)}
+			/>
+			<span className="switch__letters" aria-hidden="true">n</span>
+			<span className="switch__letters" aria-hidden="true">ff</span>
+			<span className="switch__sr">{label}</span>
+		</label>
+	);
+}
+```
+
+3. Die wolken. Das ist hinzugefügt als zip datei. Sieht einfach klasse aus. könnte man evtl. auch am anfang nutzen die wolken.  /Users/lenox27/Downloads/n3fs5xrm--run.zip
+
+4.  toll gemacht, billig aber cool:
+https://componentry.dev/docs/components/scroll-choreography
+```
+"use client";
+
+import { motion, useScroll, useSpring, useTransform } from "framer-motion";
+import { useRef } from "react";
+import { cn } from "@workspace/ui/lib/utils";
+
+interface ScrollChoreographyProps {
+  className?: string;
+  images: {
+    topLeft: string;
+    topRight: string;
+    bottomLeft: string;
+    bottomRight: string;
+  };
+}
+
+export function ScrollChoreography({
+  className,
+  images,
+}: ScrollChoreographyProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end end"],
+  });
+
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 400, // Higher stiffness for a slightly faster snap
+    damping: 50,   // Play with damping to add a little bounce/jerk
+    mass: 1.2,     // Adds a bit more weight to the movement
+    restDelta: 0.001,
+  });
+
+  // Default positions relative to center
+  const xLeft = "-20vw";
+  const xRight = "20vw";
+  const yTop = "-14vh";
+  const yBottom = "14vh";
+
+  // Phase 1: 0 - 0.3 (Diagonal movement)
+  // Phase 2: 0.35 - 0.65 (Stack alignment to center)
+  // Phase 3: 0.7 - 0.9 (Top Right expands to full screen)
+
+  // Top Left -> moves to Bottom Left, then to Center
+  const tlX = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [xLeft, xLeft, xLeft, "0vw", "0vw"]);
+  const tlY = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [yTop, yBottom, yBottom, "0vh", "0vh"]);
+
+  // Bottom Right -> moves to Top Right, then to Center
+  const brX = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [xRight, xRight, xRight, "0vw", "0vw"]);
+  const brY = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [yBottom, yTop, yTop, "0vh", "0vh"]);
+
+  // Bottom Left -> stays, then moves to Center
+  const blX = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [xLeft, xLeft, xLeft, "0vw", "0vw"]);
+  const blY = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [yBottom, yBottom, yBottom, "0vh", "0vh"]);
+
+  // Top Right -> stays, then moves to Center, then expands
+  const trX = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [xRight, xRight, xRight, "0vw", "0vw"]);
+  const trY = useTransform(smoothProgress, [0, 0.3, 0.35, 0.65, 1], [yTop, yTop, yTop, "0vh", "0vh"]);
+
+  // Top Right (Hero) scaling/expansion properties
+  const heroWidth = useTransform(smoothProgress, [0.65, 0.7, 0.9, 1], ["36vw", "36vw", "100vw", "100vw"]);
+  const heroHeight = useTransform(smoothProgress, [0.65, 0.7, 0.9, 1], ["24vh", "24vh", "100vh", "100vh"]);
+
+  // Opacity fading for images underneath the hero as it expands
+  const underImagesOpacity = useTransform(smoothProgress, [0.75, 0.85], [1, 0]);
+
+  const baseImageClasses =
+    "absolute left-1/2 top-1/2 w-[36vw] h-[24vh] overflow-hidden -translate-x-1/2 -translate-y-1/2 bg-muted shadow-2xl will-change-transform";
+
+  return (
+    <div ref={containerRef} className={cn("relative h-[300vh] w-full", className)}>
+      <div className="sticky top-0 h-screen w-full overflow-hidden">
+        <div className="absolute inset-0 flex items-center justify-center">
+
+          {/* Top Left Image */}
+          <motion.div
+            style={{ x: tlX, y: tlY, opacity: underImagesOpacity }}
+            className={cn(baseImageClasses, "z-10")}
+          >
+            <img src={images.topLeft} alt="Top Left" className="h-full w-full object-cover" />
+          </motion.div>
+
+          {/* Bottom Right Image */}
+          <motion.div
+            style={{ x: brX, y: brY, opacity: underImagesOpacity }}
+            className={cn(baseImageClasses, "z-20")}
+          >
+            <img src={images.bottomRight} alt="Bottom Right" className="h-full w-full object-cover" />
+          </motion.div>
+
+          {/* Bottom Left Image */}
+          <motion.div
+            style={{ x: blX, y: blY, opacity: underImagesOpacity }}
+            className={cn(baseImageClasses, "z-30")}
+          >
+            <img src={images.bottomLeft} alt="Bottom Left" className="h-full w-full object-cover" />
+          </motion.div>
+
+          {/* Top Right Image (Hero - expands at the end) */}
+          <motion.div
+            style={{
+              x: trX,
+              y: trY,
+              width: heroWidth,
+              height: heroHeight,
+            }}
+            className={cn(baseImageClasses, "z-40 origin-center bg-black/5")}
+          >
+            <img src={images.topRight} alt="Top Right (Hero)" className="h-full w-full object-cover" />
+          </motion.div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+5. sieht gut aus als hintergrund., evtl. kann man es mit partikeln kombinieren:
+
+````
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import { WebGLErrorBoundary, WebGLFallback } from "./webgl-error-boundary";
+
+const VERTEX_SHADER = `
+attribute vec2 position;
+void main() {
+  gl_Position = vec4(position, 0.0, 1.0);
+}
+`;
+
+const FRAGMENT_SHADER = `
+precision highp float;
+
+uniform vec2 u_res;
+uniform float u_time;
+uniform vec3 u_colorDeep;
+uniform vec3 u_colorMid;
+uniform vec3 u_colorHighlight;
+uniform float u_speed;
+uniform float u_flowStrength;
+uniform float u_grain;
+uniform float u_contrast;
+uniform float u_opacity;
+uniform float u_reveal;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  mat2 rot = mat2(0.86, 0.51, -0.51, 0.86);
+  for (int i = 0; i < 6; i++) {
+    v += a * noise(p);
+    p = rot * p * 2.0;
+    a *= 0.5;
+  }
+  return v;
+}
+
+vec3 applyContrast(vec3 c, float contrast) {
+  return clamp((c - 0.5) * contrast + 0.5, 0.0, 1.0);
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_res;
+  float t = u_time * (0.14 * u_speed);
+  vec2 aspect = vec2(u_res.x / max(u_res.y, 1.0), 1.0);
+  vec2 p = (uv - 0.5) * aspect;
+
+  vec2 flowP = vec2(p.x * 1.1, p.y - t * 0.35);
+  float n1 = fbm(flowP * 2.8 + vec2(0.0, t * 0.2));
+  float n2 = fbm((flowP + n1 * 0.45) * 4.0 - vec2(0.0, t * 0.35));
+  float n3 = fbm((flowP + n2 * 0.4) * 6.5 + vec2(t * 0.15, 0.0));
+
+  float structure = n3 * 1.15 + (n2 - 0.5) * 0.5;
+  structure += (n1 - 0.5) * 0.3 * u_flowStrength;
+
+  float lowBand = smoothstep(0.18, 0.6, structure);
+  float highBand = smoothstep(0.62, 1.08, structure);
+  vec3 col = mix(u_colorDeep, u_colorMid, lowBand);
+  col = mix(col, u_colorHighlight, highBand);
+
+  float glow = smoothstep(0.52, 0.95, structure) * (0.35 + 0.5 * u_flowStrength);
+  col += glow * u_colorHighlight * 0.35;
+
+  float verticalMask = smoothstep(1.05, 0.05, uv.y);
+  verticalMask = pow(verticalMask, 1.1);
+
+  float vignette = smoothstep(1.28, 0.36, length(uv - 0.5));
+  col *= mix(0.9, 1.05, vignette);
+
+  col = applyContrast(col, u_contrast);
+
+  float dither = (hash(gl_FragCoord.xy + t * 10.0) - 0.5) * u_grain;
+  col += dither;
+
+  float alpha = verticalMask * smoothstep(0.08, 0.95, structure);
+  alpha *= smoothstep(0.0, 0.28, u_reveal - uv.x);
+  alpha *= u_opacity;
+
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), clamp(alpha, 0.0, 1.0));
+}
+`;
+
+const HEX_COLOR_REGEX = /^#?[0-9a-fA-F]{6}$/;
+const FALLBACK_DEEP = "#04050b";
+const FALLBACK_MID = "#134d93";
+const FALLBACK_HIGHLIGHT = "#8cecff";
+
+function sanitizeHexColor(value: string, fallback: string) {
+  const trimmed = value.trim();
+  if (!HEX_COLOR_REGEX.test(trimmed)) {
+    return fallback;
+  }
+  return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+}
+
+function hexToRgb01(hex: string): [number, number, number] {
+  const normalized = sanitizeHexColor(hex, FALLBACK_DEEP).replace("#", "");
+  const r = parseInt(normalized.slice(0, 2), 16) / 255;
+  const g = parseInt(normalized.slice(2, 4), 16) / 255;
+  const b = parseInt(normalized.slice(4, 6), 16) / 255;
+  return [r, g, b];
+}
+
+export interface WebGLLiquidProps extends React.HTMLAttributes<HTMLDivElement> {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  colorDeep?: string;
+  colorMid?: string;
+  colorHighlight?: string;
+  speed?: number;
+  flowStrength?: number;
+  grain?: number;
+  contrast?: number;
+  opacity?: number;
+  reveal?: boolean;
+  delayMs?: number;
+  revealDuration?: number;
+  children?: React.ReactNode;
+}
+
+const LIQUID_HEADLINE_CLASS =
+  "pb-[0.08em] text-[11cqi] md:text-[7cqi] lg:text-[5.5cqi] leading-[0.92] tracking-[-0.03em] font-semibold text-white";
+
+export function WebGLLiquid({
+  title = "Fluid Motion",
+  subtitle = "Premium Presence",
+  description = "A cinematic liquid field tuned for modern hero sections with polished depth and restrained motion.",
+  colorDeep = FALLBACK_DEEP,
+  colorMid = FALLBACK_MID,
+  colorHighlight = FALLBACK_HIGHLIGHT,
+  speed = 1,
+  flowStrength = 1,
+  grain = 0.05,
+  contrast = 1.1,
+  opacity = 0.95,
+  reveal = true,
+  delayMs = 0,
+  revealDuration = 1.2,
+  className,
+  children,
+  style,
+  ...props
+}: WebGLLiquidProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [hasWebGLError, setHasWebGLError] = useState(false);
+
+  const settings = useMemo(
+    () => ({
+      colorDeep,
+      colorMid,
+      colorHighlight,
+      speed,
+      flowStrength,
+      grain,
+      contrast,
+      opacity,
+      reveal,
+      delayMs,
+      revealDuration,
+    }),
+    [
+      colorDeep,
+      colorMid,
+      colorHighlight,
+      speed,
+      flowStrength,
+      grain,
+      contrast,
+      opacity,
+      reveal,
+      delayMs,
+      revealDuration,
+    ],
+  );
+
+  useEffect(() => {
+    if (hasWebGLError) {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    const host = hostRef.current;
+    if (!canvas || !host) {
+      return;
+    }
+
+    try {
+      const gl = canvas.getContext("webgl", { antialias: true, alpha: true });
+      if (!gl) {
+        setHasWebGLError(true);
+        return;
+      }
+
+      const compileShader = (type: number, source: string) => {
+        const shader = gl.createShader(type);
+        if (!shader) {
+          return null;
+        }
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          gl.deleteShader(shader);
+          return null;
+        }
+        return shader;
+      };
+
+      const vertexShader = compileShader(gl.VERTEX_SHADER, VERTEX_SHADER);
+      const fragmentShader = compileShader(gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
+      if (!vertexShader || !fragmentShader) {
+        setHasWebGLError(true);
+        return;
+      }
+
+      const program = gl.createProgram();
+      if (!program) {
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+        setHasWebGLError(true);
+        return;
+      }
+
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        gl.deleteProgram(program);
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+        setHasWebGLError(true);
+        return;
+      }
+
+      gl.useProgram(program);
+
+      const positionLocation = gl.getAttribLocation(program, "position");
+      const quadBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+      gl.enableVertexAttribArray(positionLocation);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+      const uRes = gl.getUniformLocation(program, "u_res");
+      const uTime = gl.getUniformLocation(program, "u_time");
+      const uColorDeep = gl.getUniformLocation(program, "u_colorDeep");
+      const uColorMid = gl.getUniformLocation(program, "u_colorMid");
+      const uColorHighlight = gl.getUniformLocation(program, "u_colorHighlight");
+      const uSpeed = gl.getUniformLocation(program, "u_speed");
+      const uFlowStrength = gl.getUniformLocation(program, "u_flowStrength");
+      const uGrain = gl.getUniformLocation(program, "u_grain");
+      const uContrast = gl.getUniformLocation(program, "u_contrast");
+      const uOpacity = gl.getUniformLocation(program, "u_opacity");
+      const uReveal = gl.getUniformLocation(program, "u_reveal");
+
+      if (
+        !uRes ||
+        !uTime ||
+        !uColorDeep ||
+        !uColorMid ||
+        !uColorHighlight ||
+        !uSpeed ||
+        !uFlowStrength ||
+        !uGrain ||
+        !uContrast ||
+        !uOpacity ||
+        !uReveal
+      ) {
+        gl.deleteBuffer(quadBuffer);
+        gl.deleteProgram(program);
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+        setHasWebGLError(true);
+        return;
+      }
+
+      const resize = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const { width, height } = host.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.floor(width * dpr));
+        canvas.height = Math.max(1, Math.floor(height * dpr));
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.uniform2f(uRes, canvas.width, canvas.height);
+      };
+
+      resize();
+      const resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(host);
+
+      let rafId = 0;
+      const start = performance.now();
+
+      const render = (now: number) => {
+        const elapsedSec = Math.max(0, (now - start - settings.delayMs) / 1000);
+        const revealProgress = settings.reveal
+          ? Math.min(1, elapsedSec / Math.max(settings.revealDuration, 0.05))
+          : 1;
+
+        const deep = hexToRgb01(settings.colorDeep);
+        const mid = hexToRgb01(settings.colorMid);
+        const highlight = hexToRgb01(settings.colorHighlight);
+
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.uniform1f(uTime, elapsedSec);
+        gl.uniform3f(uColorDeep, deep[0], deep[1], deep[2]);
+        gl.uniform3f(uColorMid, mid[0], mid[1], mid[2]);
+        gl.uniform3f(uColorHighlight, highlight[0], highlight[1], highlight[2]);
+        gl.uniform1f(uSpeed, settings.speed);
+        gl.uniform1f(uFlowStrength, settings.flowStrength);
+        gl.uniform1f(uGrain, settings.grain);
+        gl.uniform1f(uContrast, settings.contrast);
+        gl.uniform1f(uOpacity, settings.opacity);
+        gl.uniform1f(uReveal, revealProgress);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        rafId = requestAnimationFrame(render);
+      };
+
+      rafId = requestAnimationFrame(render);
+
+      return () => {
+        cancelAnimationFrame(rafId);
+        resizeObserver.disconnect();
+        gl.deleteBuffer(quadBuffer);
+        gl.deleteProgram(program);
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+      };
+    } catch {
+      setHasWebGLError(true);
+      return;
+    }
+  }, [hasWebGLError, settings]);
+
+  const fallbackContent = (
+    <div
+      className={cn(
+        "relative flex min-h-screen w-full items-center overflow-hidden bg-[#02040b] text-white",
+        className,
+      )}
+      style={{ containerType: "size", ...style }}
+      {...props}
+    >
+      <WebGLFallback className="absolute inset-0 h-full w-full" />
+      {(title || subtitle || description || children) && (
+        <div className="relative z-10 mx-auto w-full max-w-[1240px] px-6 py-20 md:px-10 md:py-28">
+          <div className="max-w-[760px]">
+            {title && <h1 className={LIQUID_HEADLINE_CLASS}>{title}</h1>}
+            {subtitle && (
+              <h2 className="mt-2 text-[11cqi] md:text-[7cqi] lg:text-[5.5cqi] leading-[0.9] tracking-[-0.03em] font-bold text-white/95">
+                {subtitle}
+              </h2>
+            )}
+            {description && (
+              <p className="mt-6 max-w-[620px] text-base leading-relaxed text-white/75 md:text-xl">
+                {description}
+              </p>
+            )}
+            {children && <div className="mt-10">{children}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if (hasWebGLError) {
+    return fallbackContent;
+  }
+
+  return (
+    <WebGLErrorBoundary fallback={fallbackContent}>
+      <div
+        ref={hostRef}
+        className={cn(
+          "relative flex min-h-screen w-full items-center overflow-hidden bg-[#02040b] text-white",
+          className,
+        )}
+        style={{ containerType: "size", ...style }}
+        {...props}
+      >
+        <canvas
+          ref={canvasRef}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          style={{ width: "100%", height: "100%", display: "block" }}
+        />
+
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/35 via-black/15 to-transparent" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_65%_40%,rgba(255,255,255,0.16),transparent_45%)]" />
+
+        {(title || subtitle || description || children) && (
+          <div className="relative z-10 mx-auto w-full max-w-[1240px] px-6 py-20 md:px-10 md:py-28">
+            <div className="max-w-[760px]">
+              {title && <h1 className={LIQUID_HEADLINE_CLASS}>{title}</h1>}
+              {subtitle && (
+                <h2 className="mt-2 text-[11cqi] md:text-[7cqi] lg:text-[5.5cqi] leading-[0.9] tracking-[-0.03em] font-bold text-white/95">
+                  {subtitle}
+                </h2>
+              )}
+              {description && (
+                <p className="mt-6 max-w-[620px] text-base leading-relaxed text-white/75 md:text-xl">
+                  {description}
+                </p>
+              )}
+              {children && <div className="mt-10">{children}</div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </WebGLErrorBoundary>
+  );
+}
+
+export default WebGLLiquid;
+```
+
+6. Control / Scrub Video with GSAP ScrollTrigger (evtl. kann man gebrauchen? mega kurze sequenz. 
+https://codepen.io/wisearts/pen/ExZGrbZ
+```
+html:
+<!-- Video is FREE from: https://pixabay.com/videos/abstract-background-ink-water-20072/ -->
+<video class="video" playsinline="true" webkit-playsinline="true" preload="auto" muted="muted">
+  <source src="https://www.dropbox.com/scl/fi/qejf5dgqiv6m77d71r2ec/abstract-background-ink-water.mp4?rlkey=cf5xf73grwr5olszcyjghc5pt&st=ycgfiqec&raw=1" type="video/mp4" />
+</video>
+
+css:
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.video {
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+}
+
+js:
+/* Encoding is important!!!
+//--------------------------------
+// ffmpeg settings used:
+//--------------------------------
+
+ffmpeg -i input.mp4 -vf scale=960:-1 -movflags faststart -vcodec libx264 -crf 20 -g 1 -pix_fmt yuv420p output.mp4
+
+// scale filtergraph optional
+// ffmpeg docs: http://ffmpeg.org/ffmpeg.html
+
+*/
+gsap.registerPlugin(ScrollTrigger);
+
+const coolVideo = document.querySelector("video");
+
+let tl = gsap.timeline({
+  scrollTrigger: {
+    trigger: "video",
+    start: "top top",
+    end: "bottom+=200% bottom",
+    scrub: true,
+    markers: true
+  }
+});
+
+// wait until video metadata is loaded, so we can grab the proper duration before adding the onscroll animation. Might need to add a loader for loonng videos
+coolVideo.onloadedmetadata = function () {
+  tl.to(coolVideo, { currentTime: coolVideo.duration });
+};
+
+// Dealing with devices
+function isTouchDevice() {
+  return (
+    "ontouchstart" in window ||
+    navigator.maxTouchPoints > 0 ||
+    navigator.msMaxTouchPoints > 0
+  );
+}
+if (isTouchDevice()) {
+  coolVideo.play();
+  coolVideo.pause();
+}
+```
+
+7. WebGL Kinetic Typography for the gsap3 release (sehr geiler text effekt)
+https://codepen.io/p5aholic/pen/dyyMbGW
+```
+html:
+<h1 class="title">WebGL Kinetic Typography</h1>
+<canvas id="Canvas"></canvas>
+
+<a href="https://greensock.com"><img class="gsap-3-logo" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/16327/gsap-3-logo.svg" width="150" /></a>
+
+css:
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background-color: #000;
+  font-family: 'Muli', sans-serif;
+  color: #fff;
+}
+
+.title {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  font-size: 32px;
+}
+
+#Canvas {
+  display: block;
+  position: absolute;
+  top: calc(50% - 270px);
+  left: calc(50% - 480px);
+  width: 960px;
+  height: 540px;
+  z-index: -1;
+/*   border: 1px solid #f00; */
+}
+
+.gsap-3-logo {
+  width: 20vw;
+  max-width: 150px;
+  position: fixed;
+  bottom: 15px;
+  right: 15px;
+}
+
+js:
+// load webfont from Google Fonts
+WebFont.load({
+  google: {
+    families: ['Muli:600']
+  },
+  classes: false,
+  active: () => {
+    createCanvas()
+    updateCanvas()
+  }
+})
+
+// vertex shader
+const vertexShader = `
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+uniform float time;
+uniform float index;
+uniform float divisions;
+uniform float tOffsetX;
+uniform vec4 tween;
+attribute vec3 position;
+attribute vec2 uv;
+varying vec2 vUv;
+
+mat2 scale2D(vec2 scale) {
+return mat2(scale.x, 0.0, 0.0, scale.y);
+}
+
+void main() {
+vUv = uv;
+vec3 pos = position;
+
+float scaleX = tween.x;
+pos.x += tOffsetX;
+pos.xy *= scale2D(vec2(scaleX, 1.0));
+pos.x -= tOffsetX;
+
+gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+}
+`
+
+// fragment shader
+const fragmentShader = `
+precision highp float;
+
+uniform sampler2D texture;
+uniform float time;
+uniform float index;
+uniform float divisions;
+uniform vec4 tween;
+varying vec2 vUv;
+
+void main() {
+vec2 uv = vUv;
+float startV = index * (1.0 / divisions);
+vec2 tuv = vec2(uv.x, startV + uv.y * (1.0 / divisions));
+
+vec4 color = texture2D(texture, tuv);
+
+gl_FragColor = color;
+//gl_FragColor = vec4(vec3(tuv.y), 1.0);
+}
+`
+
+// general settings
+const width = 960
+const height = 540
+const aspectRatio = width / height
+const dpr = Math.min(window.devicePixelRatio, 2)
+const sceneWidth = 2
+const sceneHeight = sceneWidth / aspectRatio
+let scene, camera, renderer
+
+// title settings
+const titleWidth = 2.0
+const titleHeight = 0.5
+const numDivisions = 40
+const titleMeshes = []
+let numMeshes = 0
+
+// animation settings
+const tweens1 = [] // array of tweens for title1
+const tweens2 = [] // array of tweens for title2
+const tweens3 = [] // array of tweens for title3
+
+function createCanvas() {
+  scene = new THREE.Scene()
+
+  camera = new THREE.OrthographicCamera(
+    -sceneWidth / 2,
+    sceneWidth / 2,
+    sceneHeight / 2,
+    -sceneHeight / 2,
+    0.01,
+    1000
+  )
+  camera.position.set(0, 0, 1)
+
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: true,
+    canvas: document.getElementById('Canvas')
+  })
+  renderer.setSize(width, height)
+  renderer.setPixelRatio(dpr)
+
+  const texture1 = createFontTexture({
+    width: 1024,
+    height: 256,
+    fontSize: 230,
+    text: 'EXPLORE'
+  })
+
+  const texture2 = createFontTexture({
+    width: 1024,
+    height: 256,
+    fontSize: 230,
+    text: 'CREATE'
+  })
+
+  const texture3 = createFontTexture({
+    width: 1024,
+    height: 256,
+    fontSize: 230,
+    text: 'REPEAT'
+  })
+
+  createTitle({
+    texture: texture1,
+    tweens: tweens1,
+  })
+
+  createTitle({
+    texture: texture2,
+    tweens: tweens2,
+  })
+
+  createTitle({
+    texture: texture3,
+    tweens: tweens3,
+  })
+
+  numMeshes = titleMeshes.length
+
+  animateTitle()
+}
+
+function createFontTexture(options) {
+  const canvas = document.createElement('canvas')
+  const width = options.width * dpr
+  const height = options.height * dpr
+  canvas.width = width
+  canvas.height = height
+
+  const ctx = canvas.getContext('2d')
+
+  // ctx.fillStyle = 'rgba(255, 0, 0, 0.1)'
+  // ctx.fillRect(0, 0, width, height)
+
+  ctx.font = `600 ${options.fontSize * dpr}px 'Muli'`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#fff'
+  ctx.fillText(options.text, width / 2, height / 2 + 25)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.minFilter = THREE.LinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.format = THREE.RGBAFormat
+  texture.needsUpdate = false
+
+  return texture
+}
+
+function createTitle(params) {
+  for (let i = 0; i < numDivisions; i++) {
+    const dividedHeight = titleHeight / numDivisions
+    const geometry = new THREE.PlaneBufferGeometry(titleWidth, dividedHeight)
+    geometry.removeAttribute('normal')
+
+    const material = new THREE.RawShaderMaterial({
+      uniforms: {
+        texture: { value: params.texture },
+        time: { value: 0 },
+        index: { value: i },
+        divisions: { value: numDivisions },
+        tOffsetX: { value: -1.0 },
+        tween: { value: new THREE.Vector4(0, 0, 1, 1) },
+      },
+      vertexShader,
+      fragmentShader,
+      transparent: true,
+    })
+
+    const y = -titleHeight * 0.5 + i * dividedHeight + dividedHeight * 0.5
+
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.y = y
+
+    scene.add(mesh)
+    titleMeshes.push(mesh)
+    params.tweens.push(material.uniforms.tween.value)
+  }
+}
+
+function animateTitle() {
+  const tl = gsap.timeline({
+    repeat: -1,
+    defaults: {
+      ease: "power3.inOut",
+      duration: 0.8,
+      stagger: 0.01,
+    }
+  })
+
+  const setTransformOffset = (titleIndex, value) => {
+    const startIndex = titleIndex * numDivisions
+    const endIndex = startIndex + numDivisions
+    for (let i = startIndex; i < endIndex; i++) {
+      titleMeshes[i].material.uniforms.tOffsetX.value = value
+    }
+  }
+
+  tl.to(tweens1, {
+    x: 1.0,
+    onStart: () => {
+      setTransformOffset(0, -1.0)
+    }
+  }, 'start')
+  tl.to(tweens1, {
+    x: 0.0,
+    onStart: () => {
+      setTransformOffset(0, 1.0)
+    }
+  }, 'next1')
+
+  tl.to(tweens2, {
+    x: 1.0,
+    onStart: () => {
+      setTransformOffset(1, -1.0)
+    }
+  }, 'next1')
+  tl.to(tweens2, {
+    x: 0.0,
+    onStart: () => {
+      setTransformOffset(1, 1.0)
+    }
+  }, 'next2')
+
+  tl.to(tweens3, {
+    x: 1.0,
+    onStart: () => {
+      setTransformOffset(2, -1.0)
+    }
+  }, 'next2')
+  tl.to(tweens3, {
+    x: 0.0,
+    onStart: () => {
+      setTransformOffset(2, 1.0)
+    }
+  })
+}
+
+function updateCanvas() {
+  requestAnimationFrame(updateCanvas)
+
+  const time = performance.now() * 0.001
+  for (let i = 0; i < numMeshes; i++) {
+    const mesh = titleMeshes[i]
+    mesh.material.uniforms.time.value = time
+  }
+
+  renderer.render(scene, camera)
+}
+```
+
+8. SVG Disintegrate Animation (von weiss auf schwarze seite, muss man einbauen, sieht genial aus. kleinigkeit aber trotzdem)
+https://codepen.io/hellogareth/pen/xYYBWq
+``` 
+html:
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080">
+  <path class="polygon" d="M870,1300L435,1333L1050,1318Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M129,-261L687,-247L1353,-250Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M687,-247L893,-213L1353,-250Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1595,1262L1439,1291L1775,1270Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1439,1291L1050,1318L1889,1277Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1775,1270L1439,1291L1889,1277Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1353,-250L1639,-224L1904,-219Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1639,-224L1802,-203L1904,-219Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2052,934L1979,1025L2063,1112Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1886,551L1962,741L2092,515Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2070,-105L1984,-67L2104,143Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1984,-67L1935,98L2104,143Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2092,515L1962,741L2113,727Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2063,1112L2100,1240L2113,727Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2052,934L2063,1112L2113,727Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2054,790L2052,934L2113,727Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1968,364L2092,515L2136,378Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2057,241L1968,364L2136,378Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2104,143L2057,241L2136,378Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2113,727L2100,1240L2136,378Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2092,515L2113,727L2136,378Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1962,741L2054,790L2113,727Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2063,1112L1917,1180L2100,1240Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1935,98L2057,241L2104,143Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1917,1180L1889,1277L2100,1240Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1931,843L2052,934L2054,790Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1968,364L1886,551L2092,515Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1935,98L1911,231L2057,241Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M2048,-200L1984,-67L2070,-105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1911,231L1968,364L2057,241Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1979,1025L1917,1180L2063,1112Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1904,-219L1984,-67L2048,-200Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1962,741L1931,843L2054,790Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1931,843L1979,1025L2052,934Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1739,-45L1758,75L1935,98Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1886,551L1766,716L1962,741Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1792,396L1886,551L1968,364Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1802,1140L1917,1180L1979,1025Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1810,1001L1802,1140L1979,1025Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1931,843L1810,1001L1979,1025Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1904,-219L1802,-203L1984,-67Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1802,-203L1739,-45L1984,-67Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1739,-45L1935,98L1984,-67Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1840,821L1931,843L1962,741Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1911,231L1792,396L1968,364Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1840,821L1810,1001L1931,843Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1766,716L1840,821L1962,741Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1739,292L1792,396L1911,231Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1758,75L1911,231L1935,98Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1802,1140L1775,1270L1889,1277Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1758,75L1739,292L1911,231Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1802,1140L1889,1277L1917,1180Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1792,396L1735,529L1886,551Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1735,529L1766,716L1886,551Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1735,529L1655,643L1766,716Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1674,793L1609,945L1810,1001Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1674,793L1810,1001L1840,821Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1766,716L1674,793L1840,821Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1606,105L1739,292L1758,75Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1654,-74L1739,-45L1802,-203Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1639,-224L1654,-74L1802,-203Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1658,1149L1775,1270L1802,1140Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1658,1149L1802,1140L1810,1001Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1609,945L1658,1149L1810,1001Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M893,-213L1194,-203L1353,-250Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1353,-250L1435,-209L1639,-224Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1606,105L1595,272L1739,292Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1739,292L1585,440L1792,396Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1585,440L1735,529L1792,396Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1658,1149L1595,1262L1775,1270Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1654,-74L1606,105L1739,-45Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1739,-45L1606,105L1758,75Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1655,643L1674,793L1766,716Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1595,272L1585,440L1739,292Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1588,549L1655,643L1735,529Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1585,440L1588,549L1735,529Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1457,1002L1514,1168L1609,945Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1639,-224L1466,-106L1654,-74Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1457,665L1518,812L1655,643Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1609,945L1514,1168L1658,1149Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1655,643L1518,812L1674,793Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1518,812L1609,945L1674,793Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1466,-106L1474,104L1606,105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1466,-106L1606,105L1654,-74Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1514,1168L1595,1262L1658,1149Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1516,422L1585,440L1595,272Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1588,549L1457,665L1655,643Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1465,211L1595,272L1606,105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1435,-209L1466,-106L1639,-224Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1585,440L1516,422L1588,549Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1474,104L1465,211L1606,105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1518,812L1457,1002L1609,945Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1516,422L1439,527L1588,549Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1439,527L1457,665L1588,549Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1514,1168L1439,1291L1595,1262Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1465,211L1516,422L1595,272Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1139,1264L1050,1318L1439,1291Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1286,892L1385,1011L1457,1002Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1385,1011L1374,1157L1457,1002Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1331,224L1318,395L1465,211Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1466,-106L1356,92L1474,104Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1457,1002L1374,1157L1514,1168Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1374,1157L1439,1291L1514,1168Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1465,211L1318,395L1516,422Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1286,892L1457,1002L1518,812Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1457,665L1330,650L1518,812Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1330,650L1286,892L1518,812Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1318,395L1439,527L1516,422Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1356,1237L1139,1264L1439,1291Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1374,1157L1356,1237L1439,1291Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1439,527L1330,650L1457,665Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1356,92L1331,224L1465,211Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1300,-104L1356,92L1466,-106Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1356,92L1465,211L1474,104Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1308,567L1330,650L1439,527Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1435,-209L1300,-104L1466,-106Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1353,-250L1300,-104L1435,-209Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1318,395L1308,567L1439,527Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M893,-213L1051,-173L1194,-203Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1234,528L1308,567L1318,395Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1216,867L1286,892L1330,650Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1156,729L1216,867L1330,650Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1286,892L1223,986L1385,1011Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1216,1151L1374,1157L1385,1011Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1223,986L1216,1151L1385,1011Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1300,-104L1152,77L1356,92Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1216,1151L1356,1237L1374,1157Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1203,-105L1152,77L1300,-104Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1188,207L1318,395L1331,224Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1194,-203L1300,-104L1353,-250Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1216,1151L1139,1264L1356,1237Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1188,207L1331,224L1356,92Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1152,77L1188,207L1356,92Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1188,207L1148,396L1318,395Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1308,567L1234,528L1330,650Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1234,528L1156,729L1330,650Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1194,-203L1203,-105L1300,-104Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1148,396L1234,528L1318,395Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1216,867L1223,986L1286,892Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1041,34L1152,77L1203,-105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1216,867L1069,972L1223,986Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1079,1163L1216,1151L1223,986Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1069,972L1079,1163L1223,986Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1148,396L988,490L1234,528Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1058,725L1156,729L1234,528Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M988,490L1058,725L1234,528Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1156,729L1038,851L1216,867Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1079,1163L1139,1264L1216,1151Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M990,260L1148,396L1188,207Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1038,851L1069,972L1216,867Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1051,-173L987,-52L1203,-105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M987,-52L1041,34L1203,-105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1194,-203L1051,-173L1203,-105Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1058,725L1038,851L1156,729Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1152,77L990,260L1188,207Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M988,490L927,585L1058,725Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M990,260L1011,401L1148,396Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1011,401L988,490L1148,396Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1041,34L990,260L1152,77Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1079,1163L1050,1318L1139,1264Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M886,35L867,219L990,260Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M886,35L990,260L1041,34Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M870,1300L1050,1318L1079,1163Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M834,1112L870,1300L1079,1163Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1069,972L886,972L1079,1163Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M886,972L834,1112L1079,1163Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M710,1252L435,1333L870,1300Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M879,846L1038,851L1058,725Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M1038,851L886,972L1069,972Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M927,585L867,710L1058,725Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M867,710L879,846L1058,725Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M879,846L886,972L1038,851Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M893,-213L987,-52L1051,-173Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M987,-52L886,35L1041,34Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M990,260L878,379L1011,401Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M878,379L988,490L1011,401Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M129,-261L271,-202L687,-247Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M834,1112L788,1186L870,1300Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M893,-213L863,-22L987,-52Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M863,-22L886,35L987,-52Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M867,219L878,379L990,260Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M878,379L927,585L988,490Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M271,-202L384,-179L687,-247Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M753,408L732,500L878,379Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M733,81L867,219L886,35Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M724,-68L863,-22L893,-213Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M878,379L732,500L927,585Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M732,500L867,710L927,585Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M732,500L693,672L867,710Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M688,266L753,408L867,219Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M867,219L753,408L878,379Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M867,710L686,853L879,846Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M686,853L709,990L879,846Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M879,846L709,990L886,972Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M709,990L834,1112L886,972Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M687,-247L724,-68L893,-213Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M863,-22L733,81L886,35Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M693,672L686,853L867,710Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M733,81L688,266L867,219Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M788,1186L710,1252L870,1300Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M545,1252L435,1333L710,1252Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M724,-68L733,81L863,-22Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M626,1102L788,1186L834,1112Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M709,990L626,1102L834,1112Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M629,191L688,266L733,81Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M626,1102L710,1252L788,1186Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M687,-247L550,-160L724,-68Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M626,653L693,672L732,500Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M636,395L732,500L753,408Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M688,266L636,395L753,408Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M303,1287L168,1276L435,1333Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M168,1276L-64,1338L435,1333Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M384,-179L550,-160L687,-247Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M561,797L686,853L693,672Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M686,853L606,974L709,990Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M549,-109L552,132L724,-68Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M550,-160L549,-109L724,-68Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M636,395L578,485L732,500Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M578,485L626,653L732,500Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M724,-68L552,132L733,81Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M552,132L629,191L733,81Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M626,653L561,797L693,672Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M626,1102L545,1252L710,1252Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M606,974L626,1102L709,990Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M561,797L606,974L686,853Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M629,191L636,395L688,266Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M549,-109L434,-15L552,132Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M561,797L475,864L606,974Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M578,485L485,700L626,653Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M485,700L561,797L626,653Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M606,974L476,1159L626,1102Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M476,1159L545,1252L626,1102Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M552,132L415,211L629,191Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M629,191L415,211L636,395Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M415,211L396,361L636,395Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M396,361L578,485L636,395Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M455,954L476,1159L606,974Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M381,531L485,700L578,485Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M475,864L455,954L606,974Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M396,361L381,531L578,485Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M434,-15L382,114L552,132Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M485,700L475,864L561,797Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M384,-179L549,-109L550,-160Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M382,114L415,211L552,132Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M384,-179L434,-15L549,-109Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M476,1159L435,1333L545,1252Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M311,974L333,1117L455,954Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M231,740L240,874L475,864Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M303,1287L435,1333L476,1159Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M333,1117L303,1287L476,1159Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M455,954L333,1117L476,1159Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M231,740L475,864L485,700Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M381,531L231,740L485,700Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M311,974L455,954L475,864Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M240,874L311,974L475,864Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M298,516L231,740L381,531Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M298,516L381,531L396,361Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M309,216L396,361L415,211Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M275,71L382,114L434,-15Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M249,-32L275,71L434,-15Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M384,-179L249,-32L434,-15Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M382,114L309,216L415,211Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M271,-202L249,-32L384,-179Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M309,216L233,334L396,361Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M233,334L298,516L396,361Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M275,71L309,216L382,114Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M180,716L231,740L298,516Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M132,533L180,716L298,516Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M170,1120L168,1276L303,1287Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M275,71L162,117L309,216Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M170,1120L303,1287L333,1117Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M311,974L178,1001L333,1117Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M178,1001L170,1120L333,1117Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M165,-79L249,-32L271,-202Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M233,334L132,533L298,516Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M240,874L178,1001L311,974Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M231,740L175,806L240,874Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M104,206L233,334L309,216Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M162,117L104,206L309,216Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M86,377L132,533L233,334Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M249,-32L162,117L275,71Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M129,-261L165,-79L271,-202Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M165,-79L162,117L249,-32Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M104,206L86,377L233,334Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M175,806L178,1001L240,874Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M175,806L15,871L178,1001Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M180,716L175,806L231,740Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M129,-261L-58,-89L165,-79Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-40,80L162,117L165,-79Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-58,-89L-40,80L165,-79Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M39,1110L168,1276L170,1120Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M39,1110L170,1120L178,1001Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M3,987L39,1110L178,1001Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M15,871L3,987L178,1001Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M132,533L36,562L180,716Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M36,562L-40,666L180,716Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M15,871L175,806L180,716Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-40,666L15,871L180,716Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M39,1110L-64,1338L168,1276Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-69,-233L-58,-89L129,-261Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M33,210L104,206L162,117Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-40,80L33,210L162,117Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-47,402L36,562L86,377Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M33,210L86,377L104,206Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M86,377L36,562L132,533Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M33,210L-47,402L86,377Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-153,1243L-64,1338L39,1110Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-40,666L-129,699L15,871Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-129,699L-186,831L15,871Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-188,280L-47,402L33,210Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-47,402L-191,496L36,562Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M3,987L-178,1138L39,1110Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-178,1138L-153,1243L39,1110Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-191,496L-40,666L36,562Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-40,80L-205,135L33,210Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-205,135L-188,280L33,210Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-69,-233L-114,-197L-58,-89Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-215,1009L-178,1138L3,987Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-186,831L3,987L15,871Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-186,831L-215,1009L3,987Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-188,280L-201,354L-47,402Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-58,-89L-196,-24L-40,80Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-196,-24L-205,135L-40,80Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-191,496L-129,699L-40,666Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-201,354L-191,496L-47,402Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-114,-197L-196,-24L-58,-89Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-178,1138L-215,1009L-153,1243Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-191,496L-186,831L-129,699Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-191,496L-215,1009L-186,831Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-205,135L-201,354L-188,280Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-201,354L-215,1009L-191,496Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+  <path class="polygon" d="M-205,135L-215,1009L-201,354Z" fill="#070a17" stroke="#070a17" stroke-width="1.51" />
+</svg>
+
+css:
+
+js:
+document.addEventListener('DOMContentLoaded', function() {
+  
+  var time = 1,
+  tl = new TimelineMax(),
+        
+  shapes = document.querySelectorAll('.polygon');
+  
+  tl.timeScale(80);
+
+  for (var i = 0; i < shapes.length; i++) {
+    tl.set(shapes[i], {
+      rotation: -200,
+      scale: 0
+    });
+  }
+  
+  for (var i = 0; i < shapes.length; i++) {
+    tl.to(shapes[i], time*2 + 100, {
+      scale: 1,
+      rotation: 0,
+      ease: Sine.easeInOut
+    }, (i/5));
+  }
+});
+```
+
+9. Just a Beauty (what a material, just nice)
+https://codepen.io/atzedent/pen/WNJOOJX
+```
+html:
+canvas#canvas
+
+css:
+* {
+    box-sizing: border-box;
+  }
+  
+  html, body {
+    margin: 0;
+    min-height: 100vh;
+    overflow: hidden;
+    
+    background:
+    repeating-radial-gradient(
+    circle at center,
+      #444 0 10%,
+      #111 10% 20%
+    );
+    
+    touch-action: none;
+  }
+  
+  canvas {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+  
+js:
+/*********
+ * made by Matthias Hurrle (@atzedent)
+ */
+
+/** @type {HTMLCanvasElement} */
+const canvas = window.canvas
+const gl = canvas.getContext("webgl2")
+const dpr = window.devicePixelRatio
+/** @type {Map<string,PointerEvent>} */
+const touches = new Map()
+
+const vertexSource = `#version 300 es
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+in vec2 position;
+
+void main(void) {
+    gl_Position = vec4(position, 0., 1.);
+}
+`
+const fragmentSource = `#version 300 es
+/*********
+* made by Matthias Hurrle (@atzedent)
+*/
+
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform vec2 resolution;
+uniform int pointerCount;
+uniform vec2 touch;
+uniform float time;
+
+const float PI = radians(180.);
+const float TAU = 2.*PI;
+const float IOR = 1.45;
+const float DENSE = .7;
+
+#define MAX_STEPS 100
+#define MAX_DIST 20.
+#define SURF_DIST .001
+
+#define S smoothstep
+#define T 3.5 + time
+
+out vec4 fragColor;
+
+vec2 MatMin(vec2 lhs, vec2 rhs) {
+  if (lhs.x < rhs.x) return lhs;
+
+  return rhs;
+}
+
+float cLength(vec2 p, float k) {
+  p = abs(p);
+
+  return pow(pow(p.x, k)+pow(p.y, k), 1./k);
+}
+
+mat2 Rot(float a) {
+  float s = sin(a),
+  c = cos(a);
+  return mat2(c, -s, s, c);
+}
+
+float Spiral(vec2 p, float t, float k) {
+  float r = cLength(p, k);
+  float a = atan(p.y, p.x) / TAU;
+
+  return sin(fract(log(r) * t + a));
+}
+
+float Octahedron(vec3 p, float s) {
+  p = abs(p);
+
+  return (p.x + p.y + p.z - s) * (1. / sqrt(3.));
+}
+
+vec2 GetDist(vec3 p) {
+  vec2 md = MatMin(
+    vec2(
+      Octahedron(p, 1.),
+      1.
+    ),
+    vec2(
+      dot(
+        p,
+        normalize(vec3(.0, 1., .0))
+      ) + 2., 2.
+    )
+  );
+
+  return md;
+}
+
+vec2 RayMarch(vec3 ro, vec3 rd, float side) {
+  float dO = 0.;
+  vec2 d;
+
+  for (int i = 0; i < MAX_STEPS; i++) {
+    vec3 p = ro + rd*dO;
+    d = GetDist(p) * side;
+    dO += d.x;
+
+    if (dO > MAX_DIST || abs(d.x) < SURF_DIST) break;
+  }
+
+  return vec2(dO, d.y);
+}
+
+vec3 GetNormal(vec3 p) {
+  float d = GetDist(p).x;
+  vec2 e = vec2(.05, 0);
+
+  vec3 n = d - vec3(
+    GetDist(p-e.xyy).x,
+    GetDist(p-e.yxy).x,
+    GetDist(p-e.yyx).x);
+
+  return normalize(n);
+}
+
+vec3 GetRayDir(vec2 uv, vec3 p, vec3 l, float z) {
+  vec3 f = normalize(l-p),
+  r = normalize(cross(vec3(0, 1, 0), f)),
+  u = cross(f, r),
+  c = f*z,
+  i = c + uv.x*r + uv.y*u,
+  d = normalize(i);
+  return d;
+}
+
+vec3 Refract(vec3 p, vec3 n, inout vec3 ro, inout vec3 rd, inout float od) {
+  vec3 rdIn = refract(rd, n, 1./IOR);
+  vec3 pEnter = p-n*SURF_DIST*3.;
+  vec2 dIn = RayMarch(pEnter, rdIn, -1.);
+  vec3 pExit = pEnter + rdIn * dIn.x;
+  vec3 nExit = -GetNormal(pExit);
+  vec3 rdOut = refract(rdIn, nExit, IOR);
+
+  if (dot(rdOut, rdOut) == .0) {
+    rdOut = reflect(rdIn, nExit);
+  }
+
+  ro = pEnter;
+  rd = rdOut;
+  od = exp(-dIn.x * DENSE);
+
+  return pExit;
+}
+
+vec3 Render(inout vec3 ro, inout vec3 rd, inout float ref) {
+  vec2 d = RayMarch(ro, rd, 1.);
+
+  vec3 col = vec3(.0);
+
+  if (d.x < MAX_DIST) {
+    vec3 p = ro + rd * d.x;
+    vec3 l = normalize(ro);
+    vec3 n = GetNormal(p);
+    vec3 r = reflect(rd, n);
+
+    // material
+    vec3 mat = vec3(.0);
+    float fres = pow(clamp(1.+dot(n, rd), .0, 1.), 5.);
+
+		vec3 offs = vec3(.25)*length(p.xz);
+    float s = 1.5 * sin(T*.5);
+    float k = .5 + 1. * (.5+.5*cos(T*.5));
+    mat2 rot = Rot(T*.5);
+
+    // floor
+    if (d.y == 2.) {
+
+      float spiral = clamp(
+        Spiral(p.xz*rot, s, k),
+        .0,
+        1.
+      );
+
+      mat = pow(vec3(spiral) - offs, vec3(offs));
+
+      ro = p + n * SURF_DIST * 3.;
+      rd = r;
+
+    }
+    // object
+    else if (d.y == 1.) {
+
+      float od;
+      vec3 st = Refract(p, n, ro, rd, od);
+      float spiral = Spiral(st.xz*rot, s, k);
+      
+      vec3 si = pow(vec3(spiral) - offs, vec3(offs));
+
+      mat = mix(
+        si,
+        vec3(1.5, 1.75, 2.),
+        od
+      ) - pow(1.-abs(ro.y), 2.);
+      mat *= exp(log(vec3(.5)));
+
+      ref = mix(.05, .5, fres);
+    }
+
+    // light
+    float diffuse = dot(n, l) * .5 + .5;
+  
+    float spot = clamp(
+      dot(
+        normalize(r),
+        reflect(r, vec3(0))),
+      .0,
+      1.
+    );
+  
+    col += .8 * diffuse;
+    col += .95 * pow(spot, 16.);
+  
+    col *= mat;
+  }
+
+  return col;
+}
+
+void main(void) {
+  float mn = min(resolution.x, resolution.y);
+  float mx = max(resolution.x, resolution.y);
+  vec2 uv = (
+    gl_FragCoord.xy - .5 * resolution.xy
+  ) / mx;
+
+  vec2 m = touch.xy / resolution.xy;
+  m.y = clamp(m.y, .0, .55);
+
+  vec3 ro = vec3(0., 3., -6.);
+  bool aut = pointerCount == 0;
+
+  ro.yz *= Rot(aut ? .55+sin(T*.25)*.5: -m.y * PI + 1.);
+  ro.xz *= Rot(aut ? T*.25: -m.x * TAU);
+
+  vec3 rd = GetRayDir(uv, ro, vec3(0), 1.);
+  vec3 sto = ro;
+
+  float ref = .0;
+  vec3 col = Render(ro, rd, ref);
+
+  for (int i = 0; i < 2; i++) {
+    col += ref * Render(ro, rd, ref);
+  }
+
+  // gamma correction
+  col = pow(col, vec3(.45));
+
+  // vignette
+  vec2 z = (gl_FragCoord.xy -.5 * resolution) / mn;
+  col *= 1. - dot(z, z);
+
+  fragColor = vec4(col, 1.);
+}
+`
+let time
+let buffer
+let program
+let touch
+let resolution
+let pointerCount
+let vertices = []
+let touching = false
+
+function resize() {
+  const { innerWidth: width, innerHeight: height } = window
+
+  canvas.width = width * dpr
+  canvas.height = height * dpr
+
+  gl.viewport(0, 0, width * dpr, height * dpr)
+}
+
+function compile(shader, source) {
+  gl.shaderSource(shader, source)
+  gl.compileShader(shader)
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(shader))
+  }
+}
+
+function setup() {
+  const vs = gl.createShader(gl.VERTEX_SHADER)
+  const fs = gl.createShader(gl.FRAGMENT_SHADER)
+
+  program = gl.createProgram()
+
+  compile(vs, vertexSource)
+  compile(fs, fragmentSource)
+
+  gl.attachShader(program, vs)
+  gl.attachShader(program, fs)
+  gl.linkProgram(program)
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(program))
+  }
+
+  vertices = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0]
+
+  buffer = gl.createBuffer()
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
+
+  const position = gl.getAttribLocation(program, "position")
+
+  gl.enableVertexAttribArray(position)
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0)
+
+  time = gl.getUniformLocation(program, "time")
+  touch = gl.getUniformLocation(program, "touch")
+  pointerCount = gl.getUniformLocation(program, "pointerCount")
+  resolution = gl.getUniformLocation(program, "resolution")
+}
+
+function draw(now) {
+  gl.clearColor(0, 0, 0, 1)
+  gl.clear(gl.COLOR_BUFFER_BIT)
+
+  gl.useProgram(program)
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+
+  gl.uniform1f(time, now * 0.001)
+  gl.uniform2f(touch, ...getTouches())
+  gl.uniform1i(pointerCount, touches.size)
+  gl.uniform2f(resolution, canvas.width, canvas.height)
+  gl.drawArrays(gl.TRIANGLES, 0, vertices.length * 0.5)
+}
+
+function getTouches() {
+  if (!touches.size) {
+    return [0, 0]
+  }
+
+  for (let [id, t] of touches) {
+    const result = [dpr * t.clientX, dpr * (innerHeight - t.clientY)]
+
+    return result
+  }
+}
+
+function loop(now) {
+  draw(now)
+  requestAnimationFrame(loop)
+}
+
+function init() {
+  setup()
+  resize()
+  loop(0)
+}
+
+document.body.onload = init
+window.onresize = resize 
+canvas.onpointerdown = e => {
+  touching = true
+  touches.set(e.pointerId, e)
+}
+canvas.onpointermove = e => {
+  if (!touching) return
+  touches.set(e.pointerId, e)
+}
+canvas.onpointerup = e => {
+  touching = false
+  touches.clear()
+}
+canvas.onpointerout = e => {
+  touching = false
+  touches.clear()
+}
+```
+
+10.  flashlight. (sieht ganz gut aus)
+https://codepen.io/TimPietrusky/pen/DgvLKk
+```
+html:
+<!--
+
+    fucking flashlight 
+
+
+    2012 by Tim Pietrusky
+    timpietrusky.com
+-->
+
+<!--
+    You can click the flashlight (anywhere) to toggle start/stop
+-->
+<body title="click to toggle on/off"></body>​
+
+css:
+/*
+ * fucking flashlight
+ *
+ *
+ * 2012 by tim-pietrusky.de
+ *
+ * Licensed under VVL 1.33b7 - tim-pietrusky.de/license
+ */
+
+@import url(https://fonts.googleapis.com/css?family=Codystar);
+
+html, 
+body  {
+    border-width: 0px;
+    height:100%;
+    width:100%;
+    margin:0;
+    padding:0;
+    
+    text-align:center;
+    
+    background:#000;
+    overflow:hidden;
+    
+    font:4em 'Codystar', cursive;
+    cursor:crosshair;
+}
+
+body {
+    padding-top:5px;
+}
+
+/*
+ * and this is all the flashlight magic
+ */
+body.flash {
+    -webkit-animation: flash .35s infinite linear forwards;
+       -moz-animation: flash .35s infinite linear forwards;
+        -ms-animation: flash .35s infinite linear forwards;
+         -o-animation: flash .35s infinite linear forwards;
+}
+
+@-webkit-keyframes flash {
+  0%   {background: #fff;}
+  25%  {background: #000;}
+}
+@-moz-keyframes flash {
+  0%   {background: #fff;}
+  25%  {background: #000;}
+}
+@-ms-keyframes flash {
+  0%   {background: #fff;}
+  25%  {background: #000;}
+}
+@-o-keyframes flash {
+  0%   {background: #fff;}
+  25%  {background: #000;}
+}
+
+​js:
+$(function() {  
+    var _body = $('body'),
+        _interval,
+        random_content,
+        random_content_lastValue,
+        content = new Array(
+"&#9728;","&#9729;","&#9730;","&#9731;","&#9732;","&#9733;","&#9734;","&#9742;","&#9748;","&#9749;","&#9752;","&#9754;","&#9755;","&#9760;","&#9762;","&#9763;","&#9764;","&#9765;","&#9770;","&#9773;","&#9774;","&#9775;","&#9785;","&#9786;","&#9798;","&#9819;","&#9818;","&#9820;","&#9821;","&#9822;","&#9824;","&#9827;","&#9829;","&#9830;","&#9832;","&#9835;","&#9834;","&#9855;","&#9840;","&#9855;","&#9842;","&#9859;","&#9861;","&#9883;","&#9881;","&#9885;","&#9884;","&#9889;","&#9873;","&#9874;","&#9875;","&#9876;","&#9877;","&#9878;","&#9923;","&#9990;","&#9991;","&#9992;","&#10025;","&#10026;","&#10027;","&#10028;","&#10029;","&#10030;","&#10031;", "Knife Party", "visual vomit", "Pinky", "rockst&#9733;r", "Supershirt", "Frittenbude", "SICK SLAUGHTERHOUSE", "DJ Hype", "edecay", "dnb", "dubstep", "minimal", "crackhouse", "CSS3", "HTML5", "codepen", "Borgore", "Buygore", "DJCHUCKIE", "zinc", "smashing magazine", "github", "eclipse",
+"box-model", "get your shit together", "wtf", "fucking", "flashlight");
+    
+    // start the fucking flashlight
+    _body.addClass('flash');
+  
+    // start changing everything
+    startChanging();
+    
+    // start/stop flashing            
+    $('body').click(function() {
+        if (_body.hasClass('flash')) {
+            _body.removeClass('flash');
+        } else {
+            _body.addClass('flash');
+        }
+    });
+    
+    function startChanging() {
+        
+        setInterval(function() {
+            random_content = randomBetween(content.length);
+          
+           if (_body.hasClass('flash')) {
+               _body.html(content[random_content]);
+           } else {
+               _body.html("");
+           }
+        }, 315);
+    };
+    
+    function randomBetween (max) {
+        var r;
+        do {r = Math.random();} while(r == 1.0);
+        return parseInt(r * max);
+    }
+});
+```
