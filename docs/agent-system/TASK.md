@@ -49,6 +49,28 @@ material, not on description. Ultramarine · oxide/amber · dark mineral are the
 starting candidates; dark is permitted for design 01 because 02 and 03 carry the
 bright register.
 
+### The environment map — A/B this, it is not a detail
+
+K4 (Fresnel + refraction + Beer-Lambert) needs something to refract. What the matter
+reflects **is** the environment map, and that is where expensive and cheap are decided.
+
+The engine currently loads `autumn_field_puresky_1k.hdr` — a meadow under a blue sky,
+left over from the fluid demo this engine grew out of. `voidEnvironment.js` already
+documents why that was wrong: every highlight was a field, which is why the silver
+never read as material. It generates an authored black studio instead.
+
+Test both against each other in the material pass:
+
+```
+A  voidEnvironment.js      procedural, zero bytes, authored reflection bands
+B  Poly Haven studio HDRI  polyhaven.com — CC0, commercial use, no attribution
+```
+
+**1K, prefiltered to a small cubemap.** Reflections do not need resolution, and a 4K
+or 8K file would destroy the one argument this hero has: that it is fully computed and
+therefore instant on a phone over mobile data. Poly Haven's *surface* textures — wood,
+brick, concrete, fabric — have no use here; we have no surfaces, we have particles.
+
 ## MUST PROVE
 
 1. Three states, unmistakably different, same particles.
@@ -57,6 +79,8 @@ bright register.
 4. Pointer interaction stable; the field alive when untouched.
 5. A readable concentration that **holds and breathes** — the project's central
    unproven risk.
+6. One environment map chosen against the other on moving material, with the total
+   byte cost of the pick stated.
 
 ## OUT OF SCOPE
 

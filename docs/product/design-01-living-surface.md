@@ -128,6 +128,16 @@ difference between dust and substance.
 *Source: R1#9, jelly ZIP. **Ideas ported, code not** — both ZIPs are TypeGPU on
 Three 0.181; we run TSL on 0.175. A second shader toolkit is a second renderer.*
 
+**K4b · The environment map is half of K4**
+Refraction needs something to refract; what the matter reflects decides whether it
+reads as expensive. Two candidates, A/B'd in Proof A: the procedural black studio in
+`voidEnvironment.js` (zero bytes) against a Poly Haven studio HDRI (CC0, commercial
+use, no attribution). **1K, prefiltered to a small cubemap** — reflections do not need
+resolution, and a large file would cost the one advantage a computed hero has.
+The meadow HDRI still loaded today (`autumn_field_puresky_1k.hdr`) is a leftover from
+the fluid demo and is the documented reason the silver never read as material.
+Surface textures — wood, brick, fabric — have no use here: we have no surfaces.
+
 **K5 · Temporal budget**
 TAA against fewer raymarch steps. Density passes at reduced resolution.
 *Source: jelly ZIP.*
