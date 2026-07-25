@@ -1,0 +1,204 @@
+/*
+ * P1 — THE OPENING (prototype, not production)
+ *
+ * One scroll runway drives one custom property (--p). Everything else is CSS:
+ * the world medium contracts toward a corner and the page beneath is revealed.
+ * Transform and opacity only — nothing here may trigger layout during the scroll.
+ */
+
+.root {
+  --p: 0;
+  /* Contracted panel geometry, per breakpoint. */
+  --panel-scale: 0.42;
+  --panel-x: -26px;
+  --panel-y: 26px;
+  --panel-origin-x: 100%;
+  /* Where LENOX goes once the world has contracted. */
+  --lenox-scale: 0.54;
+  --lenox-x: 22vw;
+  --lenox-y: 16vh;
+  position: fixed;
+  inset: 0;
+  isolation: isolate;
+  overflow: hidden;
+  background: #06171a;
+  color: #eefcf8;
+  font-family: var(--font-ui);
+}
+
+.world {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  transform-origin: var(--panel-origin-x) 0;
+  transform:
+    translate3d(calc(var(--panel-x) * var(--p)), calc(var(--panel-y) * var(--p)), 0)
+    scale(calc(1 - (1 - var(--panel-scale)) * var(--p)));
+  will-change: transform;
+}
+
+.world::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(230 255 248 / 34%);
+  opacity: var(--p);
+}
+
+.worldMedia {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #bfdfe6 url("/studio/world/hero-keyframe.jpg") center / cover no-repeat;
+}
+
+/*
+ * LENOX never remounts and never blinks — but he is not glued to the world either.
+ * As the medium contracts he steps OUT of the film and settles beside the revealed
+ * page: his own target, driven by the same single property.
+ */
+.lenoxLayer,
+.engineHost {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.lenoxLayer {
+  z-index: 1;
+  pointer-events: none;
+  transform:
+    translate3d(calc(var(--lenox-x) * var(--p)), calc(var(--lenox-y) * var(--p)), 0)
+    scale(calc(1 - (1 - var(--lenox-scale)) * var(--p)));
+  will-change: transform;
+}
+
+.engineHost {
+  touch-action: none;
+}
+
+.scroller {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The runway IS the opening: the page is revealed inside it, in step with --p. */
+.runway {
+  height: 220svh;
+}
+
+.stage {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: flex-end;
+  height: 100svh;
+  padding: clamp(28px, 6vw, 96px);
+  pointer-events: none;
+}
+
+/* The revealed page arrives in the second half of the contraction. */
+.pageIntro {
+  width: 100%;
+  padding-right: 46vw;
+  opacity: clamp(0, calc((var(--p) - 0.42) * 2.4), 1);
+  transform: translate3d(0, calc((1 - var(--p)) * 46px), 0);
+  pointer-events: auto;
+}
+
+.page {
+  position: relative;
+  min-height: 100svh;
+  padding: clamp(28px, 6vw, 96px);
+  background: #041214;
+}
+
+.pageIntro h1 {
+  display: flex;
+  flex-direction: column;
+  font: 400 clamp(46px, 6.4vw, 104px)/0.84 var(--font-display);
+  letter-spacing: -0.055em;
+  text-transform: uppercase;
+}
+
+.pageIntro p {
+  max-width: 46ch;
+  margin-top: 26px;
+  font-size: clamp(14px, 1.3vw, 19px);
+  line-height: 1.55;
+  opacity: 0.82;
+}
+
+.filler {
+  display: grid;
+  gap: 1px;
+  margin-top: 64px;
+  background: rgb(230 255 248 / 14%);
+}
+
+.filler div {
+  min-height: 132px;
+  padding: 22px;
+  background: #041214;
+  font: 500 9px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  opacity: 0.6;
+}
+
+/* Instrument. Prototype only — this is the evidence, not the design. */
+.hud {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 5;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgb(230 255 248 / 24%);
+  background: rgb(4 18 20 / 82%);
+  font: 500 10px/1.35 var(--font-mono);
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+.hud b {
+  font-weight: 600;
+  color: #9ce9da;
+}
+
+.hud[data-warn="true"] b {
+  color: #ff7f6f;
+}
+
+@media (max-width: 860px) {
+  .root {
+    --panel-scale: 0.56;
+    --panel-x: 0px;
+    --panel-y: 16px;
+    --panel-origin-x: 50%;
+    /* Mobile reveals vertically: the world lifts to a band, LENOX drops below it. */
+    --lenox-scale: 0.5;
+    --lenox-x: 0vw;
+    --lenox-y: 22vh;
+  }
+
+  .pageIntro {
+    padding-right: 0;
+  }
+
+  .runway {
+    height: 200svh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world {
+    transition: none;
+  }
+}
