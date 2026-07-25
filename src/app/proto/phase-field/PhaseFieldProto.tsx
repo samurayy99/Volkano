@@ -19,6 +19,14 @@ import {
   type Bounds,
   type FocusParams,
 } from "./targets";
+import {
+  PHASE_FIELD_RECORDING,
+  PHASE_FIELD_RECORDING_FILES,
+  parsePhaseFieldRecordingVariant,
+  phaseFieldRecordingPreset,
+  samplePhaseFieldRecording,
+  type PhaseFieldRecordingVariant,
+} from "./phaseFieldRecording";
 import type { EnvironmentCost } from "../../../flow-engine/types";
 import styles from "./PhaseFieldProto.module.css";
 
@@ -62,7 +70,7 @@ const TIERS: Record<Tier, number> = { low: 4096, medium: 16384, high: 32768 };
  * alone. Both are exposed rather than guessed — this is exactly the "adaptive
  * tiers determined by visual testing" the task asks for.
  */
-const MATERIAL_DEFAULTS = { size: 0.68, roughness: 0.3, metalness: 0.85 };
+const MATERIAL_DEFAULTS = PHASE_FIELD_RECORDING.material;
 
 /**
  * Fallback only. The real box comes from `getSimBounds()` — the engine's own
@@ -86,6 +94,8 @@ export function PhaseFieldProto() {
   const focusDirtyRef = useRef(true);
   const boundsRef = useRef<Bounds>(FALLBACK_BOUNDS);
   const coherenceRef = useRef(0.34);
+  const recordingVariantRef = useRef<PhaseFieldRecordingVariant | null>(null);
+  const recordingRunningRef = useRef(false);
 
   const [ready, setReady] = useState<"probing" | "webgpu" | "fallback">("probing");
   const [phase, setPhase] = useState<PhaseName>("ambient");
@@ -105,6 +115,18 @@ export function PhaseFieldProto() {
   const [curl, setCurl] = useState(true);
   const [coherenceMaterial, setCoherenceMaterial] = useState(true);
   const [primitive, setPrimitive] = useState<Primitive>("billboard");
+  const [recordingVariant, setRecordingVariant] =
+    useState<PhaseFieldRecordingVariant | null>(null);
+  const [recordingStatus, setRecordingStatus] = useState({
+    state: "idle",
+    ready: false,
+    file: "",
+    durationMs: 0,
+    rafFrames: 0,
+    captureFrames: 0,
+    missedCaptureFrames: 0,
+    maxCaptureDelayMs: 0,
+  });
   const [probe, setProbe] = useState({
     fps: 0,
     worst: 0,
@@ -367,7 +389,258 @@ export function PhaseFieldProto() {
     [envRotation, envIntensity],
   );
 
+  /* ── deterministic video gate ────────────────────────────────────────── */
+  useEffect(() => {
+    const variant = parsePhaseFieldRecordingVariant(
+      new URLSearchParams(window.location.search).get("record"),
+    );
+    if (!variant) return;
+
+    const preset = phaseFieldRecordingPreset(variant);
+    recordingVariantRef.current = variant;
+    const timer = window.setTimeout(() => {
+      setRecordingVariant(variant);
+      phaseRef.current = "ambient";
+      setPhase("ambient");
+      setSubstance(preset.substance);
+      setEnv(preset.environment);
+      setEnvRotation(preset.environmentRotation);
+      setEnvIntensity(preset.environmentIntensity);
+      setTier(preset.tier);
+      setMaterial({ ...preset.material });
+      setFocus({ ...preset.focus });
+      setCoherence(preset.coherence);
+      setCoherenceDebug(preset.coherenceDebug);
+      setCoherenceMotion(preset.coherenceMotion);
+      setCurl(preset.curl);
+      setCoherenceMaterial(preset.coherenceMaterial);
+      setPrimitive(preset.primitive);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const variant = recordingVariantRef.current;
+    const bridge = bridgeRef.current;
+    if (ready !== "webgpu" || !variant || !bridge) return;
+
+    const preset = phaseFieldRecordingPreset(variant);
+    let cancelled = false;
+    bridge.clearPointer();
+    bridge.applyEngineRuntime({
+      particles: preset.particles,
+      size: preset.material.size,
+      lenoxRoughness: preset.material.roughness,
+      lenoxMetalness: preset.material.metalness,
+    });
+    bridge.setSubstance(0xdfe9e4, 0);
+    bridge.setCoherenceDebug(false);
+    bridge.setCoherenceMaterial(preset.coherenceMaterial);
+    bridge.setParticlePrimitive(preset.primitive);
+
+    void bridge
+      .setEnvironment(
+        preset.environment,
+        preset.environmentRotation,
+        preset.environmentIntensity,
+      )
+      .then((cost) => {
+        if (cancelled || !cost.applied) return;
+        setEnvCost(cost);
+        setRecordingStatus((current) => ({
+          ...current,
+          state: "ready",
+          ready: true,
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, recordingVariant]);
+
+  const runRecording = useCallback(async () => {
+    const variant = recordingVariantRef.current;
+    const bridge = bridgeRef.current;
+    const host = hostRef.current;
+    if (
+      !variant ||
+      !bridge ||
+      !host ||
+      ready !== "webgpu" ||
+      recordingRunningRef.current
+    ) {
+      throw new Error("Phase-field recording is not ready");
+    }
+
+    const canvas = host.querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Phase-field canvas is missing");
+    }
+    if (typeof canvas.captureStream !== "function") {
+      throw new Error("Canvas captureStream is unavailable");
+    }
+
+    recordingRunningRef.current = true;
+    setRecordingStatus((current) => ({
+      ...current,
+      state: "warmup",
+      ready: false,
+    }));
+    bridge.clearPointer();
+    phaseRef.current = "ambient";
+    setPhase("ambient");
+
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, PHASE_FIELD_RECORDING.warmupMs);
+    });
+
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
+      ? "video/webm;codecs=vp8"
+      : "video/webm";
+    const stream = canvas.captureStream(0);
+    const captureTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+    if (typeof captureTrack?.requestFrame !== "function") {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("Manual canvas frame capture is unavailable");
+    }
+    captureTrack.contentHint = "motion";
+    const chunks: BlobPart[] = [];
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 14_000_000,
+    });
+
+    const stopped = new Promise<Blob>((resolve, reject) => {
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      });
+      recorder.addEventListener("error", () => {
+        reject(new Error("MediaRecorder failed"));
+      });
+      recorder.addEventListener("stop", () => {
+        resolve(new Blob(chunks, { type: recorder.mimeType }));
+      });
+    });
+
+    let raf = 0;
+    let rafFrames = 0;
+    let captureFrames = 0;
+    let missedCaptureFrames = 0;
+    let maxCaptureDelayMs = 0;
+    let lastPhase: PhaseName = "ambient";
+    let pointerActive = false;
+    const startedAt = performance.now();
+    const captureIntervalMs = 1_000 / PHASE_FIELD_RECORDING.fps;
+    const expectedCaptureFrames = Math.round(
+      PHASE_FIELD_RECORDING.durationMs / captureIntervalMs,
+    );
+    setRecordingStatus((current) => ({ ...current, state: "recording" }));
+    recorder.start(1_000);
+
+    await new Promise<void>((resolve) => {
+      const step = (now: number) => {
+        const elapsed = now - startedAt;
+        const sample = samplePhaseFieldRecording(elapsed);
+        rafFrames += 1;
+
+        if (sample.phase !== lastPhase) {
+          lastPhase = sample.phase;
+          phaseRef.current = sample.phase;
+          setPhase(sample.phase);
+        }
+
+        if (sample.pointer) {
+          const rect = host.getBoundingClientRect();
+          const clientX = rect.left + sample.pointer.x * rect.width;
+          const clientY = rect.top + sample.pointer.y * rect.height;
+          lastTouchRef.current = now;
+          bridge.setPointerSample(clientX, clientY);
+          bridge.setPointer(clientX, clientY, false);
+          pointerActive = true;
+        } else if (pointerActive) {
+          bridge.clearPointer();
+          pointerActive = false;
+        }
+
+        if (
+          captureFrames < expectedCaptureFrames &&
+          elapsed >= captureFrames * captureIntervalMs
+        ) {
+          const dueFrame = Math.floor(elapsed / captureIntervalMs);
+          if (dueFrame > captureFrames) {
+            missedCaptureFrames += dueFrame - captureFrames;
+          }
+          maxCaptureDelayMs = Math.max(
+            maxCaptureDelayMs,
+            elapsed - captureFrames * captureIntervalMs,
+          );
+          captureTrack.requestFrame();
+          captureFrames += 1;
+        }
+
+        if (elapsed >= PHASE_FIELD_RECORDING.durationMs) {
+          resolve();
+          return;
+        }
+        raf = window.requestAnimationFrame(step);
+      };
+      raf = window.requestAnimationFrame(step);
+    });
+
+    window.cancelAnimationFrame(raf);
+    bridge.clearPointer();
+    phaseRef.current = "ambient";
+    setPhase("ambient");
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+    recorder.stop();
+    const blob = await stopped;
+    stream.getTracks().forEach((track) => track.stop());
+
+    const filename = PHASE_FIELD_RECORDING_FILES[variant];
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 5_000);
+
+    const durationMs = performance.now() - startedAt;
+    setRecordingStatus({
+      state: "done",
+      ready: false,
+      file: filename,
+      durationMs,
+      rafFrames,
+      captureFrames,
+      missedCaptureFrames,
+      maxCaptureDelayMs,
+    });
+    recordingRunningRef.current = false;
+  }, [ready]);
+
+  useEffect(() => {
+    const variant = recordingVariantRef.current;
+    if (!variant) return;
+    const recordingWindow = window as unknown as {
+      __PF_RECORDING__?: {
+        variant: PhaseFieldRecordingVariant;
+        preset: ReturnType<typeof phaseFieldRecordingPreset>;
+        start: () => Promise<void>;
+      };
+    };
+    recordingWindow.__PF_RECORDING__ = {
+      variant,
+      preset: phaseFieldRecordingPreset(variant),
+      start: runRecording,
+    };
+    return () => {
+      delete recordingWindow.__PF_RECORDING__;
+    };
+  }, [recordingVariant, runRecording]);
+
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (recordingVariantRef.current) return;
     lastTouchRef.current = performance.now();
     const bridge = bridgeRef.current;
     if (!bridge) return;
@@ -376,6 +649,7 @@ export function PhaseFieldProto() {
   }, []);
 
   const onPointerLeave = useCallback(() => {
+    if (recordingVariantRef.current) return;
     bridgeRef.current?.clearPointer();
   }, []);
 
@@ -405,6 +679,20 @@ export function PhaseFieldProto() {
   return (
     <div
       className={styles.root}
+      data-recording={recordingVariant ? "true" : undefined}
+      data-recording-variant={recordingVariant ?? undefined}
+      data-recording-state={recordingStatus.state}
+      data-recording-ready={recordingStatus.ready}
+      data-recording-file={recordingStatus.file || undefined}
+      data-recording-duration-ms={recordingStatus.durationMs || undefined}
+      data-recording-raf-frames={recordingStatus.rafFrames || undefined}
+      data-recording-capture-frames={recordingStatus.captureFrames || undefined}
+      data-recording-missed-capture-frames={
+        recordingStatus.missedCaptureFrames || undefined
+      }
+      data-recording-max-capture-delay-ms={
+        recordingStatus.maxCaptureDelayMs || undefined
+      }
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
     >

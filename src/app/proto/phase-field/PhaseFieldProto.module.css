@@ -36,6 +36,10 @@
   letter-spacing: 0.06em;
 }
 
+.root[data-recording="true"] .panel {
+  pointer-events: none;
+}
+
 .group {
   display: grid;
   gap: 5px;
