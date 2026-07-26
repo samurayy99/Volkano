@@ -11,6 +11,25 @@ import { buildMailtoHref } from "./studioLinks.ts";
 
 const initialExperienceState = createInitialExperienceState("design-01");
 
+test("new and persisted sessions enter the studio directly", () => {
+  assert.equal(initialExperienceState.introPhase, "entered");
+  const hydrated = experienceReducer(initialExperienceState, {
+    type: "HYDRATE",
+    state: {
+      introPhase: "gate",
+      design: "design-02",
+      locale: "de",
+      activeChapter: "principle",
+      localProgress: 0.37,
+    },
+  });
+  assert.equal(hydrated.introPhase, "entered");
+  assert.equal(hydrated.design, "design-02");
+  assert.equal(hydrated.locale, "de");
+  assert.equal(hydrated.activeChapter, "principle");
+  assert.equal(hydrated.localProgress, 0.37);
+});
+
 test("morph preserves semantic position and interaction state", () => {
   let state = experienceReducer(initialExperienceState, {
     type: "SET_POSITION",

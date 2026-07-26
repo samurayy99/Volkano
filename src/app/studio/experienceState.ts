@@ -60,7 +60,7 @@ export function createInitialExperienceState(design: DesignId): ExperienceState 
   return {
     design,
     locale: "en",
-    introPhase: "gate",
+    introPhase: "entered",
     activeChapter: "hero",
     localProgress: 0,
     audit: { phase: "idle", url: "" },
@@ -95,7 +95,7 @@ export function experienceReducer(
       return {
         design: action.state.design ?? state.design,
         locale: action.state.locale ?? state.locale,
-        introPhase: action.state.introPhase ?? state.introPhase,
+        introPhase: "entered",
         activeChapter: action.state.activeChapter ?? state.activeChapter,
         localProgress: clamp01(action.state.localProgress ?? state.localProgress),
         audit: { ...state.audit, ...action.state.audit },

@@ -167,6 +167,11 @@ export interface FlowEngineApi {
   setLenoxEyeRigEnhanced: (enabled: boolean) => void;
   /** Which way he makes room when the page is built. Lenox mode only. */
   setCompositionMode: (mode: CompositionMode) => void;
+  /** Living Surface opening intent; the engine owns damping and return. */
+  setLivingSurfaceOpening: (
+    intent: { tension: number; aperture: number },
+    tau?: number,
+  ) => void;
 
   /* ── Phase field (prototype mode) ──────────────────────────────────────
    * A neutral target surface over the existing settle machinery. The solver's
@@ -248,6 +253,8 @@ export interface FlowEngineApi {
 
 export interface FlowEngineBridgeOptions {
   onError?: (error: unknown) => void;
+  /** Explicit production experience. Legacy booleans remain compatible. */
+  experienceMode?: "legacy-lenox" | "living-surface";
   /** Lenox proof: void visual (no vessel), LenoxEyesDrive owns the runtime. */
   lenoxMode?: boolean;
   /** Compresses the awakening timeline and calms all motion. */
@@ -266,10 +273,8 @@ export interface FlowEngineBridgeOptions {
    * face and the authored-character handoff. The host owns runtime and pointer
    * influence instead.
    *
-   * PROTOTYPE MECHANICS, NOT FINAL ARCHITECTURE. If phase field survives its
-   * gate, this and `lenoxMode` should collapse into one explicit
-   * `experienceMode: "legacy-lenox" | "phase-field"` rather than grow into
-   * boolean soup.
+   * Compatibility-only prototype flag. Production callers use the explicit
+   * `experienceMode`; existing lab callers keep this path unchanged.
    */
   phaseField?: boolean;
   /** Fires when the effective Lenox state changes (waking auto-advances). */

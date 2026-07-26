@@ -75,9 +75,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         ...(design ? { design } : {}),
         ...(locale === "en" || locale === "de" ? { locale } : {}),
         ...(chapter ? { activeChapter: chapter } : {}),
-        ...(persisted.introPhase && persisted.introPhase !== "gate"
-          ? { introPhase: "entered" }
-          : {}),
+        introPhase: "entered",
       },
     });
     hydrated.current = true;

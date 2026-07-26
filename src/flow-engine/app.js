@@ -419,11 +419,14 @@ class App {
    * the whole picture. A host that composes its own world behind the canvas
    * (each reality owns its background) passes false and gets particles and Lenox
    * on transparency. Default true — legacy callers are unaffected.
+   * @param {boolean} [options.character] Void mode only. False keeps the retired
+   * gaze/vessel character path out of the production Living Surface.
    */
   constructor(renderer, options = {}) {
     this.renderer = renderer;
     this.visualMode = options.visualMode === "void" ? "void" : "chamber";
     this.useLenoxBackdrop = options.backdrop !== false;
+    this.useLenoxCharacter = options.character !== false;
   }
 
   resetPostEnterRuntimeChannels() {
@@ -1588,8 +1591,10 @@ class App {
     this.scene.add(this.particleRenderer.object);
 
     if (this.visualMode === "void") {
-      this.initLenoxGazeRig();
-      this.initLenoxVessel();
+      if (this.useLenoxCharacter) {
+        this.initLenoxGazeRig();
+        this.initLenoxVessel();
+      }
       if (this.useLenoxBackdrop) {
         this.lenoxBackdrop = createLenoxBackdrop();
         this.scene.add(this.lenoxBackdrop.object ?? this.lenoxBackdrop.mesh);
@@ -1875,6 +1880,12 @@ class App {
     }
     if (Number.isFinite(pose?.shiftY)) {
       j.shiftYT = Math.max(-1.2, Math.min(pose.shiftY, 1.2));
+    }
+    if (tau <= 0) {
+      j.zoom = j.zoomT;
+      j.shiftX = j.shiftXT;
+      j.shiftY = j.shiftYT;
+      return;
     }
     j.tau = Math.max(0.05, tau);
   }

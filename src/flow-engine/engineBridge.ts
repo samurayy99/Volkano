@@ -2,6 +2,13 @@ import * as THREE from "three/webgpu";
 import App from "./app.js";
 import { SourceChamberDrive } from "./source-chamber/sourceChamberDrive.js";
 import { LenoxEyesDrive } from "./lenox/lenoxEyesDrive.js";
+import {
+  LIVING_SURFACE_PRESET,
+  resolveExperienceMode,
+  shouldStartLenoxDrive,
+  type ResolvedExperienceMode,
+} from "./experienceMode";
+import { buildLivingSurfaceTargets } from "./livingSurfaceTargets";
 import type {
   CompositionMode,
   ConversationState,
@@ -41,9 +48,27 @@ function sourcePlayEngineRuntime() {
   };
 }
 
+function livingSurfaceEngineRuntime() {
+  return {
+    ...sourcePlayEngineRuntime(),
+    noise: LIVING_SURFACE_PRESET.noise,
+    speed: LIVING_SURFACE_PRESET.speed,
+    gravity: LIVING_SURFACE_PRESET.gravity,
+    dynamicViscosity: LIVING_SURFACE_PRESET.dynamicViscosity,
+    size: LIVING_SURFACE_PRESET.size,
+    settleWeight: LIVING_SURFACE_PRESET.targetInfluence,
+    settleDampingShell: 1.8,
+    settleDampingFocal: 1.8,
+  };
+}
+
+const clamp01 = (value: number): number =>
+  Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
+
 export class FlowEngineBridge implements FlowEngineApi {
   private readonly container: HTMLElement;
   private readonly options: FlowEngineBridgeOptions;
+  private readonly experienceMode: ResolvedExperienceMode;
   /*
    * `App` and the WebGPU renderer backend are plain JS with no type surface, so
    * these stay `any` until the engine is typed — a real refactor, not something
@@ -71,11 +96,27 @@ export class FlowEngineBridge implements FlowEngineApi {
   private lastLenoxState: LenoxProofState = "idle";
   /** React usually knows the composition before the GPU is up; hold it until then. */
   private pendingCompositionMode: CompositionMode = "side";
+  private pendingJourneyPose: { pose: LenoxJourneyPose; tau: number } | null = null;
   /** Rolling engine tick time (ms), exposed as __LENOX_PERF__ in Lenox mode. */
   private engineMsAvg: number | null = null;
   private deviceLossArmed = false;
+  private deviceLost = false;
   private gravityQualityApplied = false;
   private lenoxSignalAccum = 0;
+  private livingSurfaceTargetsReady = false;
+  private pointerPresent = false;
+  private livingOpening = {
+    tension: 0,
+    aperture: 0,
+    tensionTarget: 0,
+    apertureTarget: 0,
+    tau: 0.22,
+  };
+  private livingSignals: LenoxSignals = {
+    energy: 0,
+    attention: 0,
+    tension: 0,
+  };
   /**
    * Phase field: smoothed pointer speed in px/s. `mouseForce` in the solver is
    * already the raw per-frame position delta, so direction and base magnitude
@@ -94,6 +135,19 @@ export class FlowEngineBridge implements FlowEngineApi {
   constructor(container: HTMLElement, options: FlowEngineBridgeOptions = {}) {
     this.container = container;
     this.options = options;
+    this.experienceMode = resolveExperienceMode(options);
+  }
+
+  private get isLivingSurface(): boolean {
+    return this.experienceMode === "living-surface";
+  }
+
+  private get isLegacyLenox(): boolean {
+    return this.experienceMode === "legacy-lenox";
+  }
+
+  private get isPhaseField(): boolean {
+    return this.experienceMode === "phase-field";
   }
 
   async init(): Promise<void> {
@@ -105,7 +159,10 @@ export class FlowEngineBridge implements FlowEngineApi {
     const height = this.container.clientHeight || window.innerHeight;
     const renderer = new THREE.WebGPURenderer({ alpha: true, antialias: true });
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
+    const dprCap = this.isLivingSurface && this.pendingCompositionMode === "banded"
+      ? 1.5
+      : 2;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap));
     renderer.setSize(width, height);
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -124,22 +181,32 @@ export class FlowEngineBridge implements FlowEngineApi {
       this.deviceLossArmed = true;
       void device.lost.then((info) => {
         if (!this.disposed && info.reason !== "destroyed") {
+          this.deviceLost = true;
+          cancelAnimationFrame(this.rafId);
           this.options.onDeviceLost?.(info);
         }
       });
     }
     this.container.appendChild(renderer.domElement);
 
-    const voidVisual = this.options.lenoxMode || this.options.phaseField;
+    const voidVisual =
+      this.isLivingSurface || this.isLegacyLenox || this.isPhaseField;
     const app = new App(renderer, {
       visualMode: voidVisual ? "void" : "chamber",
-      backdrop: this.options.lenoxBackdrop !== false,
+      backdrop: this.isLivingSurface ? false : this.options.lenoxBackdrop !== false,
+      character: !this.isLivingSurface,
     });
     this.app = app;
     await app.init(width, height);
     // Before the first frame: the engine must never compose from its own guess.
     app.setCompositionMode?.(this.pendingCompositionMode);
-    if (this.options.lenoxMode && !this.options.phaseField) {
+    if (this.pendingJourneyPose) {
+      app.setLenoxJourneyPose?.(
+        this.pendingJourneyPose.pose,
+        this.pendingJourneyPose.tau,
+      );
+    }
+    if (shouldStartLenoxDrive(this.experienceMode)) {
       this.lenoxDrive = new LenoxEyesDrive({
         reducedMotion: this.options.lenoxReducedMotion,
       });
@@ -150,7 +217,7 @@ export class FlowEngineBridge implements FlowEngineApi {
     this.onResize();
 
     this.app.promoteIdlePopulation();
-    if (this.options.lenoxMode || this.options.phaseField) {
+    if (this.isLivingSurface || this.isLegacyLenox || this.isPhaseField) {
       // First contact: one compact central ignition bursts into the same
       // projected viewport box it later ricochets inside. No settle target,
       // reservoir or spring is introduced after the launch.
@@ -164,7 +231,40 @@ export class FlowEngineBridge implements FlowEngineApi {
       });
     }
     this.app.clearPointer();
-    this.app.applyEngineRuntime(sourcePlayEngineRuntime());
+    if (this.isLivingSurface) {
+      this.app.applyEngineRuntime({
+        ...livingSurfaceEngineRuntime(),
+        lenoxTintT: 1,
+        lenoxMetalness: LIVING_SURFACE_PRESET.metalness,
+        lenoxRoughness: LIVING_SURFACE_PRESET.roughness,
+        lenoxSilverGain: 1,
+      });
+      this.setParticlePrimitive(LIVING_SURFACE_PRESET.primitive);
+      this.setCoherenceMaterial(LIVING_SURFACE_PRESET.coherenceMaterial);
+      this.setCoherenceDebug(LIVING_SURFACE_PRESET.coherenceDebug);
+      this.setCoherenceField({
+        inner: LIVING_SURFACE_PRESET.coherenceInner,
+        outer: LIVING_SURFACE_PRESET.coherenceOuter,
+        recruit: LIVING_SURFACE_PRESET.coherenceRecruit,
+        release: LIVING_SURFACE_PRESET.coherenceRelease,
+        motion: true,
+        curl: true,
+      });
+      this.app.mlsMpmSim?.setLivingSurfaceCoherence?.({
+        enabled: true,
+        attention: 0,
+      });
+      this.setSubstance(0xffffff, 0);
+      this.seedLivingSurfaceTargets();
+      this.setTargetInfluence(LIVING_SURFACE_PRESET.targetInfluence);
+      await this.setEnvironment(
+        LIVING_SURFACE_PRESET.environment,
+        LIVING_SURFACE_PRESET.environmentRotation,
+        LIVING_SURFACE_PRESET.environmentIntensity,
+      );
+    } else {
+      this.app.applyEngineRuntime(sourcePlayEngineRuntime());
+    }
     document.addEventListener("visibilitychange", this.onVisibilityChange);
 
     this.clock.start();
@@ -185,11 +285,15 @@ export class FlowEngineBridge implements FlowEngineApi {
       return;
     }
 
-    this.app.applyEngineRuntime(sourcePlayEngineRuntime());
+    this.app.applyEngineRuntime(
+      this.isLivingSurface
+        ? livingSurfaceEngineRuntime()
+        : sourcePlayEngineRuntime(),
+    );
     this.app.setPointerInfluence(enabled ? 1 : 0);
 
     if (!enabled) {
-      this.app.clearPointer();
+      this.clearPointer();
     }
   }
 
@@ -207,11 +311,17 @@ export class FlowEngineBridge implements FlowEngineApi {
       return;
     }
 
+    if (this.isLivingSurface) {
+      this.pointerPresent = true;
+      this.trackPointerSample(x, y);
+    }
     this.app.setPointer(localX, localY, isDown);
   }
 
   clearPointer(): void {
     if (this.disposed || !this.app) return;
+    this.pointerPresent = false;
+    this.lastPointerSample = null;
     this.app.clearPointer();
   }
 
@@ -266,7 +376,9 @@ export class FlowEngineBridge implements FlowEngineApi {
   /** Journey camera pose (scroll director → engine; engine eases). */
   setJourneyPose(pose: LenoxJourneyPose, tau?: number): void {
     if (this.disposed) return;
-    this.app?.setLenoxJourneyPose?.(pose, tau);
+    const resolvedTau = Number.isFinite(tau) ? (tau as number) : 0.3;
+    this.pendingJourneyPose = { pose, tau: resolvedTau };
+    this.app?.setLenoxJourneyPose?.(pose, resolvedTau);
   }
 
   /**
@@ -278,6 +390,29 @@ export class FlowEngineBridge implements FlowEngineApi {
     if (this.disposed) return;
     this.pendingCompositionMode = mode;
     this.app?.setCompositionMode?.(mode);
+    this.app?.mlsMpmSim?.setLivingSurfaceOpening?.({ banded: mode === "banded" });
+  }
+
+  setLivingSurfaceOpening(
+    intent: { tension: number; aperture: number },
+    tau = 0.22,
+  ): void {
+    if (this.disposed || !this.isLivingSurface) return;
+    this.livingOpening.tensionTarget = clamp01(intent?.tension);
+    this.livingOpening.apertureTarget = clamp01(intent?.aperture);
+    if (this.options.lenoxReducedMotion) {
+      this.livingOpening.tension = this.livingOpening.tensionTarget;
+      this.livingOpening.aperture = this.livingOpening.apertureTarget;
+      this.app?.mlsMpmSim?.setLivingSurfaceOpening?.({
+        tension: this.livingOpening.tension,
+        aperture: this.livingOpening.aperture,
+        banded: this.pendingCompositionMode === "banded",
+      });
+      return;
+    }
+    this.livingOpening.tau = Number.isFinite(tau)
+      ? Math.max(0.05, tau)
+      : 0.22;
   }
 
   /* ── Phase field ─────────────────────────────────────────────────────────
@@ -308,6 +443,24 @@ export class FlowEngineBridge implements FlowEngineApi {
     return sim.buildLenoxShellTargets(positions, n) ? n : 0;
   }
 
+  private seedLivingSurfaceTargets(): void {
+    if (!this.isLivingSurface || !this.app?.runtime) return;
+    const bounds = this.getSimBounds();
+    const count = Math.min(
+      this.app.runtime.particles ?? 0,
+      this.app.mlsMpmSim?.settleTargetBuffer?.length ?? 0,
+    );
+    if (!bounds || count <= 0) return;
+
+    const targets = buildLivingSurfaceTargets(bounds, count);
+    const seedPositions = !this.livingSurfaceTargetsReady;
+
+    this.livingSurfaceTargetsReady = this.setParticleTargets(targets, count) > 0;
+    if (this.livingSurfaceTargetsReady && seedPositions) {
+      this.app.mlsMpmSim?.seedPopulationFromTargets?.(targets, count);
+    }
+  }
+
   /**
    * How hard matter is pulled to whatever target bank is loaded. Damping is
    * ramped with the pull rather than switched on at a threshold: a binary jump
@@ -324,6 +477,11 @@ export class FlowEngineBridge implements FlowEngineApi {
     const damp = Math.min(12, v * 24);
     sim.uniforms.settleDampingShell.value = damp;
     sim.uniforms.settleDampingFocal.value = damp;
+    this.app?.applyEngineRuntime?.({
+      settleWeight: v,
+      settleDampingShell: damp,
+      settleDampingFocal: damp,
+    });
   }
 
   /**
@@ -339,6 +497,10 @@ export class FlowEngineBridge implements FlowEngineApi {
    */
   setPointerSample(clientX: number, clientY: number): void {
     if (this.disposed) return;
+    this.trackPointerSample(clientX, clientY);
+  }
+
+  private trackPointerSample(clientX: number, clientY: number): void {
     const now = performance.now();
     const prev = this.lastPointerSample;
     this.lastPointerSample = { x: clientX, y: clientY, t: now };
@@ -628,6 +790,68 @@ export class FlowEngineBridge implements FlowEngineApi {
     }
   }
 
+  private updateLivingSurface(delta: number): void {
+    const dt = Math.min(Math.max(delta, 0), 1 / 20);
+    const opening = this.livingOpening;
+    const openingK = 1 - Math.exp(-dt / opening.tau);
+    opening.tension += (opening.tensionTarget - opening.tension) * openingK;
+    opening.aperture += (opening.apertureTarget - opening.aperture) * openingK;
+
+    const sampleAge = this.lastPointerSample
+      ? performance.now() - this.lastPointerSample.t
+      : Infinity;
+    if (!this.pointerPresent || sampleAge > 80) {
+      this.pointerSpeed *= Math.exp(-dt / 0.18);
+    }
+
+    const energyTarget = clamp01(this.pointerSpeed / 1200);
+    const attentionTarget = this.pointerPresent ? 1 : 0;
+    const energyK = 1 - Math.exp(-dt / (energyTarget > this.livingSignals.energy ? 0.1 : 0.24));
+    const attentionK = 1 - Math.exp(-dt / (attentionTarget > this.livingSignals.attention ? 0.12 : 0.7));
+    this.livingSignals.energy +=
+      (energyTarget - this.livingSignals.energy) * energyK;
+    this.livingSignals.attention +=
+      (attentionTarget - this.livingSignals.attention) * attentionK;
+    this.livingSignals.tension = opening.tension;
+
+    this.app?.mlsMpmSim?.setLivingSurfaceOpening?.({
+      tension: opening.tension,
+      aperture: opening.aperture,
+      banded: this.pendingCompositionMode === "banded",
+    });
+    this.setCoherenceField({
+      inner: LIVING_SURFACE_PRESET.coherenceInner,
+      outer: LIVING_SURFACE_PRESET.coherenceOuter,
+      recruit: LIVING_SURFACE_PRESET.coherenceRecruit,
+      release: LIVING_SURFACE_PRESET.coherenceRelease,
+      motion: true,
+      curl: true,
+    });
+    this.app?.mlsMpmSim?.setLivingSurfaceCoherence?.({
+      enabled: true,
+      attention: this.livingSignals.attention,
+    });
+
+    const state: LenoxProofState =
+      opening.aperture > 0.15
+        ? "alive"
+        : this.livingSignals.attention > 0.12
+          ? "attract"
+          : "idle";
+    if (state !== this.lastLenoxState) {
+      this.lastLenoxState = state;
+      this.options.onLenoxStateChange?.(state);
+    }
+
+    if (this.options.onLenoxSignals) {
+      this.lenoxSignalAccum += dt;
+      if (this.lenoxSignalAccum >= 1 / 12) {
+        this.lenoxSignalAccum = 0;
+        this.options.onLenoxSignals({ ...this.livingSignals });
+      }
+    }
+  }
+
   private onResize = (): void => {
     if (!this.renderer || !this.app) return;
     if (this.postEnterActive) return;
@@ -635,8 +859,15 @@ export class FlowEngineBridge implements FlowEngineApi {
     const width = this.container.clientWidth || window.innerWidth;
     const height = this.container.clientHeight || window.innerHeight;
 
+    if (this.isLivingSurface) {
+      const dprCap = this.pendingCompositionMode === "banded" ? 1.5 : 2;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap));
+    }
     this.renderer.setSize(width, height);
     this.app.resize(width, height);
+    if (this.isLivingSurface && this.livingSurfaceTargetsReady) {
+      this.seedLivingSurfaceTargets();
+    }
   };
 
   private onVisibilityChange = (): void => {
@@ -649,7 +880,7 @@ export class FlowEngineBridge implements FlowEngineApi {
   };
 
   private animate = async (): Promise<void> => {
-    if (this.disposed || !this.app) return;
+    if (this.disposed || this.deviceLost || !this.app) return;
 
     if (this.hidden) {
       this.clock.getDelta();
@@ -691,7 +922,9 @@ export class FlowEngineBridge implements FlowEngineApi {
         }
       }
 
-      if (this.options.phaseField) {
+      if (this.isLivingSurface) {
+        this.updateLivingSurface(delta);
+      } else if (this.isPhaseField) {
         // The phase-field host owns runtime, targets and pointer influence.
         // No drive runs here — that is the whole point of the mode.
       } else if (this.lenoxDrive) {
@@ -730,7 +963,7 @@ export class FlowEngineBridge implements FlowEngineApi {
           this.interactiveEnabled && !this.postEnterActive ? 1 : 0;
         this.app.setPointerInfluence(pointerInfluence);
       }
-      if (this.lenoxDrive || this.options.phaseField) {
+      if (this.lenoxDrive || this.isPhaseField || this.isLivingSurface) {
         // Real engine frame time (CPU-side tick incl. GPU submit) — the
         // React FPS HUD runs its own rAF and does not measure the engine.
         const engineT0 = performance.now();

@@ -640,9 +640,16 @@ class mlsMpmSimulator {
     this.uniforms.coherenceOuter = uniform(16);
     this.uniforms.coherenceRecruit = uniform(0);
     this.uniforms.coherenceRelease = uniform(0.35);
+    /** Production-only kinetics. Zero preserves the legacy phase-field path. */
+    this.uniforms.coherenceLivingT = uniform(0);
+    this.uniforms.coherenceAttention = uniform(0);
     /** A.1b response; both 0 preserve the original solver path. */
     this.uniforms.coherenceMotionT = uniform(0);
     this.uniforms.coherenceCurlT = uniform(0);
+    /** Production Living Surface opening. Zero leaves every existing host inert. */
+    this.uniforms.livingSurfaceTension = uniform(0);
+    this.uniforms.livingSurfaceAperture = uniform(0);
+    this.uniforms.livingSurfaceBanded = uniform(0);
 
     this.uniforms.settleWeight = uniform(0);
     /**
@@ -1106,7 +1113,137 @@ class mlsMpmSimulator {
               mix(float(0.0), float(1.0), settleFocalW),
             ),
           )
-          .toConst("settleTargetPos");
+          .toVar("settleTargetPos");
+
+        If(
+          this.uniforms.livingSurfaceAperture
+            .add(this.uniforms.livingSurfaceTension)
+            .greaterThan(float(0.0005)),
+          () => {
+            const span = this.uniforms.simBoundsMax
+              .sub(this.uniforms.simBoundsMin)
+              .max(vec3(0.001))
+              .toConst("livingSpan");
+            const normalized = particlePosition
+              .sub(this.uniforms.simBoundsMin)
+              .div(span)
+              .toConst("livingNormalized");
+            // World +x renders screen-left in this camera rig.
+            const screenUv = vec2(float(1).sub(normalized.x), normalized.y)
+              .toConst("livingScreenUv");
+            const banded = this.uniforms.livingSurfaceBanded.clamp(0, 1);
+            const center = mix(vec2(0.68, 0.5), vec2(0.5, 0.33), banded)
+              .toConst("livingCenter");
+            const radius = mix(vec2(0.24, 0.34), vec2(0.36, 0.22), banded)
+              .toConst("livingRadius");
+            const axis = mix(vec2(0.9247, 0.3818), vec2(0, -1), banded)
+              .toConst("livingAxis");
+            const perpendicular = vec2(axis.y.negate(), axis.x)
+              .toConst("livingPerpendicular");
+            const rel = screenUv.sub(center).toConst("livingRel");
+            const oriented = vec2(rel.dot(axis), rel.dot(perpendicular))
+              .toConst("livingOriented");
+            const ellipse = oriented.div(radius).length()
+              .toConst("livingEllipse");
+            const screenNormalRaw = axis
+              .mul(oriented.x.div(radius.x))
+              .add(perpendicular.mul(oriented.y.div(radius.y)))
+              .toConst("livingScreenNormalRaw");
+            const screenNormal = screenNormalRaw
+              .div(screenNormalRaw.length().max(float(0.001)))
+              .toConst("livingScreenNormal");
+            const simNormal = vec2(screenNormal.x.negate(), screenNormal.y)
+              .toConst("livingSimNormal");
+            const desktopBias = smoothstep(float(0.34), float(0.7), screenUv.x);
+            const mobileBias = smoothstep(float(0.25), float(0.64), screenUv.y)
+              .oneMinus();
+            const compositionBias = mix(desktopBias, mobileBias, banded)
+              .toConst("livingCompositionBias");
+            const interior = smoothstep(float(0.72), float(1.3), ellipse)
+              .oneMinus()
+              .mul(compositionBias)
+              .toConst("livingInterior");
+            const aperture = this.uniforms.livingSurfaceAperture.clamp(0, 1);
+            const desktopDisplacement = vec2(
+              span.x.mul(float(0.035).add(simNormal.x.mul(0.025))),
+              span.y.mul(simNormal.y).mul(0.045),
+            ).toConst("livingDesktopDisplacement");
+            const mobileDisplacement = vec2(
+              span.x.mul(simNormal.x).mul(0.06),
+              span.y.mul(simNormal.y).mul(0.07),
+            ).toConst("livingMobileDisplacement");
+            const lateralDisplacement = mix(
+              desktopDisplacement,
+              mobileDisplacement,
+              banded,
+            ).toConst("livingLateralDisplacement");
+            const depthLayer = smoothstep(float(0.18), float(0.82), normalized.z)
+              .toConst("livingDepthLayer");
+            const desktopDepth = mix(float(0.1), float(0.16), depthLayer);
+            const mobileDepth = mix(float(0.1), float(0.14), depthLayer);
+            const desiredOffset = vec3(
+              lateralDisplacement.x,
+              lateralDisplacement.y,
+              span.z.mul(mix(desktopDepth, mobileDepth, banded)),
+            )
+              .mul(interior)
+              .mul(aperture)
+              .toConst("livingDesiredOffset");
+            // Targets use at most 65% of the remaining safe room. The final
+            // clamp is defensive; normal operation never piles onto it.
+            const safeMin = this.uniforms.simBoundsMin
+              .add(span.mul(0.08))
+              .toConst("livingSafeMin");
+            const safeMax = this.uniforms.simBoundsMax
+              .sub(span.mul(0.08))
+              .toConst("livingSafeMax");
+            const boundedOffset = clamp(
+              desiredOffset,
+              safeMin.sub(settleTargetPos).mul(0.65),
+              safeMax.sub(settleTargetPos).mul(0.65),
+            ).toConst("livingBoundedOffset");
+            settleTargetPos.addAssign(boundedOffset);
+            settleTargetPos.assign(clamp(settleTargetPos, safeMin, safeMax));
+
+            const edgeBand = smoothstep(float(0.62), float(0.9), ellipse)
+              .mul(smoothstep(float(1), float(1.38), ellipse).oneMinus())
+              .mul(compositionBias)
+              .toConst("livingEdgeBand");
+            const tangent = vec2(simNormal.y.negate(), simNormal.x)
+              .toConst("livingTangent");
+            const tension = this.uniforms.livingSurfaceTension.clamp(0, 1);
+            const directed = mix(vec2(0.9247, 0.3818), vec2(0, -1), banded)
+              .toConst("livingDirected");
+            const edgeDrift = mix(
+              vec2(float(0), tangent.y),
+              tangent,
+              banded,
+            ).toConst("livingEdgeDrift");
+            particleVelocity.addAssign(
+              vec3(
+                edgeDrift.x.mul(edgeBand).mul(aperture).mul(1.15)
+                  .add(directed.x.mul(tension).mul(compositionBias).mul(0.3)),
+                edgeDrift.y.mul(edgeBand).mul(aperture).mul(1.15)
+                  .add(directed.y.mul(tension).mul(compositionBias).mul(0.3)),
+                float(0),
+              ).mul(this.uniforms.dt),
+            );
+
+            // A continuous front band peels toward the camera while the
+            // opening grows; membership follows position, never a particle role.
+            const frontness = smoothstep(float(0.22), float(0.5), normalized.z)
+              .oneMinus();
+            const peelPhase = smoothstep(float(0.38), float(0.62), aperture)
+              .mul(smoothstep(float(0.82), float(1), aperture).oneMinus());
+            const peel = edgeBand.mul(frontness).mul(peelPhase)
+              .toConst("livingPeel");
+            particleVelocity.addAssign(
+              vec3(edgeDrift.x.mul(1.6), edgeDrift.y.mul(1.6), float(-3.2))
+                .mul(peel)
+                .mul(this.uniforms.dt),
+            );
+          },
+        );
         const toSettle = settleTargetPos
           .sub(particlePosition)
           .toConst("settleToTarget");
@@ -1168,12 +1305,49 @@ class mlsMpmSimulator {
       )
         .oneMinus()
         .toConst("coherencePull");
+      const coherenceSpan = this.uniforms.simBoundsMax
+        .sub(this.uniforms.simBoundsMin)
+        .xy.max(vec2(0.001))
+        .toConst("coherenceSpan");
+      const ambientCenter = this.uniforms.simBoundsMin.xy
+        .add(
+          coherenceSpan.mul(
+            mix(
+              vec2(0.76, 0.52),
+              vec2(0.5, 0.62),
+              this.uniforms.livingSurfaceBanded.clamp(0, 1),
+            ),
+          ),
+        )
+        .toConst("coherenceAmbientCenter");
+      const ambientPull = smoothstep(
+        this.uniforms.coherenceInner,
+        this.uniforms.coherenceOuter,
+        particlePosition.xy.sub(ambientCenter).length(),
+      )
+        .oneMinus()
+        .toConst("coherenceAmbientPull");
+      const legacyCoherenceRate = coherencePull
+        .mul(this.uniforms.mouseActive)
+        .mul(this.uniforms.coherenceRecruit)
+        .sub(this.uniforms.coherenceRelease)
+        .toConst("legacyCoherenceRate");
+      const livingDrive = max(
+        ambientPull.mul(0.22),
+        coherencePull.mul(this.uniforms.coherenceAttention.clamp(0, 1)),
+      ).toConst("livingCoherenceDrive");
+      const livingCoherenceRate = this.uniforms.coherenceRecruit
+        .mul(livingDrive)
+        .mul(float(1).sub(coherenceRef))
+        .sub(this.uniforms.coherenceRelease.mul(coherenceRef))
+        .toConst("livingCoherenceRate");
       const coherenceNext = coherenceRef
         .add(
-          coherencePull
-            .mul(this.uniforms.mouseActive)
-            .mul(this.uniforms.coherenceRecruit)
-            .sub(this.uniforms.coherenceRelease)
+          mix(
+            legacyCoherenceRate,
+            livingCoherenceRate,
+            this.uniforms.coherenceLivingT.clamp(0, 1),
+          )
             .mul(this.uniforms.dt),
         )
         .clamp(float(0), float(1))
@@ -2076,6 +2250,28 @@ class mlsMpmSimulator {
     if (typeof curl === "boolean") u.coherenceCurlT.value = curl ? 1 : 0;
   }
 
+  setLivingSurfaceCoherence({ enabled, attention } = {}) {
+    if (typeof enabled === "boolean") {
+      this.uniforms.coherenceLivingT.value = enabled ? 1 : 0;
+    }
+    if (Number.isFinite(attention)) {
+      this.uniforms.coherenceAttention.value = Math.max(0, Math.min(attention, 1));
+    }
+  }
+
+  setLivingSurfaceOpening({ tension, aperture, banded } = {}) {
+    const u = this.uniforms;
+    if (Number.isFinite(tension)) {
+      u.livingSurfaceTension.value = Math.max(0, Math.min(tension, 1));
+    }
+    if (Number.isFinite(aperture)) {
+      u.livingSurfaceAperture.value = Math.max(0, Math.min(aperture, 1));
+    }
+    if (typeof banded === "boolean") {
+      u.livingSurfaceBanded.value = banded ? 1 : 0;
+    }
+  }
+
   setMouseInfluence(value) {
     this.uniforms.mouseInfluence.value = value;
   }
@@ -2850,6 +3046,38 @@ class mlsMpmSimulator {
       b.needsUpdate = true;
       if (b.value) b.value.needsUpdate = true;
     }
+    return true;
+  }
+
+  /** Living Surface boot only: begin inside the ambient target bank. */
+  seedPopulationFromTargets(points, count) {
+    if (!this.runtime || !this.particleBuffer || !points) return false;
+    const cap = this.particleBuffer.length || 0;
+    const n = Math.min(Math.floor(count), cap, Math.floor(points.length / 3));
+    if (n <= 0) return false;
+
+    const zeroColor = [0, 0, 0];
+    const zeroMat3 = new Array(12).fill(0);
+    for (let i = 0; i < n; i++) {
+      const angle = TAU * hash01(i, 17.917);
+      const speed = 0.22 + hash01(i, 41.233) * 0.18;
+      this.particleBuffer.set(i, "position", [
+        points[i * 3],
+        points[i * 3 + 1],
+        points[i * 3 + 2],
+      ]);
+      this.particleBuffer.set(i, "velocity", [
+        Math.cos(angle) * speed,
+        Math.sin(angle) * speed,
+        0,
+      ]);
+      this.particleBuffer.set(i, "C", zeroMat3);
+      this.particleBuffer.set(i, "color", zeroColor);
+      this.particleBuffer.set(i, "heat", 0);
+      this.particleBuffer.set(i, "dissolveState", [0, 0]);
+      this.particleBuffer.set(i, "coherence", 0);
+    }
+    this.markParticleBufferDirty();
     return true;
   }
 

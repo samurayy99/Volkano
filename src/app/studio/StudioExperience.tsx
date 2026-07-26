@@ -11,8 +11,6 @@ import {
 } from "react";
 import { FlowEngineBridge } from "../../flow-engine/engineBridge";
 import type { LenoxProofState, LenoxSignals } from "../../flow-engine/types";
-import { FallbackEyes } from "../FallbackEyes";
-import { createFilmScrubber, type FilmScrubber } from "../stage/filmScrubber";
 import { useCompositionMode } from "../stage/compositionMode";
 import type { StationPose } from "../stage/stations";
 import { chapters, copy } from "./content";
@@ -25,10 +23,10 @@ import {
 import { useExperience } from "./ExperienceProvider";
 import type {
   ChapterId,
-  IntroPhase,
   LenoxStatus,
   Locale,
 } from "./experienceState";
+import type { StudioOpeningScore } from "./studioOpening";
 import {
   createStudioDirector,
   type SemanticPosition,
@@ -37,10 +35,6 @@ import {
 } from "./studioDirector";
 import { buildMailtoHref } from "./studioLinks";
 import styles from "./StudioExperience.module.css";
-
-const HERO_POSTER = "/studio/world/hero-keyframe.jpg";
-const CLIP_A = "/flow-assets/gravity-clip-a-v2-dense.mp4";
-const ARRIVAL_SOURCE: string | null = null;
 
 const statusLabel: Record<LenoxStatus, string> = {
   dormant: "DORMANT",
@@ -54,14 +48,11 @@ const statusLabel: Record<LenoxStatus, string> = {
 };
 
 function deriveLenoxStatus(
-  phase: IntroPhase,
   engineState: LenoxProofState,
   auditPhase: "idle" | "validating" | "previewing" | "complete",
   morphing: boolean,
   briefOpen: boolean,
 ): LenoxStatus {
-  if (phase === "gate") return "dormant";
-  if (phase === "arrival" || phase === "handoff") return "arriving";
   if (morphing) return "thinking";
   if (auditPhase === "validating" || auditPhase === "previewing") return "analysing";
   if (briefOpen) return "acting";
@@ -82,8 +73,8 @@ const STUDIO_STATIONS: readonly StudioStation[] = [
   {
     id: "principle",
     pose: {
-      side: { zoom: 0.88, shiftX: -0.24, shiftY: 0 },
-      banded: { zoom: 1.06, shiftX: 0, shiftY: -0.2 },
+      side: { zoom: 0.72, shiftX: -0.1, shiftY: 0 },
+      banded: { zoom: 0.92, shiftX: 0, shiftY: -0.08 },
     },
   },
   {
@@ -170,61 +161,6 @@ function StudioHeader({
         </span>
       </div>
     </header>
-  );
-}
-
-/**
- * The entry never covers the field. The MLS-MPM play state is live and pointer-
- * reactive from the first paint; this layer only adds the words and the two ways in.
- */
-function EntryGate({
-  locale,
-  phase,
-  onPlay,
-  onEnterStudio,
-  onChoose,
-  onSkip,
-}: {
-  locale: Locale;
-  phase: IntroPhase;
-  onPlay: () => void;
-  onEnterStudio: () => void;
-  onChoose: (design: DesignId) => void;
-  onSkip: () => void;
-}) {
-  if (phase === "entered") return null;
-  return (
-    <div className={styles.entry} data-phase={phase}>
-      <div className={styles.entryCopy}>
-        {phase === "gate" ? (
-          <div className={styles.entryActions}>
-            <button type="button" onClick={onPlay}>{copy.play[locale]}</button>
-            <button type="button" onClick={onEnterStudio}>{copy.enterStudio[locale]}</button>
-          </div>
-        ) : phase === "select" ? (
-          <div className={styles.realityChoice}>
-            <p>{copy.selectTitle[locale]}</p>
-            <div role="group" aria-label={copy.selectTitle[locale]}>
-              {DESIGN_IDS.map((id) => (
-                <button key={id} type="button" onClick={() => onChoose(id)}>
-                  {getDesign(id).label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className={styles.arrivalReadout}>
-            <span>{copy.wake[locale]}</span>
-            <i />
-          </div>
-        )}
-      </div>
-      {phase !== "gate" ? (
-        <button type="button" className={styles.skipArrival} onClick={onSkip}>
-          {copy.skip[locale]} · ESC
-        </button>
-      ) : null}
-    </div>
   );
 }
 
@@ -433,6 +369,7 @@ function StudioJourney({
   onProgress,
   onPose,
   onPosition,
+  onOpening,
   onDirector,
   onMorph,
 }: {
@@ -444,6 +381,7 @@ function StudioJourney({
   onProgress: (progress: number, clipAProgress: number) => void;
   onPose: (pose: StationPose, tau: number) => void;
   onPosition: (position: SemanticPosition, changed: boolean) => void;
+  onOpening: (score: StudioOpeningScore) => void;
   onDirector: (director: StudioDirector | null) => void;
   onMorph: (design: DesignId) => void;
 }) {
@@ -465,14 +403,15 @@ function StudioJourney({
       STUDIO_STATIONS,
       mode,
       reduced,
-      { onProgress, onPosition, setPose: onPose },
+      design === "design-01",
+      { onProgress, onPosition, onOpening, setPose: onPose },
     );
     onDirectorRef.current(director);
     return () => {
       onDirectorRef.current(null);
       director.destroy();
     };
-  }, [active, design, locale, mode, onPose, onPosition, onProgress, reduced]);
+  }, [active, design, locale, mode, onOpening, onPose, onPosition, onProgress, reduced]);
 
   const rendererProps = {
     locale,
@@ -502,24 +441,22 @@ function createNavigationEvent(chapter: ChapterId, scroller: HTMLElement | null)
 }
 
 export function StudioExperience() {
-  const { state, dispatch, markIntroSeen } = useExperience();
+  const { state, dispatch } = useExperience();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const worldVideoRef = useRef<HTMLVideoElement | null>(null);
-  const arrivalVideoRef = useRef<HTMLVideoElement | null>(null);
   const bridgeRef = useRef<FlowEngineBridge | null>(null);
-  const scrubberRef = useRef<FilmScrubber | null>(null);
   const directorRef = useRef<StudioDirector | null>(null);
   const semanticRef = useRef<SemanticPosition>({ chapter: "hero", localProgress: 0 });
   const restoreRef = useRef<SemanticPosition | null>(null);
   const pointerFrameRef = useRef<number | null>(null);
-  const pointerSampleRef = useRef({ x: 0, y: 0 });
+  const pointerSampleRef = useRef({ x: 0, y: 0, isDown: false });
   const positionCommitRef = useRef<number | null>(null);
-  const timers = useRef<number[]>([]);
   const morphTimers = useRef<number[]>([]);
+  const hintDismissedRef = useRef(false);
   const [gpuPath, setGpuPath] = useState<"probing" | "webgpu" | "fallback">("probing");
   const [engineState, setEngineState] = useState<LenoxProofState>("dormant");
   const [morphTarget, setMorphTarget] = useState<DesignId | null>(null);
+  const [playHintVisible, setPlayHintVisible] = useState(false);
   const [reduced, setReduced] = useState(false);
   const mode = useCompositionMode(false);
 
@@ -555,7 +492,7 @@ export function StudioExperience() {
       return () => window.clearTimeout(fallbackTimer);
     }
     const bridge = new FlowEngineBridge(host, {
-      lenoxMode: true,
+      experienceMode: "living-surface",
       lenoxReducedMotion: reduced,
       // Each reality owns its own background; the canvas contributes particles
       // and LENOX on transparency and nothing else.
@@ -585,72 +522,31 @@ export function StudioExperience() {
   }, [mode]);
 
   useEffect(() => {
+    bridgeRef.current?.setInteractiveEnabled(!reduced);
+    if (reduced) bridgeRef.current?.clearPointer();
+  }, [gpuPath, reduced]);
+
+  useEffect(() => {
     const signature = getDesign(state.design).engineSignature;
     if (signature) bridgeRef.current?.setSignature(signature);
   }, [gpuPath, state.design]);
 
-  useEffect(() => {
-    const design = getDesign(state.design);
-    if (state.introPhase !== "entered" || mode === "banded" || design.worldMedia !== "film") return;
-    const video = worldVideoRef.current;
-    if (!video) return;
-    video.load();
-    const scrubber = createFilmScrubber(video);
-    scrubberRef.current = scrubber;
-    return () => {
-      scrubber.dispose();
-      if (scrubberRef.current === scrubber) scrubberRef.current = null;
-    };
-  }, [mode, state.design, state.introPhase]);
+  const dismissPlayHint = useCallback(() => {
+    if (hintDismissedRef.current) return;
+    hintDismissedRef.current = true;
+    setPlayHintVisible(false);
+  }, []);
 
   useEffect(() => {
-    if (reduced && state.introPhase !== "entered") markIntroSeen();
-  }, [markIntroSeen, reduced, state.introPhase]);
-
-  const finishIntro = useCallback(() => {
-    timers.current.forEach(window.clearTimeout);
-    timers.current = [];
-    dispatch({ type: "SET_INTRO", phase: "handoff" });
-    bridgeRef.current?.setLenoxState("waking");
-    timers.current.push(window.setTimeout(markIntroSeen, reduced ? 0 : 900));
-  }, [dispatch, markIntroSeen, reduced]);
-
-  /** WAKE hands over to the reality choice, not straight into a design. */
-  const revealSelection = useCallback(() => {
-    timers.current.forEach(window.clearTimeout);
-    timers.current = [];
-    dispatch({ type: "SET_INTRO", phase: "select" });
-  }, [dispatch]);
-
-  useEffect(() => {
-    if (state.introPhase !== "arrival") return;
-    if (!ARRIVAL_SOURCE) {
-      timers.current.push(window.setTimeout(revealSelection, reduced ? 0 : 1400));
-    }
-  }, [reduced, revealSelection, state.introPhase]);
-
-  const chooseReality = useCallback((design: DesignId) => {
-    dispatch({ type: "SET_DESIGN", design });
-    finishIntro();
-  }, [dispatch, finishIntro]);
-
-  /** The direct door: no ritual, straight into SIGNAL. */
-  const enterStudio = useCallback(() => {
-    dispatch({ type: "SET_DESIGN", design: "design-02" });
-    finishIntro();
-  }, [dispatch, finishIntro]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && state.introPhase !== "entered") finishIntro();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [finishIntro, state.introPhase]);
+    if (reduced || state.design !== "design-01") return;
+    const timer = window.setTimeout(() => {
+      if (!hintDismissedRef.current) setPlayHintVisible(true);
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [reduced, state.design]);
 
   useEffect(
     () => () => {
-      timers.current.forEach(window.clearTimeout);
       morphTimers.current.forEach(window.clearTimeout);
       if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
       if (positionCommitRef.current !== null) window.clearTimeout(positionCommitRef.current);
@@ -658,26 +554,9 @@ export function StudioExperience() {
     [],
   );
 
-  const wake = useCallback(() => {
-    worldVideoRef.current?.load();
-    const unlock = worldVideoRef.current?.play();
-    unlock?.then(() => worldVideoRef.current?.pause()).catch(() => {});
-    dispatch({ type: "SET_INTRO", phase: "arrival" });
-    bridgeRef.current?.setLenoxState("waking");
-    if (ARRIVAL_SOURCE) void arrivalVideoRef.current?.play().catch(revealSelection);
-  }, [dispatch, revealSelection]);
-
   const navigate = useCallback((chapter: ChapterId) => {
-    if (state.introPhase !== "entered") {
-      const position = { chapter, localProgress: 0 };
-      semanticRef.current = position;
-      restoreRef.current = position;
-      dispatch({ type: "SET_POSITION", ...position });
-      finishIntro();
-      return;
-    }
     directorRef.current?.scrollToChapter(chapter);
-  }, [dispatch, finishIntro, state.introPhase]);
+  }, []);
 
   const morph = useCallback((targetDesign: DesignId) => {
     morphTimers.current.forEach(window.clearTimeout);
@@ -720,21 +599,44 @@ export function StudioExperience() {
         dispatch({ type: "SET_POSITION", chapter: current.chapter, localProgress: current.localProgress });
       }, 180);
     }
-    if (!changed) return;
-    const intent = position.chapter === "principle" || position.chapter === "capabilities"
-      ? { kind: "guide" as const, arm: "right" as const, targetNdc: { x: 0.34, y: 0 }, reach: 0.78 }
-      : { kind: "observe" as const };
-    bridgeRef.current?.setLenoxIntent(intent);
-    bridgeRef.current?.setLenoxEmotion(
-      position.chapter === "principle" || position.chapter === "lenox" ? "thinking" : "curious",
-    );
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${position.chapter}`);
+    if (changed) {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}#${position.chapter}`,
+      );
+    }
   }, [dispatch]);
 
-  const onProgress = useCallback((progress: number, clipAProgress: number) => {
-    bridgeRef.current?.setGravityScrollProgress(progress);
-    scrubberRef.current?.setProgress(clipAProgress);
-  }, []);
+  const onProgress = useCallback(() => {}, []);
+
+  const onOpening = useCallback((score: StudioOpeningScore) => {
+    if (state.design !== "design-01") {
+      bridgeRef.current?.setLivingSurfaceOpening({ tension: 0, aperture: 0 });
+      return;
+    }
+    const root = rootRef.current;
+    if (root) {
+      root.style.setProperty("--opening-hero-exit", score.heroExit.toFixed(4));
+      root.style.setProperty(
+        "--opening-principle-entry",
+        score.principleEntry.toFixed(4),
+      );
+      root.style.setProperty("--opening-camera", score.camera.toFixed(4));
+    }
+    bridgeRef.current?.setLivingSurfaceOpening(
+      { tension: score.tension, aperture: score.aperture },
+      reduced ? 0.05 : 0.22,
+    );
+    if (
+      score.tension > 0 ||
+      score.aperture > 0 ||
+      score.heroExit > 0 ||
+      score.principleEntry > 0
+    ) {
+      dismissPlayHint();
+    }
+  }, [dismissPlayHint, reduced, state.design]);
 
   const onPose = useCallback((pose: StationPose, tau: number) => {
     bridgeRef.current?.setJourneyPose(pose, tau);
@@ -754,16 +656,32 @@ export function StudioExperience() {
   }, [state.activeChapter, state.localProgress]);
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    pointerSampleRef.current = { x: event.clientX, y: event.clientY };
+    dismissPlayHint();
+    if (reduced) return;
+    pointerSampleRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      isDown: event.pointerType !== "mouse" && event.buttons !== 0,
+    };
     if (pointerFrameRef.current !== null) return;
     pointerFrameRef.current = window.requestAnimationFrame(() => {
       pointerFrameRef.current = null;
       const bridge = bridgeRef.current;
       if (!bridge) return;
-      const { x, y } = pointerSampleRef.current;
-      bridge.setPointer(x, y, false);
-      bridge.setLenoxGaze(x / window.innerWidth - 0.5, 0.5 - y / window.innerHeight);
+      const { x, y, isDown } = pointerSampleRef.current;
+      bridge.setPointer(x, y, isDown);
     });
+  }, [dismissPlayHint, reduced]);
+
+  const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    dismissPlayHint();
+    if (!reduced) {
+      bridgeRef.current?.setPointer(event.clientX, event.clientY, true);
+    }
+  }, [dismissPlayHint, reduced]);
+
+  const onPointerEnd = useCallback(() => {
+    bridgeRef.current?.clearPointer();
   }, []);
 
   const onPointerLeave = useCallback(() => {
@@ -772,7 +690,6 @@ export function StudioExperience() {
       pointerFrameRef.current = null;
     }
     bridgeRef.current?.clearPointer();
-    bridgeRef.current?.setLenoxGaze(0, 0);
   }, []);
 
   const changeLocale = useCallback((locale: Locale) => {
@@ -784,21 +701,11 @@ export function StudioExperience() {
 
   const requestDesign = useCallback((design: DesignId) => {
     if (design === state.design) return;
-    if (state.introPhase === "entered") {
-      morph(design);
-      return;
-    }
-    dispatch({ type: "SET_DESIGN", design });
-    const url = new URL(window.location.href);
-    url.searchParams.set("design", design);
-    url.searchParams.delete("reality");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-    finishIntro();
-  }, [dispatch, finishIntro, morph, state.design, state.introPhase]);
+    morph(design);
+  }, [morph, state.design]);
 
   const activeDesign = getDesign(state.design);
   const headerStatus = deriveLenoxStatus(
-    state.introPhase,
     engineState,
     state.audit.phase,
     morphTarget !== null,
@@ -814,41 +721,19 @@ export function StudioExperience() {
       data-lenox-presence={activeDesign.lenoxPresence}
       data-intro={state.introPhase}
       data-composition={mode}
+      data-gpu={gpuPath}
       onPointerMove={onPointerMove}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
       onPointerLeave={onPointerLeave}
     >
       <div className={styles.world} aria-hidden>
         <div className={styles.worldPoster} />
-        <video
-          ref={worldVideoRef}
-          className={styles.worldFilm}
-          src={CLIP_A}
-          poster={HERO_POSTER}
-          muted
-          playsInline
-          preload="none"
-          disablePictureInPicture
-        />
       </div>
       <div className={styles.lenoxLayer} data-visible="true">
-        {gpuPath === "fallback" ? (
-          <FallbackEyes state={engineState} />
-        ) : (
-          <div ref={hostRef} className={styles.engineHost} />
-        )}
+        <div ref={hostRef} className={styles.engineHost} />
       </div>
-      {ARRIVAL_SOURCE ? (
-        <video
-          ref={arrivalVideoRef}
-          className={styles.arrivalFilm}
-          src={ARRIVAL_SOURCE}
-          muted
-          playsInline
-          preload="metadata"
-          onEnded={finishIntro}
-          onError={finishIntro}
-        />
-      ) : null}
       <StudioHeader
         locale={state.locale}
         design={state.design}
@@ -859,7 +744,7 @@ export function StudioExperience() {
       />
       <StudioJourney
         key={state.design}
-        active={state.introPhase === "entered"}
+        active
         design={state.design}
         locale={state.locale}
         mode={mode}
@@ -867,17 +752,17 @@ export function StudioExperience() {
         onProgress={onProgress}
         onPose={onPose}
         onPosition={onPosition}
+        onOpening={onOpening}
         onDirector={onDirector}
         onMorph={morph}
       />
-      <EntryGate
-        locale={state.locale}
-        phase={state.introPhase}
-        onPlay={wake}
-        onEnterStudio={enterStudio}
-        onChoose={chooseReality}
-        onSkip={finishIntro}
-      />
+      <div
+        className={styles.playHint}
+        data-visible={playHintVisible}
+        aria-hidden="true"
+      >
+        {copy.play[state.locale]}
+      </div>
       <div className={styles.morphCurtain} data-active={morphTarget !== null} aria-hidden>
         <span>{morphTarget ? getDesign(morphTarget).label : getDesign(state.design).label}</span>
       </div>

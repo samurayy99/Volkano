@@ -17,10 +17,10 @@ export type StudioDesignDefinition = {
  */
 export const STUDIO_DESIGNS = {
   "design-01": {
-    label: "GRAVITY",
-    shortLabel: "GRAVITY",
+    label: "LIVING SURFACE",
+    shortLabel: "LIVING SURFACE",
     rendererClass: "renderer01",
-    worldMedia: "film",
+    worldMedia: "none",
     lenoxPresence: "full",
     engineSignature: null,
   },

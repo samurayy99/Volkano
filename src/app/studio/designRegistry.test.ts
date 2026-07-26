@@ -9,11 +9,18 @@ import {
 } from "./designRegistry.ts";
 
 test("design registry is the single ordered source of valid design ids", () => {
-  assert.ok(DESIGN_IDS.length >= 2);
+  assert.equal(DESIGN_IDS.length, 3);
   assert.equal(DESIGN_IDS[0], DEFAULT_DESIGN_ID);
   for (const id of DESIGN_IDS) assert.equal(isDesignId(id), true);
   assert.equal(isDesignId("obsidian"), false);
   assert.equal(isDesignId("unknown"), false);
+});
+
+test("design-01 keeps its id and owns the computed Living Surface", () => {
+  const design = getDesign("design-01");
+  assert.equal(design.label, "LIVING SURFACE");
+  assert.equal(design.shortLabel, "LIVING SURFACE");
+  assert.equal(design.worldMedia, "none");
 });
 
 test("every registered design declares all four rendering axes", () => {

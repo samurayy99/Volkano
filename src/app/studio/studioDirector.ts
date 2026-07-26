@@ -3,6 +3,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { ChapterId } from "./experienceState";
 import { semanticScrollTarget } from "./experienceState";
 import { mapScrollToClipProgress } from "./studioTimeline";
+import { mapStudioOpening, type StudioOpeningScore } from "./studioOpening";
 import type { StationPose } from "../stage/stations";
 
 export type StudioStation = {
@@ -25,6 +26,7 @@ export type StudioDirector = {
 type Hooks = {
   onProgress: (progress: number, clipAProgress: number) => void;
   onPosition: (position: SemanticPosition, changed: boolean) => void;
+  onOpening: (score: StudioOpeningScore) => void;
   setPose: (pose: StationPose, tau: number) => void;
 };
 
@@ -46,6 +48,7 @@ export function createStudioDirector(
   stations: readonly StudioStation[],
   mode: "side" | "banded",
   reduced: boolean,
+  openingEnabled: boolean,
   hooks: Hooks,
 ): StudioDirector {
   if (!registered) {
@@ -76,6 +79,8 @@ export function createStudioDirector(
     const changed = index !== activeIndex;
     activeIndex = index;
     position = { chapter: stations[index].id, localProgress };
+    const opening = mapStudioOpening(position.chapter, localProgress, reduced);
+    hooks.onOpening(opening);
 
     sections.forEach((item, itemIndex) => {
       item.dataset.live = itemIndex === index ? "true" : "false";
@@ -87,10 +92,12 @@ export function createStudioDirector(
 
     if (!reduced) {
       const next = Math.min(index + 1, poses.length - 1);
-      const eased = localProgress * localProgress * (3 - 2 * localProgress);
+      const eased = openingEnabled && index === 0
+        ? opening.camera
+        : localProgress * localProgress * (3 - 2 * localProgress);
       hooks.setPose(lerpPose(poses[index], poses[next], eased), 0.06);
     } else if (changed) {
-      hooks.setPose(poses[index], 0.55);
+      hooks.setPose(poses[index], 0);
     }
     hooks.onPosition(position, changed);
   };

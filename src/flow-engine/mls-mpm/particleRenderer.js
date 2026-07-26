@@ -724,7 +724,7 @@ const buildUnifiedParticleSurfaceNodes = ({
   material.normalNode = mix(
     normalView,
     normalize(vNormalView),
-    uniforms.phaseFieldNormalT
+    uniforms.orientedParticleNormalT
       .clamp(0, 1)
       .max(uniforms.primitiveT.clamp(0, 1)),
   );
@@ -1234,7 +1234,7 @@ class ParticleRenderer {
     /** A.1c material range and A.1d primitive switch; both 0 elsewhere. */
     this.uniforms.coherenceMaterialT = uniform(0);
     /** Correct authored particle rotation on both sides of the A.1c comparison. */
-    this.uniforms.phaseFieldNormalT = uniform(0);
+    this.uniforms.orientedParticleNormalT = uniform(0);
     this.uniforms.primitiveT = uniform(0);
     /** Focal glint emissive gain (Lenox mode). */
     this.uniforms.lenoxFocalBoost = uniform(1);
@@ -1339,7 +1339,7 @@ class ParticleRenderer {
 
   setCoherenceMaterial(enabled) {
     if (!this.uniforms?.coherenceMaterialT) return;
-    this.uniforms.phaseFieldNormalT.value = 1;
+    this.uniforms.orientedParticleNormalT.value = 1;
     this.uniforms.coherenceMaterialT.value = enabled ? 1 : 0;
   }
 

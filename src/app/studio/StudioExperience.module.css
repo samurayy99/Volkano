@@ -1,4 +1,7 @@
 .root {
+  --opening-hero-exit: 0;
+  --opening-principle-entry: 0;
+  --opening-camera: 0;
   --reef-ink: #061416;
   --reef-panel: rgb(4 18 20 / 86%);
   --reef-line: rgb(230 255 248 / 18%);
@@ -73,7 +76,24 @@
 }
 
 .engineHost {
-  touch-action: none;
+  touch-action: auto;
+}
+
+.root[data-design="design-01"] {
+  background: #000;
+  color: #f3f3ef;
+}
+
+.root[data-design="design-01"] .world {
+  background: #000;
+}
+
+.root[data-design="design-01"] .worldPoster {
+  background: none;
+}
+
+.root[data-gpu="fallback"] .lenoxLayer {
+  opacity: 0;
 }
 
 .arrivalFilm {
@@ -215,6 +235,13 @@
   background: rgb(240 237 229 / 88%);
 }
 
+.root[data-design="design-01"] .header {
+  color: #f3f3ef;
+  border-color: rgb(243 243 239 / 12%);
+  background: rgb(0 0 0 / 38%);
+  backdrop-filter: none;
+}
+
 .root[data-design="design-03"] .header {
   color: var(--field-ink);
   border-color: rgb(20 32 31 / 26%);
@@ -325,16 +352,6 @@
   color: #08292d;
   border-color: rgb(255 255 255 / 88%);
   background: rgb(255 255 255 / 88%);
-}
-
-/* At the gate there are exactly two ways in; the hero's own action waits. */
-.root:not([data-intro="entered"]) .heroChapter .primaryAction {
-  display: none;
-}
-
-/* The threshold plate gets reserved room instead of covering the hero copy. */
-.root:not([data-intro="entered"]) .chapterSticky {
-  padding-bottom: 168px;
 }
 
 .entryActions button:hover,
@@ -506,15 +523,16 @@
 }
 
 .heroChapter {
-  width: min(1100px, 88vw);
+  width: min(920px, 66vw);
   margin-left: auto;
 }
 
 .heroChapter h1 {
-  font-size: clamp(66px, 9.5vw, 156px);
+  font-size: clamp(66px, 6.6vw, 112px);
 }
 
 .heroChapter > span {
+  max-width: 42ch;
   margin: 34px 0 0 auto;
 }
 
@@ -523,6 +541,8 @@
 }
 
 .heroChapter .primaryAction {
+  display: flex;
+  width: max-content;
   margin-left: auto;
 }
 
@@ -638,7 +658,7 @@
   opacity: 0.7;
 }
 
-/* ── DESIGN 01 — dark islands floating on the world film ──────────────────── */
+/* ── DESIGN 01 — one semantic layer over the computed Living Surface ─────── */
 
 .renderer01 {
   color: var(--reef-copy);
@@ -650,8 +670,8 @@
   transition: opacity 240ms linear;
 }
 
-/* Before entry no director runs, so --sp is unset: the hero must not sit at 0.38. */
-.root:not([data-intro="entered"]) .renderer01 .chapterSticky > * {
+.renderer01 .chapter[data-chapter="hero"] .chapterSticky > *,
+.renderer01 .chapter[data-chapter="principle"] .chapterSticky > * {
   opacity: 1;
   transform: none;
 }
@@ -661,11 +681,92 @@
 .renderer01 .capabilitiesChapter,
 .renderer01 .lenoxChapter,
 .renderer01 .contactChapter {
-  padding: clamp(24px, 4vw, 58px);
-  border: 1px solid var(--reef-line);
-  background: var(--reef-panel);
-  box-shadow: 0 28px 80px rgb(1 10 12 / 25%);
-  backdrop-filter: blur(24px) saturate(1.2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.renderer01 .heroChapter,
+.renderer01 .principleChapter {
+  --living-content-inset: clamp(96px, 11vw, 170px);
+  width: min(860px, 58vw);
+  margin-left: auto;
+}
+
+.renderer01 .heroChapter h1,
+.renderer01 .heroChapter > span,
+.renderer01 .heroChapter .primaryAction,
+.renderer01 .principleChapter h2,
+.renderer01 .principleChapter > p,
+.renderer01 .principleChapter .designChoices {
+  margin-right: 0;
+  margin-left: var(--living-content-inset);
+}
+
+.renderer01 .heroChapter h1 {
+  opacity: calc(1 - var(--opening-hero-exit));
+  transform: translate3d(0, calc(var(--opening-hero-exit) * -24px), 0);
+}
+
+.renderer01 .heroChapter > span {
+  --body-exit: clamp(0, calc((var(--opening-hero-exit) - 0.04) / 0.96), 1);
+  opacity: calc(1 - var(--body-exit));
+  transform: translate3d(0, calc(var(--body-exit) * -24px), 0);
+}
+
+.renderer01 .heroChapter .primaryAction {
+  --action-exit: clamp(0, calc((var(--opening-hero-exit) - 0.08) / 0.92), 1);
+  opacity: calc(1 - var(--action-exit));
+  transform: translate3d(0, calc(var(--action-exit) * -24px), 0);
+}
+
+.renderer01 .heroChapter h1,
+.renderer01 .heroChapter > span,
+.renderer01 .heroChapter .primaryAction {
+  will-change: opacity, transform;
+}
+
+.renderer01 .principleChapter h2 {
+  opacity: var(--opening-principle-entry);
+  letter-spacing: calc(-0.035em - var(--opening-principle-entry) * 0.02em);
+  transform: translate3d(
+    0,
+    calc((1 - var(--opening-principle-entry)) * 42px),
+    0
+  );
+}
+
+.renderer01 .principleChapter > p,
+.renderer01 .principleChapter .designChoices {
+  opacity: calc(0.38 + min(var(--sp, 0), 0.62));
+  transform: translate3d(0, calc((1 - min(var(--sp, 0), 1)) * 32px), 0);
+}
+
+.renderer01 .principleChapter .designChoices {
+  width: max-content;
+  max-width: 100%;
+}
+
+.playHint {
+  position: fixed;
+  left: 50%;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  z-index: 50;
+  color: #f3f3ef;
+  font: 500 9px/1 var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(-50%, 8px, 0);
+  transition: opacity 320ms ease, transform 320ms var(--ease-out-expo);
+}
+
+.playHint[data-visible="true"] {
+  opacity: 0.68;
+  transform: translate3d(-50%, 0, 0);
 }
 
 /* ── DESIGN 02 — editorial paper, hairline grid, one signal colour ─────────── */
@@ -844,10 +945,6 @@
     padding: 44svh 16px max(28px, env(safe-area-inset-bottom));
   }
 
-  .root:not([data-intro="entered"]) .chapterSticky {
-    padding-bottom: 210px;
-  }
-
   .entry {
     padding: 0 12px max(14px, env(safe-area-inset-bottom));
   }
@@ -902,7 +999,43 @@
   .renderer01 .capabilitiesChapter,
   .renderer01 .lenoxChapter,
   .renderer01 .contactChapter {
-    padding: 22px;
+    padding: 0;
+  }
+
+  .renderer01 .heroChapter,
+  .renderer01 .principleChapter {
+    width: 100%;
+    margin: 0;
+  }
+
+  .renderer01 .heroChapter > span,
+  .renderer01 .heroChapter .primaryAction,
+  .renderer01 .heroChapter h1,
+  .renderer01 .principleChapter h2,
+  .renderer01 .principleChapter > p,
+  .renderer01 .principleChapter .designChoices {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .renderer01 .heroChapter h1 {
+    transform: translate3d(0, calc(var(--opening-hero-exit) * -14px), 0);
+  }
+
+  .renderer01 .heroChapter > span {
+    transform: translate3d(0, calc(var(--body-exit) * -14px), 0);
+  }
+
+  .renderer01 .heroChapter .primaryAction {
+    transform: translate3d(0, calc(var(--action-exit) * -14px), 0);
+  }
+
+  .renderer01 .principleChapter h2 {
+    transform: translate3d(
+      0,
+      calc((1 - var(--opening-principle-entry)) * 28px),
+      0
+    );
   }
 
   .capabilityLines article {
@@ -933,6 +1066,16 @@
   .studioFooter {
     flex-direction: column;
   }
+
+  .playHint {
+    right: 16px;
+    left: auto;
+    transform: translate3d(0, 8px, 0);
+  }
+
+  .playHint[data-visible="true"] {
+    transform: none;
+  }
 }
 
 @media (max-width: 620px) {
@@ -949,7 +1092,7 @@
   }
 
   .status {
-    font-size: 7px;
+    display: none;
   }
 
   .entryTitle {
@@ -984,5 +1127,19 @@
   .renderer01 .chapterSticky > * {
     opacity: 1;
     transform: none;
+  }
+
+  .renderer01 .heroChapter h1,
+  .renderer01 .heroChapter > span,
+  .renderer01 .heroChapter .primaryAction,
+  .renderer01 .principleChapter h2,
+  .renderer01 .principleChapter > p,
+  .renderer01 .principleChapter .designChoices {
+    opacity: 1;
+    transform: none;
+  }
+
+  .playHint {
+    display: none;
   }
 }
