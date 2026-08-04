@@ -10,7 +10,11 @@ import {
   type ReactNode,
 } from "react";
 import { FlowEngineBridge } from "../../flow-engine/engineBridge";
-import type { LenoxProofState, LenoxSignals } from "../../flow-engine/types";
+import type {
+  FormationDrive,
+  LenoxProofState,
+  LenoxSignals,
+} from "../../flow-engine/types";
 import { useCompositionMode } from "../stage/compositionMode";
 import type { StationPose } from "../stage/stations";
 import { chapters, copy } from "./content";
@@ -62,43 +66,40 @@ function deriveLenoxStatus(
   return "observing";
 }
 
-const STUDIO_STATIONS: readonly StudioStation[] = [
-  {
-    id: "hero",
-    pose: {
-      side: { zoom: 0.84, shiftX: -0.18, shiftY: 0.03 },
-      banded: { zoom: 1.04, shiftX: 0, shiftY: -0.26 },
-    },
-  },
-  {
-    id: "principle",
-    pose: {
-      side: { zoom: 0.72, shiftX: -0.1, shiftY: 0 },
-      banded: { zoom: 0.92, shiftX: 0, shiftY: -0.08 },
-    },
-  },
-  {
-    id: "capabilities",
-    pose: {
-      side: { zoom: 0.68, shiftX: -0.3, shiftY: -0.02 },
-      banded: { zoom: 1.12, shiftX: 0, shiftY: -0.24 },
-    },
-  },
-  {
-    id: "lenox",
-    pose: {
-      side: { zoom: 0.62, shiftX: 0.22, shiftY: 0.02 },
-      banded: { zoom: 0.96, shiftX: 0, shiftY: -0.2 },
-    },
-  },
-  {
-    id: "contact",
-    pose: {
-      side: { zoom: 0.82, shiftX: 0.3, shiftY: 0 },
-      banded: { zoom: 1.08, shiftX: 0, shiftY: -0.18 },
-    },
-  },
-];
+/**
+ * ONE AUTHORITY DECIDES WHERE THE MATTER SITS, AND IT IS THE FORMATION.
+ *
+ * These poses used to move per chapter (zoom 0.84 → 0.62, shiftX -0.18 → +0.3),
+ * from the era when a single ambient mass had to be pushed around the page by
+ * the camera. Under ALLOTROP each formation authors its own placement in
+ * normalised simulation bounds — and those bounds are derived from this very
+ * camera and then clamped to the grid interior. So a moving camera silently
+ * re-scales what "0.8" means, and the copy corridor a formation was authored
+ * against stops existing. That is how the same headline collision survived two
+ * video rejections while the CSS corridor was provably correct.
+ *
+ * The camera now holds one studio pose for the whole journey. Formations
+ * compose; the camera observes. If a deliberate camera move is ever wanted, it
+ * belongs in the formation score alongside the geometry it has to agree with,
+ * never as a second opinion here.
+ */
+const STUDIO_POSE = Object.freeze({
+  side: Object.freeze({ zoom: 0.84, shiftX: -0.18, shiftY: 0.03 }),
+  banded: Object.freeze({ zoom: 1.04, shiftX: 0, shiftY: -0.26 }),
+});
+
+const STUDIO_STATIONS: readonly StudioStation[] = (
+  ["hero", "principle", "capabilities", "lenox", "contact"] as const
+).map((id) => ({ id, pose: STUDIO_POSE }));
+
+const DESIGN01_POSE = Object.freeze({
+  side: Object.freeze({ zoom: 0.72, shiftX: 0, shiftY: 0.01 }),
+  banded: Object.freeze({ zoom: 0.58, shiftX: 0, shiftY: -0.17 }),
+});
+
+const DESIGN01_STATIONS: readonly StudioStation[] = (
+  ["hero", "principle", "capabilities", "lenox", "contact"] as const
+).map((id) => ({ id, pose: DESIGN01_POSE }));
 
 function SplitTitle({ children, level = 2 }: { children: string; level?: 1 | 2 }) {
   const Title = level === 1 ? "h1" : "h2";
@@ -370,6 +371,7 @@ function StudioJourney({
   onPose,
   onPosition,
   onOpening,
+  onFormation,
   onDirector,
   onMorph,
 }: {
@@ -382,6 +384,7 @@ function StudioJourney({
   onPose: (pose: StationPose, tau: number) => void;
   onPosition: (position: SemanticPosition, changed: boolean) => void;
   onOpening: (score: StudioOpeningScore) => void;
+  onFormation: (drive: FormationDrive) => void;
   onDirector: (director: StudioDirector | null) => void;
   onMorph: (design: DesignId) => void;
 }) {
@@ -400,18 +403,18 @@ function StudioJourney({
     const director = createStudioDirector(
       scroller,
       sections,
-      STUDIO_STATIONS,
+      design === "design-01" ? DESIGN01_STATIONS : STUDIO_STATIONS,
       mode,
       reduced,
       design === "design-01",
-      { onProgress, onPosition, onOpening, setPose: onPose },
+      { onProgress, onPosition, onOpening, onFormation, setPose: onPose },
     );
     onDirectorRef.current(director);
     return () => {
       onDirectorRef.current(null);
       director.destroy();
     };
-  }, [active, design, locale, mode, onOpening, onPose, onPosition, onProgress, reduced]);
+  }, [active, design, locale, mode, onFormation, onOpening, onPose, onPosition, onProgress, reduced]);
 
   const rendererProps = {
     locale,
@@ -638,6 +641,20 @@ export function StudioExperience() {
     }
   }, [dismissPlayHint, reduced, state.design]);
 
+  const onFormation = useCallback((drive: FormationDrive) => {
+    bridgeRef.current?.setFormationDrive(
+      state.design === "design-01"
+        ? drive
+        : {
+            from: "principle.fullerene",
+            to: "principle.fullerene",
+            progress: 0,
+            phase: "hold",
+            corridor: "wide",
+          },
+    );
+  }, [state.design]);
+
   const onPose = useCallback((pose: StationPose, tau: number) => {
     bridgeRef.current?.setJourneyPose(pose, tau);
   }, []);
@@ -753,6 +770,7 @@ export function StudioExperience() {
         onPose={onPose}
         onPosition={onPosition}
         onOpening={onOpening}
+        onFormation={onFormation}
         onDirector={onDirector}
         onMorph={morph}
       />

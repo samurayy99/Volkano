@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  HERO_FIELD_PRESET,
   LIVING_SURFACE_PRESET,
   resolveExperienceMode,
   shouldStartLenoxDrive,
@@ -31,14 +32,28 @@ test("only the legacy experience starts the retired Lenox drive", () => {
   assert.equal(shouldStartLenoxDrive("legacy-lenox"), true);
 });
 
-test("Living Surface production preset is locked to the approved state", () => {
+test("Hero Field owns a restrained reflective edge response", () => {
+  assert.equal(HERO_FIELD_PRESET.wallRestitution, 0.42);
+  assert.equal(HERO_FIELD_PRESET.screenBoundsRadiusScale, 1.2);
+  assert.equal(HERO_FIELD_PRESET.screenBoundsFill, 0.86);
+});
+
+test("Living Surface production preset is locked to the Gate-1 hero state", () => {
   assert.equal(LIVING_SURFACE_PRESET.primitive, "billboard");
+  assert.equal(LIVING_SURFACE_PRESET.particlesDesktop, 6_144);
+  assert.equal(LIVING_SURFACE_PRESET.particlesBanded, 4_096);
+  assert.equal(LIVING_SURFACE_PRESET.maxParticles, 8_192);
+  assert.equal(LIVING_SURFACE_PRESET.size, 0.58);
+  assert.equal(LIVING_SURFACE_PRESET.roughness, 0.48);
+  assert.equal(LIVING_SURFACE_PRESET.metalness, 0.28);
   assert.equal(LIVING_SURFACE_PRESET.coherenceMaterial, true);
   assert.equal(LIVING_SURFACE_PRESET.coherenceDebug, false);
   assert.equal(LIVING_SURFACE_PRESET.environment, "studio");
+  assert.equal(LIVING_SURFACE_PRESET.environmentIntensity, 0.2);
   assert.equal(LIVING_SURFACE_PRESET.gravity, 0);
+  assert.equal(LIVING_SURFACE_PRESET.noise, 0.7);
   assert.equal(LIVING_SURFACE_PRESET.coherenceRelease, 0.42);
-  assert.equal(LIVING_SURFACE_PRESET.targetInfluence, 0.075);
+  assert.equal(LIVING_SURFACE_PRESET.targetInfluence, 0.16);
 });
 
 test("Living Surface targets are deterministic and stay inside safe bounds", () => {

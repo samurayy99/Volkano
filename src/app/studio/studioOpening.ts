@@ -36,27 +36,27 @@ export function mapStudioOpening(
 
   if (chapter === "hero") {
     return {
-      tension: smoothstep(0.2, 0.4, local),
-      aperture: smoothstep(0.4, 0.88, local),
-      camera: smoothstep(0.68, 0.96, local),
-      heroExit: smoothstep(0.72, 1, local),
+      tension: 0,
+      aperture: 0,
+      camera: smoothstep(0.24, 0.88, local),
+      heroExit: smoothstep(0.3, 0.72, local),
       principleEntry: 0,
     };
   }
 
   if (chapter === "principle") {
     return {
-      tension: 1 - smoothstep(0.14, 0.18, local),
-      aperture: 1,
+      tension: 0,
+      aperture: 0,
       camera: 1,
       heroExit: 1,
-      principleEntry: smoothstep(0, 0.14, local),
+      principleEntry: smoothstep(0.04, 0.18, local),
     };
   }
 
   return {
     tension: 0,
-    aperture: 1,
+    aperture: 0,
     camera: 1,
     heroExit: 1,
     principleEntry: 1,

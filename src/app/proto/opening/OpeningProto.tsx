@@ -22,9 +22,6 @@ import styles from "./OpeningProto.module.css";
  * The successor is a NEW route, `/proto/phase-field`, built material-first. Reusing
  * these CSS transforms and swapping the image for particles would reproduce the same
  * rejected transition in a new colour.
- *
- * Direction: docs/product/design-01-living-surface.md
- * Active task: docs/agent-system/TASK.md
  */
 
 const CLIP = "/flow-assets/gravity-clip-a-v2-dense.mp4";

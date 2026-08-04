@@ -296,6 +296,10 @@ const createRuntimeState = (width = window.innerWidth) => {
     /** Viewport-projected sim bounds (Lenox); null = grid walls (chamber). */
     simBoundsMin: null,
     simBoundsMax: null,
+    screenBoundsReference: new THREE.Vector3(32, 36.5, 30),
+    screenBoundsDepthGradient: new THREE.Vector3(),
+    screenBoundsInset: new THREE.Vector2(),
+    screenBoundsRadiusScale: 0,
     wallRestitution: 0,
 
     // Future claim runtime
@@ -421,12 +425,36 @@ class App {
    * on transparency. Default true — legacy callers are unaffected.
    * @param {boolean} [options.character] Void mode only. False keeps the retired
    * gaze/vessel character path out of the production Living Surface.
+   * @param {boolean} [options.particleShadows] False skips the instanced shadow
+   * pass for computed matter that has no receiving world geometry.
+   * @param {boolean} [options.computedMatterOnly] True disables legacy chamber
+   * bookkeeping that cannot affect the computed formation host.
+   * @param {boolean} [options.preserveHdrOutput] True leaves linear RGB unclamped
+   * until the renderer's final tone-mapping/output transform.
    */
   constructor(renderer, options = {}) {
     this.renderer = renderer;
     this.visualMode = options.visualMode === "void" ? "void" : "chamber";
     this.useLenoxBackdrop = options.backdrop !== false;
     this.useLenoxCharacter = options.character !== false;
+    this.useParticleShadows = options.particleShadows !== false;
+    this.computedMatterOnly = options.computedMatterOnly === true;
+    this.preserveHdrOutput = options.preserveHdrOutput === true;
+    this.particleCapacity = Number.isFinite(options.maxParticles)
+      ? Math.max(1, Math.floor(options.maxParticles))
+      : null;
+    this.initialParticleCount = Number.isFinite(options.particles)
+      ? Math.max(1, Math.floor(options.particles))
+      : null;
+    this.initialParticleSize = Number.isFinite(options.particleSize)
+      ? Math.max(0.01, options.particleSize)
+      : null;
+    this.initialScreenBoundsRadiusScale = Number.isFinite(options.screenBoundsRadiusScale)
+      ? Math.max(0, options.screenBoundsRadiusScale)
+      : 0;
+    this.initialScreenBoundsFill = Number.isFinite(options.screenBoundsFill)
+      ? Math.max(0.5, Math.min(options.screenBoundsFill, 0.98))
+      : 0.86;
   }
 
   resetPostEnterRuntimeChannels() {
@@ -1536,7 +1564,10 @@ class App {
         .mul(0.2126)
         .add(bloomColor.g.mul(0.7152))
         .add(bloomColor.b.mul(0.0722));
-      const combinedColor = sceneColor.add(bloomColor).clamp(0, 1);
+      const combinedColorLinear = sceneColor.add(bloomColor);
+      const combinedColor = this.preserveHdrOutput
+        ? combinedColorLinear
+        : combinedColorLinear.clamp(0, 1);
       const finalAlpha = sceneAlpha.max(bloomLuma).clamp(0, 1);
 
       return vec4(combinedColor, finalAlpha);
@@ -1549,6 +1580,23 @@ class App {
 
   async init(width = window.innerWidth, height = window.innerHeight) {
     this.runtime = createRuntimeState(width);
+    if (this.initialParticleSize) this.runtime.size = this.initialParticleSize;
+    this.runtime.screenBoundsRadiusScale = this.initialScreenBoundsRadiusScale;
+    this.runtime.screenBoundsFill = this.initialScreenBoundsFill;
+    if (this.particleCapacity) this.runtime.maxParticles = this.particleCapacity;
+    if (this.initialParticleCount) {
+      this.runtime.particles = Math.min(
+        this.initialParticleCount,
+        this.runtime.maxParticles,
+      );
+      const derived = deriveParticleMetrics({
+        particles: this.runtime.particles,
+        size: this.runtime.size,
+        density: this.runtime.density,
+      });
+      this.runtime.actualSize = derived.actualSize;
+      this.runtime.restDensity = derived.restDensity;
+    }
 
     this.camera = new THREE.PerspectiveCamera(47, width / height, 0.01, 7.5);
     this.applyCameraFraming(width, height);
@@ -1571,6 +1619,7 @@ class App {
     await this.mlsMpmSim.init(this.runtime.maxParticles);
 
     this.particleRenderer = new ParticleRenderer(this.mlsMpmSim);
+    this.particleRenderer.setShadowsEnabled?.(this.useParticleShadows);
 
     this.mlsMpmSim.applyRuntime(this.runtime);
     this.particleRenderer.applyRuntime(this.runtime);
@@ -1587,6 +1636,9 @@ class App {
     }
 
     this.lights = new Lights();
+    if (this.lights.keyLight) {
+      this.lights.keyLight.castShadow = this.useParticleShadows;
+    }
     this.scene.add(this.lights.object);
     this.scene.add(this.particleRenderer.object);
 
@@ -1947,6 +1999,73 @@ class App {
     maxV.y = Math.max(3, Math.min(maxV.y, 61));
     minV.z = 3;
     maxV.z = 61;
+
+    // Hero Field only: the visible body is larger than its simulated centre,
+    // and a perspective frustum narrows for particles closer to the camera.
+    // Store an affine depth gradient so the compute pass can resolve the wall
+    // per particle, plus a screen-consistent inset for the rendered shard.
+    const radiusScale = this.runtime.screenBoundsRadiusScale ?? 0;
+    if (radiusScale > 0) {
+      this.runtime.screenBoundsReference ??= new THREE.Vector3();
+      this.runtime.screenBoundsDepthGradient ??= new THREE.Vector3();
+      this.runtime.screenBoundsInset ??= new THREE.Vector2();
+
+      this._screenBoundsCenterWorld ??= new THREE.Vector3();
+      this._screenBoundsCameraForward ??= new THREE.Vector3();
+      this._screenBoundsToCenter ??= new THREE.Vector3();
+      this._screenBoundsBasis ??= [
+        new THREE.Vector3(),
+        new THREE.Vector3(),
+        new THREE.Vector3(),
+      ];
+
+      const viewCenter = this._screenBoundsCenterWorld.set(
+        center.x,
+        targetYWorld,
+        center.z,
+      );
+      this.particleRenderer.worldPointToSimulation(
+        viewCenter,
+        this.runtime.screenBoundsReference,
+      );
+      this.camera.getWorldDirection(this._screenBoundsCameraForward);
+      this.particleRenderer.object.updateWorldMatrix(true, false);
+
+      const referenceDepth = Math.max(
+        0.0001,
+        this._screenBoundsToCenter
+          .copy(viewCenter)
+          .sub(this.camera.position)
+          .dot(this._screenBoundsCameraForward),
+      );
+      const matrixWorld = this.particleRenderer.object.matrixWorld;
+      const depthGradient = this.runtime.screenBoundsDepthGradient;
+      for (let axis = 0; axis < 3; axis += 1) {
+        this._screenBoundsBasis[axis].setFromMatrixColumn(matrixWorld, axis);
+      }
+      depthGradient.set(
+        this._screenBoundsBasis[0].dot(this._screenBoundsCameraForward) / referenceDepth,
+        this._screenBoundsBasis[1].dot(this._screenBoundsCameraForward) / referenceDepth,
+        this._screenBoundsBasis[2].dot(this._screenBoundsCameraForward) / referenceDepth,
+      );
+
+      const maxWorldAxisScale = Math.max(
+        this._screenBoundsBasis[0].length(),
+        this._screenBoundsBasis[1].length(),
+        this._screenBoundsBasis[2].length(),
+      );
+      const visualRadiusWorld =
+        (this.runtime.actualSize ?? 0) * radiusScale * maxWorldAxisScale;
+      const halfSpanX = Math.max(0.0001, Math.abs(maxV.x - minV.x) * 0.5);
+      const halfSpanY = Math.max(0.0001, Math.abs(maxV.y - minV.y) * 0.5);
+      this.runtime.screenBoundsInset.set(
+        halfSpanX * (visualRadiusWorld / Math.max(halfW, 0.0001)),
+        halfSpanY * (visualRadiusWorld / Math.max(halfH, 0.0001)),
+      );
+    } else {
+      this.runtime.screenBoundsDepthGradient?.set?.(0, 0, 0);
+      this.runtime.screenBoundsInset?.set?.(0, 0);
+    }
   }
 
   setPointer(clientX, clientY, isDown = false) {
@@ -1995,6 +2114,31 @@ class App {
 
     this.syncSourceAnchors();
     this.mlsMpmSim.seedMatureIdlePopulation();
+  }
+
+  /**
+   * Hero Field authored seed — the only entry point the hero-field mode
+   * uses instead of the inherited Chamber idle path. Routes through the
+   * simulator's `seedHeroFieldPopulation`; this proxy keeps the App API
+   * surface symmetric with `promoteIdlePopulation`.
+   *
+   * @param {"landscape"|"portrait"} [layout="landscape"]
+   */
+  seedHeroFieldPopulation(layout = "landscape") {
+    const min = this.runtime?.simBoundsMin;
+    const max = this.runtime?.simBoundsMax;
+    const inset = this.runtime?.screenBoundsInset;
+    return this.mlsMpmSim?.seedHeroFieldPopulation?.(
+      layout,
+      min && max
+        ? {
+            min: [min.x, min.y],
+            max: [max.x, max.y],
+            inset: [inset?.x ?? 0, inset?.y ?? 0],
+            fill: this.runtime?.screenBoundsFill ?? 0.86,
+          }
+        : null,
+    );
   }
 
   ensureSourceAnchorOffsets() {
@@ -2201,12 +2345,14 @@ class App {
     if (!this.runtime) return;
     this._lastDt = delta;
 
-    this.backgroundGeometry.update(delta);
-    this.syncSourceAnchors();
-    this.syncRiftFlightDescriptor();
+    if (!this.computedMatterOnly) {
+      this.backgroundGeometry.update(delta);
+      this.syncSourceAnchors();
+      this.syncRiftFlightDescriptor();
+    }
 
     if (this.lights?.keyLight) {
-      const nextCastShadow = true;
+      const nextCastShadow = this.useParticleShadows;
 
       if (this.lights.keyLight.castShadow !== nextCastShadow) {
         this.lights.keyLight.castShadow = nextCastShadow;
@@ -2216,9 +2362,11 @@ class App {
       }
     }
 
-    this.backgroundGeometry.setForensicPostEnterIsolation?.(
-      this.postEnterDriveActive ? forensicHoldReadIsolation() : null,
-    );
+    if (!this.computedMatterOnly) {
+      this.backgroundGeometry.setForensicPostEnterIsolation?.(
+        this.postEnterDriveActive ? forensicHoldReadIsolation() : null,
+      );
+    }
 
     this.mlsMpmSim.applyRuntime(this.runtime);
     this.particleRenderer.applyRuntime(this.runtime);

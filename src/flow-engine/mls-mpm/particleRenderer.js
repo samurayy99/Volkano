@@ -1,3 +1,15 @@
+/*
+ * Derived from holtsetio/flow — https://github.com/holtsetio/flow
+ * MIT License, Copyright (c) 2025 Holtsetio. Full text: ./LICENSE.upstream
+ *
+ * The instanced particle renderer base is from the upstream project;
+ * the surrounding material and formation systems are ours.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in the
+ * Software without restriction, subject to the conditions in LICENSE.upstream. THE
+ * SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+ */
 import * as THREE from "three/webgpu";
 import {
   Fn,
@@ -22,6 +34,7 @@ import {
   fract,
   sin,
   step,
+  time,
   positionWorld,
   cameraWorldMatrix,
   modelWorldMatrix,
@@ -29,6 +42,11 @@ import {
 } from "three/tsl";
 
 import { forensicHoldReadIsolation } from "../post-enter/forensicPostEnter.js";
+import {
+  readResolvedFormationState,
+  rotateByFormationQuaternion,
+} from "../formations/formationField.js";
+import { buildFormationShardGeometryData } from "../formations/formationShardGeometry.js";
 
 const COMPRESS_EASE_EDGE0 = 0.03;
 const COMPRESS_EASE_EDGE1 = 0.94;
@@ -57,6 +75,11 @@ const PARTICLE_PROFILE_READ = Object.freeze({
   facingThicknessGain: 0.72,
   facingThicknessBias: 0.28,
 });
+
+// Half the shortest authored shard dimension (0.52 / 2), including the
+// instance profile. Residual authority is measured against this radius rather
+// than the unrelated global size scalar.
+const SHARD_SHORT_RADIUS = 0.26 * PARTICLE_PROFILE_READ.instanceScale;
 
 const WITHDRAW_READ = Object.freeze({
   thinWidthReduction: 0.92,
@@ -278,7 +301,7 @@ const buildParticleViewState = ({
   vNormalView.assign(orientedNormalView);
   vFacingThickness.assign(facingThickness);
 
-  return { mat };
+  return { mat, orientedNormalView };
 };
 
 const buildUnifiedParticleSurfaceNodes = ({
@@ -286,7 +309,9 @@ const buildUnifiedParticleSurfaceNodes = ({
   material,
   vNormalView,
   vFacingThickness,
+  vFormationEnergy,
   uniforms,
+  formationUniforms,
   settleW,
 }) => {
   const particleHeat = particle.get("heat");
@@ -579,11 +604,24 @@ const buildUnifiedParticleSurfaceNodes = ({
     .mul(lenoxTintT)
     .toConst("lenoxAuraT");
 
-  // Color law: cyan is KINETIC ENERGY ONLY — no static view-thickness term,
-  // resting matter must read neutral silver. lenoxEnergyMul lets the drive
-  // silence cyan entirely during the wake handoff ("cyan falls out").
-  const lenoxEnergyT = smoothstep(float(0.18), float(1.7), particleSpeed)
+  // Legacy scenes still read solver velocity. Formation scenes instead use
+  // the scroll-owned, per-slot activity authored in the position stage. This
+  // decouples the material from slow MLS-MPM settling: a completed formation is
+  // silver immediately, while its bounded pointer residual can still react.
+  const formationActive = formationUniforms.formationActive
+    .clamp(0, 1)
+    .toConst("formationMaterialActive");
+  const design01HeroT = uniforms.design01HeroT
+    .clamp(0, 1)
+    .toConst("design01HeroMaterialT");
+  const solverEnergyT = smoothstep(float(0.24), float(1.9), particleSpeed)
     .mul(float(0.85))
+    .toConst("solverEnergyT");
+  const lenoxEnergyT = mix(
+    solverEnergyT,
+    vFormationEnergy.clamp(0, 1),
+    formationActive,
+  )
     .mul(uniforms.lenoxEnergyMul.clamp(0, 1))
     .clamp(float(0), float(1))
     .toConst("lenoxEnergyT");
@@ -597,13 +635,21 @@ const buildUnifiedParticleSurfaceNodes = ({
     .mul(lenoxSilverGain)
     .clamp(vec3(0), vec3(1));
   const lenoxCyan = vec3(0.24, 0.86, 1.0);
-  const lenoxBody = mix(lenoxSilver, lenoxCyan, lenoxEnergyT)
+  const lenoxBody = mix(lenoxSilver, lenoxCyan, lenoxEnergyT.mul(float(0.08)))
     .toConst("lenoxBodyBase");
   const lenoxBodyLid = mix(lenoxBody, lenoxSilverLift, lenoxLidT.mul(0.5))
     .toConst("lenoxBodyLid");
   // Attention nodes get only a restrained cyan cast, never a glowing blob.
   const lenoxBodyFinal = mix(lenoxBodyLid, lenoxCyan, lenoxFocalT.mul(0.32))
     .toConst("lenoxBody");
+  const graphiteT = formationUniforms.formationGraphiteT
+    .clamp(0, 1)
+    .toConst("formationGraphiteT");
+  const allotropBody = mix(
+    lenoxBodyFinal,
+    vec3(0.055, 0.065, 0.078),
+    graphiteT.mul(float(0.9)),
+  ).toConst("allotropBody");
 
   const gravityT = uniforms.gravityT.clamp(0, 1).toConst("gravityMaterialT");
   const gravityColor = mix(vec3(0.3, 0.35, 0.42), particleColor, float(0.82))
@@ -614,7 +660,7 @@ const buildUnifiedParticleSurfaceNodes = ({
   // question is answered by morphology and environment, not by more shader.
   const surfaceColorTinted = mix(
     mix(
-      mix(surfaceColorBase, lenoxBodyFinal, lenoxTintT),
+      mix(surfaceColorBase, allotropBody, lenoxTintT),
       gravityColor,
       gravityT,
     ),
@@ -629,13 +675,47 @@ const buildUnifiedParticleSurfaceNodes = ({
   const coherenceMaterialT = uniforms.coherenceMaterialT
     .clamp(0, 1)
     .toConst("coherenceMaterialT");
+  const heroFieldMaterialT = uniforms.heroFieldMaterialT
+    .clamp(0, 1)
+    .toConst("heroFieldMaterialT");
+  const heroFieldOrder = smoothstep(
+    float(0.3),
+    float(0.82),
+    particleCoherence,
+  ).toConst("heroFieldOrder");
   // Magenta, not cyan: the engine's own kinetic law already tints moving matter
   // cyan, so a cyan debug marker is indistinguishable from the base look — the
   // first version of this instrument could not measure what it was built for.
-  const surfaceColor = mix(
+  const debugSurfaceColor = mix(
     surfaceColorTinted,
     vec3(1.0, 0.0, 0.55),
     particleCoherence.mul(uniforms.coherenceDebugT.clamp(0, 1)),
+  );
+  const heroToneHash = fract(
+    sin(instanceIndex.toFloat().mul(51.73)).mul(43758.5453),
+  );
+  const heroPearl = mix(
+    vec3(0.32, 0.38, 0.48),
+    vec3(0.78, 0.86, 0.96),
+    smoothstep(float(0.18), float(0.88), heroToneHash),
+  );
+  const heroSurface = mix(
+    heroPearl,
+    lenoxCyan,
+    lenoxEnergyT.mul(float(0.34)),
+  ).toConst("design01HeroSurface");
+  // Disorder is black lacquer/graphite, not black metal. Its low metalness
+  // preserves dark diffuse shape and the dielectric Fresnel highlight; only
+  // coherence removes diffuse response and resolves into restrained silver.
+  const heroFieldSurface = mix(
+    vec3(0.055, 0.064, 0.078),
+    vec3(0.5, 0.55, 0.62),
+    heroFieldOrder,
+  ).toConst("heroFieldSurface");
+  const surfaceColor = mix(
+    mix(debugSurfaceColor, heroSurface, design01HeroT),
+    heroFieldSurface,
+    heroFieldMaterialT,
   ).toConst("surfaceColor");
 
   // Die Front streift die Materie: ein schmales Gauss-Band um den Radius
@@ -661,7 +741,7 @@ const buildUnifiedParticleSurfaceNodes = ({
   const lenoxEmissive = lenoxCyan
     .mul(
       lenoxEnergyT
-        .mul(float(0.05))
+        .mul(float(0.12))
         .add(lenoxFocalT.mul(uniforms.lenoxFocalBoost.mul(float(0.5))))
         .add(scanFlare.mul(float(0.55))),
     )
@@ -670,11 +750,15 @@ const buildUnifiedParticleSurfaceNodes = ({
     .mul(particleHeat)
     .mul(float(0.22))
     .toConst("gravityEmissive");
+  const heroEmissive = heroSurface
+    .mul(float(0.028))
+    .add(lenoxCyan.mul(lenoxEnergyT).mul(float(0.18)))
+    .mul(design01HeroT);
   const surfaceEmissive = mix(
     mix(surfaceEmissiveBase, lenoxEmissive, lenoxTintT),
     gravityEmissive,
     gravityT,
-  ).toConst("surfaceEmissive");
+  ).add(heroEmissive).toConst("surfaceEmissive");
 
   const bloomSource = yellowPinEmissive.r
     .max(hotOrangeEmissive.r.mul(float(0.34)).mul(riftAuthorityT))
@@ -686,6 +770,7 @@ const buildUnifiedParticleSurfaceNodes = ({
         .mul(lenoxTintT),
     )
     .max(particleHeat.mul(float(0.18)).mul(gravityT))
+    .max(lenoxEnergyT.mul(design01HeroT).mul(float(0.22)))
     .toConst("particleBloomSource");
 
   // Premium silver = one coherent sheen: per-particle roughness variation
@@ -693,19 +778,20 @@ const buildUnifiedParticleSurfaceNodes = ({
   // kinetic particles get only a slight wet-gloss lift.
   const lenoxSurfaceRoughness = uniforms.lenoxRoughness
     .add(roughNoise.mul(float(0.03)))
-    .sub(lenoxEnergyT.mul(float(0.06)))
+    .sub(lenoxEnergyT.mul(float(0.025)))
+    .add(graphiteT.mul(float(0.08)))
     .clamp(float(0.05), float(0.92))
     .toConst("lenoxSurfaceRoughness");
   const phaseSurfaceRoughness = mix(
-    uniforms.lenoxRoughness.add(float(0.38)).clamp(float(0.12), float(0.94)),
     lenoxSurfaceRoughness,
+    lenoxSurfaceRoughness.mul(float(0.62)),
     particleCoherence,
   ).toConst("phaseSurfaceRoughness");
-  const phaseMetalness = mix(
-    uniforms.lenoxMetalness.mul(float(0.18)),
-    uniforms.lenoxMetalness,
-    particleCoherence,
-  ).toConst("phaseMetalness");
+  const heroFieldRoughness = mix(
+    float(0.34),
+    uniforms.lenoxRoughness,
+    heroFieldOrder,
+  ).toConst("heroFieldRoughness");
 
   const chamberMetalness = mix(
     float(0.02),
@@ -730,15 +816,30 @@ const buildUnifiedParticleSurfaceNodes = ({
   );
   material.roughnessNode = mix(
     surfaceRoughness,
-    mix(lenoxSurfaceRoughness, phaseSurfaceRoughness, coherenceMaterialT),
+    mix(
+      mix(lenoxSurfaceRoughness, phaseSurfaceRoughness, coherenceMaterialT),
+      heroFieldRoughness,
+      heroFieldMaterialT,
+    ),
     lenoxTintT,
   );
+  /** Hero Field only: dielectric graphite resolves into silver metal. */
+  const heroFieldMetalness = mix(
+    float(0.06),
+    uniforms.lenoxMetalness,
+    heroFieldOrder,
+  ).toConst("heroFieldMetalness");
+
   material.metalnessNode = mix(
     chamberMetalness,
-    mix(uniforms.lenoxMetalness, phaseMetalness, coherenceMaterialT),
+    mix(
+      uniforms.lenoxMetalness,
+      heroFieldMetalness,
+      heroFieldMaterialT,
+    ),
     lenoxTintT,
   );
-  material.emissiveNode = surfaceEmissive;
+  material.emissiveNode = mix(surfaceEmissive, vec3(0), heroFieldMaterialT);
   material.aoNode = surfaceAo;
   // Aura fog reads sparse and dim (Lenox); chamber path unchanged (auraT=0).
   const billboardUv = attribute("uv").mul(float(2)).sub(float(1));
@@ -746,13 +847,30 @@ const buildUnifiedParticleSurfaceNodes = ({
   const billboardAlpha = smoothstep(float(0.72), float(1), billboardRadiusSq)
     .oneMinus()
     .clamp(0, 1);
-  material.opacityNode = opacityEffective
+  const legacyOpacity = opacityEffective
     .mul(mix(float(1), float(0.3), lenoxAuraT))
     .mul(mix(float(1), billboardAlpha, uniforms.primitiveT.clamp(0, 1)));
-  material.alphaTestNode = mix(
+  const formationOpacity = mix(legacyOpacity, float(1), formationActive);
+  const heroOpacity = billboardAlpha
+    .mul(mix(float(0.72), float(0.98), lenoxEnergyT));
+  material.opacityNode = mix(
+    formationOpacity,
+    heroOpacity,
+    design01HeroT,
+  );
+  const formationAlphaTest = mix(
+    mix(
+      float(0),
+      float(0.28),
+      uniforms.primitiveT.clamp(0, 1),
+    ),
     float(0),
-    float(0.28),
-    uniforms.primitiveT.clamp(0, 1),
+    formationActive,
+  );
+  material.alphaTestNode = mix(
+    formationAlphaTest,
+    float(0.035),
+    design01HeroT,
   );
 
   material.mrtNode = mrt({
@@ -761,6 +879,7 @@ const buildUnifiedParticleSurfaceNodes = ({
       .mul(float(0.72))
       .mul(opacityEffective)
       .mul(postEnterMaterialT.max(lenoxTintT))
+      .mul(heroFieldMaterialT.oneMinus())
       .clamp(float(0), float(1)),
   });
 };
@@ -768,13 +887,119 @@ const buildUnifiedParticleSurfaceNodes = ({
 const buildParticlePositionNode = ({
   particle,
   uniforms,
+  resolvedFormationBuffer,
+  design01FlowBuffer,
+  formationUniforms,
   sizeUniform,
   vNormalView,
   vFacingThickness,
+  vFormationEnergy,
   settleW,
 }) =>
   Fn(() => {
     const simPos = particle.get("position").xyz.toConst("simPos");
+    const formationState = readResolvedFormationState(
+      resolvedFormationBuffer,
+      instanceIndex,
+    );
+    const formationActive = formationUniforms.formationActive
+      .clamp(0, 1)
+      .toConst("formationActive");
+    const formationResidualEnvelope = sin(
+      formationUniforms.formationProgress.clamp(0, 1).mul(Math.PI),
+    )
+      .max(float(0))
+      .toConst("formationResidualEnvelope");
+    const formationResidualRadius = sizeUniform
+      .mul(float(SHARD_SHORT_RADIUS))
+      .mul(mix(float(0.35), float(0.8), formationResidualEnvelope))
+      .mul(formationState.residualScale)
+      .toConst("formationResidualRadius");
+    const formationResidual = simPos
+      .sub(formationState.base)
+      .toConst("formationResidual");
+    const formationResidualLength = formationResidual
+      .length()
+      .toConst("formationResidualLength");
+    const boundedFormationResidual = formationResidual
+      .mul(
+        formationResidualRadius
+          .div(formationResidualLength.max(float(0.0001)))
+          .min(float(1)),
+      )
+      .toConst("boundedFormationResidual");
+    // Macro activity is a deterministic function of the same slot progress as
+    // the geometry. Pointer energy comes from the bounded shared pointer field,
+    // never from unbounded solver velocity. Both are exactly zero at a quiet
+    // formation endpoint.
+    const slotMorphActivity = formationState.progress
+      .mul(float(1).sub(formationState.progress))
+      .mul(float(4))
+      .clamp(0, 1)
+      .toConst("formationSlotMorphActivity");
+    const pointerResidualActivity = formationState.pointerKernel
+      .toConst("formationPointerResidualActivity");
+    const design01HeroT = uniforms.design01HeroT
+      .clamp(0, 1)
+      .toConst("design01HeroT");
+    const design01Flow = design01FlowBuffer
+      .element(instanceIndex)
+      .get("offset")
+      .toConst("design01FlowState");
+    vFormationEnergy.assign(
+      slotMorphActivity
+        .mul(float(0.3))
+        .max(pointerResidualActivity.mul(float(0.58)))
+        .max(design01Flow.w.mul(float(0.9)).mul(design01HeroT))
+        .mul(formationActive),
+    );
+
+    const formationCenter = mix(
+      formationUniforms.formationFromCenter,
+      formationUniforms.formationToCenter,
+      formationState.progress,
+    ).toConst("design01FormationCenter");
+    const centeredFormation = formationState.base
+      .sub(formationCenter)
+      .toConst("design01CenteredFormation");
+    const driftAngle = sin(time.mul(float(0.19)))
+      .mul(float(0.065))
+      .add(sin(time.mul(float(0.11)).add(float(1.7))).mul(float(0.025)));
+    const driftedFormation = vec3(
+      centeredFormation.x.add(centeredFormation.z.mul(driftAngle)),
+      centeredFormation.y,
+      centeredFormation.z.sub(centeredFormation.x.mul(driftAngle)),
+    );
+    const breath = float(1).add(
+      sin(time.mul(float(2.4))).mul(float(0.012)),
+    );
+    const idleHash = fract(
+      sin(instanceIndex.toFloat().mul(63.17)).mul(43758.5453),
+    );
+    const idleCohort = smoothstep(float(0.84), float(0.98), idleHash);
+    const radial = centeredFormation.div(
+      centeredFormation.length().max(float(0.0001)),
+    );
+    const tangent = cross(radial, vec3(0, 1, 0));
+    const circulation = tangent
+      .mul(sin(time.mul(float(0.72)).add(idleHash.mul(Math.PI * 2))))
+      .mul(idleCohort)
+      .mul(float(0.16));
+    const heroBase = formationCenter
+      .add(driftedFormation.mul(breath))
+      .add(circulation)
+      .add(design01Flow.xyz)
+      .toConst("design01HeroBase");
+    const authoredFormationBase = mix(
+      formationState.base,
+      heroBase,
+      design01HeroT,
+    );
+    const renderedSimPos = mix(
+      simPos,
+      authoredFormationBase.add(boundedFormationResidual),
+      formationActive,
+    ).toConst("renderedSimPos");
     const particleDensity = particle.get("density");
     const particleDirection = particle.get("direction");
     const localPos = attribute("position").xyz;
@@ -913,7 +1138,10 @@ const buildParticlePositionNode = ({
       )
       .toConst("flightThinFactor");
 
-    const formedDir = normalize(particleDirection.xyz).toConst("formedDir");
+    const physicalDirection = particleDirection.xyz
+      .div(particleDirection.xyz.length().max(float(0.0001)))
+      .toConst("physicalDirection");
+    const formedDir = physicalDirection.toConst("formedDir");
     const shapedPos = vec3(
       localPos.x
         .mul(particleProfile.rodWidth)
@@ -943,6 +1171,14 @@ const buildParticlePositionNode = ({
       vNormalView,
       vFacingThickness,
     });
+    const formationNormalView = normalize(
+      transformNormalToView(
+        rotateByFormationQuaternion(normalLocal, formationState.rotation),
+      ),
+    ).toConst("formationNormalView");
+    vNormalView.assign(
+      mix(viewState.orientedNormalView, formationNormalView, formationActive),
+    );
 
     const cameraRightWorld = cameraWorldMatrix[0].xyz.normalize();
     const cameraUpWorld = cameraWorldMatrix[1].xyz.normalize();
@@ -1018,14 +1254,32 @@ const buildParticlePositionNode = ({
       .mul(mix(float(1), float(0.78), posFocalT))
       .toConst("lenoxRoleScale");
 
-    const primitiveShape = mix(
+    const orientedShardShape = mix(
       viewState.mat.mul(shapedPos),
-      billboardOffset,
-      uniforms.primitiveT.clamp(0, 1),
+      rotateByFormationQuaternion(shapedPos, formationState.rotation),
+      formationActive,
+    ).toConst("orientedShardShape");
+    const heroParticleHash = fract(
+      sin(instanceIndex.toFloat().mul(27.91)).mul(43758.5453),
+    );
+    const heroParticleScale = mix(float(0.78), float(1.12), heroParticleHash);
+    const heroBillboardOffset = cameraRightLocal
+      .mul(localPos.x)
+      .add(cameraUpLocal.mul(localPos.y).mul(float(0.78)))
+      .mul(heroParticleScale)
+      .toConst("design01HeroBillboardOffset");
+    const primitiveShape = mix(
+      mix(
+        orientedShardShape,
+        billboardOffset,
+        uniforms.primitiveT.clamp(0, 1),
+      ),
+      heroBillboardOffset,
+      design01HeroT,
     );
     const coherenceSize = mix(
       float(1),
-      mix(float(0.72), float(1.12), particleCoherence),
+      mix(float(1), float(1.14), particleCoherence),
       uniforms.coherenceMaterialT.clamp(0, 1),
     );
 
@@ -1038,132 +1292,19 @@ const buildParticlePositionNode = ({
           .mul(lenoxRoleScale)
           .mul(coherenceSize),
       )
+      .mul(mix(float(1), formationState.sizeScale, formationActive))
       .mul(particleProfile.densityScale)
-      .add(simPos);
+      .add(renderedSimPos);
   })();
 
-const createRoundedBox = (width, height, depth, radius) => {
-  const box = new THREE.BoxGeometry(
-    width - radius * 2,
-    height - radius * 2,
-    depth - radius * 2,
-  );
-  const epsilon = Math.min(width, height, depth) * 0.01;
-  const positionArray = box.attributes.position.array;
-  const normalArray = box.attributes.normal.array;
-  const indices = [...box.getIndex().array];
-  const vertices = [];
-  const posMap = {};
-  const edgeMap = {};
-
-  for (let i = 0; i < positionArray.length / 3; i++) {
-    const oldPosition = new THREE.Vector3(
-      positionArray[i * 3],
-      positionArray[i * 3 + 1],
-      positionArray[i * 3 + 2],
-    );
-
-    positionArray[i * 3 + 0] += normalArray[i * 3 + 0] * radius;
-    positionArray[i * 3 + 1] += normalArray[i * 3 + 1] * radius;
-    positionArray[i * 3 + 2] += normalArray[i * 3 + 2] * radius;
-
-    const vertex = new THREE.Vector3(
-      positionArray[i * 3],
-      positionArray[i * 3 + 1],
-      positionArray[i * 3 + 2],
-    );
-    vertex.normal = new THREE.Vector3(
-      normalArray[i * 3],
-      normalArray[i * 3 + 1],
-      normalArray[i * 3 + 2],
-    );
-    vertex.id = i;
-    vertex.faces = [];
-    vertex.posHash = oldPosition
-      .toArray()
-      .map((v) => Math.round(v / epsilon))
-      .join("_");
-
-    posMap[vertex.posHash] = [...(posMap[vertex.posHash] || []), vertex];
-    vertices.push(vertex);
-  }
-
-  vertices.forEach((vertex) => {
-    const face = vertex.normal
-      .toArray()
-      .map((v) => Math.round(v))
-      .join("_");
-    vertex.face = face;
-    posMap[vertex.posHash].forEach((v) => {
-      v.faces.push(face);
-    });
-  });
-
-  vertices.forEach((vertex) => {
-    const addVertexToEdgeMap = (entry) => {
-      edgeMap[entry] = [...(edgeMap[entry] || []), vertex];
-    };
-
-    vertex.faces.sort();
-    const f0 = vertex.faces[0];
-    const f1 = vertex.faces[1];
-    const f2 = vertex.faces[2];
-    const face = vertex.face;
-
-    if (f0 === face || f1 === face) addVertexToEdgeMap(`${f0}_${f1}`);
-    if (f0 === face || f2 === face) addVertexToEdgeMap(`${f0}_${f2}`);
-    if (f1 === face || f2 === face) addVertexToEdgeMap(`${f1}_${f2}`);
-  });
-
-  const addFace = (v0, v1, v2) => {
-    const a = v1.clone().sub(v0);
-    const b = v2.clone().sub(v0);
-    if (a.cross(b).dot(v0) > 0) {
-      indices.push(v0.id, v1.id, v2.id);
-    } else {
-      indices.push(v0.id, v2.id, v1.id);
-    }
-  };
-
-  Object.keys(posMap).forEach((key) => {
-    addFace(...posMap[key]);
-  });
-
-  Object.keys(edgeMap).forEach((key) => {
-    const edgeVertices = edgeMap[key];
-    const v0 = edgeVertices[0];
-    edgeVertices.sort((v1, v2) => v1.distanceTo(v0) - v2.distanceTo(v0));
-    addFace(...edgeVertices.slice(0, 3));
-    addFace(...edgeVertices.slice(1, 4));
-  });
-
-  box.setIndex(indices);
-  return box;
-};
-
-/**
- * Chunky pre-enter shard: same topology as rounded box, light vertex shear so
- * instances do not read as one uniform extrusion.
- */
 const createShardGeometry = () => {
-  const geom = createRoundedBox(0.82, 0.52, 1.18, 0.08);
-  const pos = geom.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    const h1 = Math.sin(i * 12.9898 + x * 78.233) * 43758.5453;
-    const f1 = h1 - Math.floor(h1);
-    const h2 = Math.sin(i * 93.989 + y * 12.4) * 23421.123;
-    const f2 = h2 - Math.floor(h2);
-    const h3 = Math.sin(i * 45.1 + z * 33.7) * 91234.56;
-    const f3 = h3 - Math.floor(h3);
-    pos.setX(i, x + (f1 - 0.5) * 0.07);
-    pos.setY(i, y + (f2 - 0.5) * 0.055);
-    pos.setZ(i, z + (f3 - 0.5) * 0.08);
-  }
-  geom.computeVertexNormals();
-  return geom;
+  const data = buildFormationShardGeometryData();
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(data.uvs, 2));
+  geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+  return geometry;
 };
 
 let particleGeometryTemplate = null;
@@ -1184,6 +1325,8 @@ class ParticleRenderer {
   uniforms = {};
   /** Dev (lenox proof): hide the particle body regardless of runtime state. */
   forceHidden = false;
+  shadowsEnabled = true;
+  formationOpaque = false;
 
   runtime = {
     particles: 8192 * 4,
@@ -1231,11 +1374,14 @@ class ParticleRenderer {
     this.uniforms.substanceT = uniform(0);
     /** A.1a debug tint for the coherent cohort; 0 in every production path. */
     this.uniforms.coherenceDebugT = uniform(0);
+    /** Hero Field: coherence drives the complete black/silver PBR law. */
+    this.uniforms.heroFieldMaterialT = uniform(0);
     /** A.1c material range and A.1d primitive switch; both 0 elsewhere. */
     this.uniforms.coherenceMaterialT = uniform(0);
     /** Correct authored particle rotation on both sides of the A.1c comparison. */
     this.uniforms.orientedParticleNormalT = uniform(0);
     this.uniforms.primitiveT = uniform(0);
+    this.uniforms.design01HeroT = uniform(0);
     /** Focal glint emissive gain (Lenox mode). */
     this.uniforms.lenoxFocalBoost = uniform(1);
     // Lenox silver-material channel — only blended in where lenoxTintT
@@ -1261,6 +1407,7 @@ class ParticleRenderer {
 
     const vNormalView = varying(vec3(0), "vNormalView");
     const vFacingThickness = varying(0, "vFacingThickness");
+    const vFormationEnergy = varying(0, "vFormationEnergy");
     const particle = this.mlsMpmSim.particleBuffer.element(instanceIndex);
     // Lenox role channel (settle target w); constant 0 for chamber authors.
     const settleW = this.mlsMpmSim.settleTargetBuffer
@@ -1270,9 +1417,13 @@ class ParticleRenderer {
     this.material.positionNode = buildParticlePositionNode({
       particle,
       uniforms: this.uniforms,
+      resolvedFormationBuffer: this.mlsMpmSim.resolvedFormationBuffer,
+      design01FlowBuffer: this.mlsMpmSim.design01FlowBuffer,
+      formationUniforms: this.mlsMpmSim.uniforms,
       sizeUniform: this.uniforms.size,
       vNormalView,
       vFacingThickness,
+      vFormationEnergy,
       settleW,
     });
 
@@ -1281,7 +1432,9 @@ class ParticleRenderer {
       material: this.material,
       vNormalView,
       vFacingThickness,
+      vFormationEnergy,
       uniforms: this.uniforms,
+      formationUniforms: this.mlsMpmSim.uniforms,
       settleW,
     });
 
@@ -1343,12 +1496,26 @@ class ParticleRenderer {
     this.uniforms.coherenceMaterialT.value = enabled ? 1 : 0;
   }
 
+  /** Hero Field only. Separate gate so no other experience is affected. */
+  setHeroFieldMaterial(enabled) {
+    if (!this.uniforms?.heroFieldMaterialT) return;
+    this.uniforms.orientedParticleNormalT.value = 1;
+    this.uniforms.heroFieldMaterialT.value = enabled ? 1 : 0;
+  }
+
   setPrimitive(primitive) {
     if (!this._particleBodyMesh || !this.uniforms?.primitiveT) return;
     const billboard = primitive === "billboard";
     this.geometry = billboard ? this._billboardGeometry : this._shardGeometry;
     this._particleBodyMesh.geometry = this.geometry;
     this.uniforms.primitiveT.value = billboard ? 1 : 0;
+  }
+
+  setShadowsEnabled(enabled) {
+    this.shadowsEnabled = enabled !== false;
+    if (!this._particleBodyMesh) return;
+    this._particleBodyMesh.castShadow = this.shadowsEnabled;
+    this._particleBodyMesh.receiveShadow = this.shadowsEnabled;
   }
 
   setSubstance(hexColor, strength) {
@@ -1386,6 +1553,7 @@ class ParticleRenderer {
     this.uniforms.materialClaimT.value = this.runtime.materialClaimT ?? 0;
     this.uniforms.postEnterFlightT.value = this.runtime.postEnterFlightT ?? 0;
     this.uniforms.lenoxTintT.value = this.runtime.lenoxTintT ?? 0;
+    this.uniforms.design01HeroT.value = this.runtime.design01HeroActive ? 1 : 0;
     this.uniforms.lenoxFocalBoost.value = this.runtime.lenoxFocalBoost ?? 1;
     this.uniforms.lenoxMetalness.value = this.runtime.lenoxMetalness ?? 0.85;
     this.uniforms.lenoxRoughness.value = this.runtime.lenoxRoughness ?? 0.3;
@@ -1404,11 +1572,20 @@ class ParticleRenderer {
       ? forensicHoldReadIsolation()
       : null;
     const hideRods = holdIsolationMode === "crackOnly";
-    this.material.transparent = true;
-    this.material.depthWrite = !lockedDissolve;
+    const formationOpaque = this.runtime.formationOpaque === true;
+    if (formationOpaque !== this.formationOpaque) {
+      this.formationOpaque = formationOpaque;
+      this.material.transparent = !formationOpaque;
+      this.material.needsUpdate = true;
+    }
+    this.material.depthWrite = formationOpaque || !lockedDissolve;
+    this.material.depthTest = true;
+    this.material.alphaTest = 0;
+    this.material.opacity = 1;
 
     if (this._particleBodyMesh) {
-      this._particleBodyMesh.castShadow = !lockedDissolve;
+      this._particleBodyMesh.castShadow = this.shadowsEnabled && !lockedDissolve;
+      this._particleBodyMesh.receiveShadow = this.shadowsEnabled;
       this._particleBodyMesh.visible = !hideRods && !this.forceHidden;
     }
   }

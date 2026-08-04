@@ -41,9 +41,6 @@ import styles from "./PhaseFieldProto.module.css";
  * NOT proven here: optical connection, condensate material, refraction. Those
  * need render passes this proof deliberately does not add — they are Proof B.
  * LENOX here is directed COHERENCE, still visibly particulate.
- *
- * Direction: docs/product/design-01-living-surface.md
- * Task:      docs/agent-system/TASK.md
  */
 
 type EnvSource = "procedural" | "studio" | "meadow";

@@ -1,0 +1,45 @@
+.hero {
+  --backwall-opacity: 0.88;
+  --backwall-position-x: 46%;
+
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: #000;
+}
+
+.backwall {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-position: var(--backwall-position-x) center;
+  background-size: cover;
+  opacity: 0;
+}
+
+.engine {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.fallback {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  z-index: 2;
+  margin: 0;
+  color: #6a7079;
+  font: 500 12px/1.4 ui-monospace, monospace;
+  letter-spacing: 0.08em;
+}
+
+@media (min-width: 1024px) and (orientation: landscape) {
+  .backwall {
+    background-image: url("/studio/hero-field/backwall-desktop.png");
+    opacity: var(--backwall-opacity);
+  }
+}

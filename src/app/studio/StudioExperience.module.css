@@ -688,16 +688,33 @@
   backdrop-filter: none;
 }
 
-.renderer01 .heroChapter,
+.renderer01 .heroChapter {
+  width: min(470px, 31vw);
+  margin-right: clamp(24px, 3.6vw, 64px);
+  margin-left: auto;
+}
+
+.renderer01 .heroChapter h1 {
+  font-size: clamp(46px, 4.45vw, 74px);
+  line-height: 0.84;
+}
+
+.renderer01 .heroChapter > span {
+  max-width: 31ch;
+  margin-top: 28px;
+  font-size: clamp(14px, 1.08vw, 17px);
+}
+
+.renderer01 .heroChapter .primaryAction {
+  margin-top: 28px;
+}
+
 .renderer01 .principleChapter {
   --living-content-inset: clamp(96px, 11vw, 170px);
   width: min(860px, 58vw);
   margin-left: auto;
 }
 
-.renderer01 .heroChapter h1,
-.renderer01 .heroChapter > span,
-.renderer01 .heroChapter .primaryAction,
 .renderer01 .principleChapter h2,
 .renderer01 .principleChapter > p,
 .renderer01 .principleChapter .designChoices {
@@ -747,6 +764,85 @@
 .renderer01 .principleChapter .designChoices {
   width: max-content;
   max-width: 100%;
+}
+
+.renderer01 .capabilitiesChapter {
+  width: min(1040px, 72vw);
+  margin-left: auto;
+}
+
+.renderer01 .contactChapter {
+  width: min(650px, 43vw);
+  margin-right: clamp(42px, 4vw, 72px);
+  margin-left: auto;
+}
+
+.renderer01 .lenoxChapter {
+  width: min(920px, 62vw);
+  margin-right: auto;
+}
+
+.renderer01 .capabilitiesChapter .chapterIntro,
+.renderer01 .lenoxChapter .chapterIntro,
+.renderer01 .contactChapter .chapterIntro {
+  display: block;
+}
+
+.renderer01 .capabilitiesChapter h2,
+.renderer01 .lenoxChapter h2 {
+  font-size: clamp(44px, 4.8vw, 82px);
+}
+
+.renderer01 .contactChapter h2 {
+  font-size: clamp(42px, 4vw, 70px);
+}
+
+/*
+ * Chapters 03–05 are read, not glanced at. The shared scroll reveal starts every
+ * chapter at 0.38 opacity, and the capability highlight then multiplied another
+ * 0.72 on top — two of the three lines rendered at an effective 0.27 and were
+ * ghosts. Opacity on an ancestor multiplies its whole subtree, so no amount of
+ * tuning the highlight fixes that; the reveal itself has to stop applying where
+ * the content is body copy.
+ */
+.renderer01 .chapter[data-chapter="capabilities"] .chapterSticky > *,
+.renderer01 .chapter[data-chapter="lenox"] .chapterSticky > *,
+.renderer01 .chapter[data-chapter="contact"] .chapterSticky > * {
+  opacity: 1;
+  transform: none;
+}
+
+.renderer01 .chapter[data-chapter="capabilities"] .capabilityLines article {
+  opacity: 0.72;
+  transition: opacity 220ms linear;
+}
+
+.renderer01 .chapter[data-chapter="capabilities"][data-capability-active="0"] .capabilityLines article:nth-child(1),
+.renderer01 .chapter[data-chapter="capabilities"][data-capability-active="1"] .capabilityLines article:nth-child(2),
+.renderer01 .chapter[data-chapter="capabilities"][data-capability-active="2"] .capabilityLines article:nth-child(3) {
+  opacity: 1;
+}
+
+.renderer01 .chapter[data-chapter="capabilities"] .capabilitiesChapter {
+  opacity: calc(1 - var(--capability-exit, 0));
+  transform: translate3d(
+    0,
+    calc(var(--capability-exit, 0) * -18px),
+    0
+  );
+  transition: none;
+  will-change: opacity, transform;
+}
+
+.renderer01 .chapter[data-chapter="lenox"] .lenoxChapter {
+  opacity: calc(1 - var(--lenox-exit, 0));
+  transform: translate3d(
+    0,
+    calc(var(--lenox-exit, 0) * -18px),
+    0
+  );
+  transition: none;
+  will-change: opacity, transform;
 }
 
 .playHint {
@@ -1006,6 +1102,14 @@
   .renderer01 .principleChapter {
     width: 100%;
     margin: 0;
+  }
+
+  .renderer01 .capabilitiesChapter,
+  .renderer01 .lenoxChapter,
+  .renderer01 .contactChapter {
+    width: 100%;
+    margin-right: 0;
+    margin-left: 0;
   }
 
   .renderer01 .heroChapter > span,

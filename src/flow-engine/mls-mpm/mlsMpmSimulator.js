@@ -1,3 +1,15 @@
+/*
+ * Derived from holtsetio/flow — https://github.com/holtsetio/flow
+ * MIT License, Copyright (c) 2025 Holtsetio. Full text: ./LICENSE.upstream
+ *
+ * The grid / P2G / G2P solver core is from the upstream project; the
+ * surrounding formation, Lenox and post-enter systems are ours.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in the
+ * Software without restriction, subject to the conditions in LICENSE.upstream. THE
+ * SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+ */
 import * as THREE from "three/webgpu";
 import {
   array,
@@ -26,12 +38,18 @@ import {
   mix,
   ivec3,
   smoothstep,
+  step,
   exp,
 } from "three/tsl";
 import { triNoise3Dvec } from "../common/noise";
 import { createParticleStruct } from "./particleStruct.js";
 import { StructuredArray } from "./structuredArray.js";
+import {
+  buildHeroFieldSeed,
+  fitHeroFieldSeedToViewport,
+} from "./heroFieldSeed.js";
 import { forensicEnabled } from "../post-enter/forensicPostEnter.js";
+import { buildFormationState } from "../formations/formationField.js";
 
 /** Upper bound for particle buffer allocation (must match App runtime.maxParticles policy). */
 const DEFAULT_MAX_PARTICLE_CAPACITY = 8192 * 16;
@@ -165,6 +183,15 @@ function hash01(index, seed) {
 
 const hash01Node = (seed) =>
   fract(sin(float(instanceIndex).add(1).mul(seed)).mul(43758.5453123));
+
+const safeNormalizeNode = (value, fallback) => {
+  const magnitude = value.length();
+  return mix(
+    fallback,
+    value.div(magnitude.max(float(0.0001))),
+    step(float(0.0001), magnitude),
+  );
+};
 
 /**
  * Rotational turbulence in the shallow phase-field plane. The unnormalised
@@ -495,6 +522,11 @@ class mlsMpmSimulator {
   initialParticlePositions = null;
   /** Filled by App.applyRuntime immediately after init; null only before first apply. */
   runtime = null;
+  formationResolveDirty = false;
+  design01FlowPrimed = false;
+  design01BootstrapPending = false;
+  design01BootstrapSpeed = 1;
+  lastDispatchPasses = 0;
 
   constructor(renderer) {
     this.renderer = renderer;
@@ -550,6 +582,35 @@ class mlsMpmSimulator {
       { settleTarget: { type: "vec4" } },
       maxParticles,
       "settleTargetData",
+    );
+    this.formationBuffer = new StructuredArray(
+      {
+        fromPosition: { type: "vec4" },
+        toPosition: { type: "vec4" },
+        fromRotation: { type: "vec4" },
+        toRotation: { type: "vec4" },
+        route: { type: "vec4" },
+        params: { type: "vec4" },
+      },
+      maxParticles,
+      "allotropFormationPair",
+    );
+    this.resolvedFormationBuffer = new StructuredArray(
+      {
+        base: { type: "vec4" },
+        rotation: { type: "vec4" },
+        state: { type: "vec4" },
+      },
+      maxParticles,
+      "allotropResolvedFormation",
+    );
+    this.design01FlowBuffer = new StructuredArray(
+      {
+        offset: { type: "vec4" },
+        velocity: { type: "vec4" },
+      },
+      maxParticles,
+      "design01TargetFlow",
     );
     this.riftFlightStartBuffer = new StructuredArray(
       { riftFlightStart: { type: "vec4" } },
@@ -650,6 +711,15 @@ class mlsMpmSimulator {
     this.uniforms.livingSurfaceTension = uniform(0);
     this.uniforms.livingSurfaceAperture = uniform(0);
     this.uniforms.livingSurfaceBanded = uniform(0);
+    this.uniforms.formationActive = uniform(0);
+    this.uniforms.formationProgress = uniform(0);
+    this.uniforms.formationGraphiteT = uniform(0);
+    this.uniforms.formationPointerEnergy = uniform(0);
+    this.uniforms.formationPointerScale = uniform(0);
+    this.uniforms.design01HeroActive = uniform(0);
+    this.uniforms.design01PointerEnergy = uniform(0);
+    this.uniforms.formationFromCenter = uniform(new THREE.Vector3(32, 32, 32));
+    this.uniforms.formationToCenter = uniform(new THREE.Vector3(32, 32, 32));
 
     this.uniforms.settleWeight = uniform(0);
     /**
@@ -685,6 +755,10 @@ class mlsMpmSimulator {
      */
     this.uniforms.simBoundsMin = uniform(new THREE.Vector3(GRID_WALL_MARGIN, GRID_WALL_MARGIN, GRID_WALL_MARGIN));
     this.uniforms.simBoundsMax = uniform(new THREE.Vector3(64 - GRID_WALL_MARGIN, 64 - GRID_WALL_MARGIN, 64 - GRID_WALL_MARGIN));
+    /** Hero-only perspective envelope; zeros preserve the fixed Chamber walls. */
+    this.uniforms.screenBoundsReference = uniform(new THREE.Vector3(32, 36.5, 30));
+    this.uniforms.screenBoundsDepthGradient = uniform(new THREE.Vector3());
+    this.uniforms.screenBoundsInset = uniform(new THREE.Vector2());
     /** 0 = soft push only (chamber); >0 = reflective bounce with this restitution. */
     this.uniforms.wallRestitution = uniform(0);
 
@@ -704,6 +778,110 @@ class mlsMpmSimulator {
       this.cellBuffer.element(instanceIndex).get("mass").assign(0);
       this.cellBufferF.element(instanceIndex).assign(0);
     })().compute(cellCount);
+
+    this.kernels.resolveFormation = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+      const state = buildFormationState(
+        this.formationBuffer,
+        instanceIndex,
+        this.uniforms.formationProgress,
+        this.uniforms,
+      );
+      const resolved = this.resolvedFormationBuffer.element(instanceIndex);
+      resolved.get("base").assign(
+        vec4(state.base, state.residualScale),
+      );
+      resolved.get("rotation").assign(state.rotation);
+      resolved.get("state").assign(
+        vec4(
+          state.q,
+          state.sizeScale,
+          state.interactionBudget,
+          state.pointerKernel,
+        ),
+      );
+    })().compute(1);
+
+    this.kernels.design01TargetFlow = Fn(() => {
+      If(
+        instanceIndex.greaterThanEqual(uint(this.uniforms.numParticles)),
+        () => {
+          Return();
+        },
+      );
+
+      const resolved = this.resolvedFormationBuffer.element(instanceIndex);
+      const base = resolved.get("base").xyz.toConst("design01FlowBase");
+      const progress = resolved.get("state").x.clamp(0, 1);
+      const center = mix(
+        this.uniforms.formationFromCenter,
+        this.uniforms.formationToCenter,
+        progress,
+      ).toConst("design01FlowCenter");
+      const radial = safeNormalizeNode(base.sub(center), vec3(0, 1, 0))
+        .toConst("design01FlowRadial");
+      const rayDirection = safeNormalizeNode(
+        this.uniforms.mouseRayDirection,
+        vec3(0, 0, -1),
+      ).toConst("design01FlowRayDirection");
+      const fromOrigin = base.sub(this.uniforms.mouseRayOrigin);
+      const closest = this.uniforms.mouseRayOrigin.add(
+        rayDirection.mul(fromOrigin.dot(rayDirection)),
+      );
+      const rawOutward = base.sub(closest);
+      const rayDistance = rawOutward.length();
+      const outward = safeNormalizeNode(rawOutward, radial)
+        .toConst("design01FlowOutward");
+      const tangentFallback = safeNormalizeNode(
+        cross(radial, vec3(0, 1, 0)),
+        vec3(1, 0, 0),
+      );
+      const tangent = safeNormalizeNode(
+        cross(radial, rayDirection),
+        tangentFallback,
+      ).toConst("design01FlowTangent");
+      const directionSign = mix(
+        float(-1),
+        float(1),
+        step(float(0.5), hash01Node(19.371)),
+      );
+      const impulseDirection = safeNormalizeNode(
+        tangent.mul(directionSign).mul(float(0.82))
+          .add(outward.mul(float(0.42)))
+          .add(radial.mul(float(0.12))),
+        outward,
+      );
+      const pointerKernel = float(1)
+        .sub(smoothstep(float(3.2), float(11.8), rayDistance))
+        .mul(this.uniforms.design01PointerEnergy.clamp(0, 1))
+        .clamp(0, 1);
+
+      const flow = this.design01FlowBuffer.element(instanceIndex);
+      const offset = flow.get("offset").xyz.toVar("design01FlowOffset");
+      const velocity = flow.get("velocity").xyz.toVar("design01FlowVelocity");
+      const dt = this.uniforms.dt.clamp(float(1 / 240), float(1 / 30));
+      const drive = impulseDirection
+        .mul(pointerKernel)
+        .mul(mix(float(16), float(30), this.uniforms.design01PointerEnergy));
+      velocity.addAssign(drive.sub(offset.mul(float(18))).mul(dt));
+      velocity.mulAssign(exp(float(-5.8).mul(dt)));
+      offset.addAssign(velocity.mul(dt));
+
+      const offsetLength = offset.length();
+      offset.mulAssign(
+        float(2.6).div(offsetLength.max(float(0.0001))).min(float(1)),
+      );
+      const retainedEnergy = flow.get("offset").w
+        .mul(exp(float(-3.0).mul(dt)));
+      const flowEnergy = pointerKernel.max(retainedEnergy).clamp(0, 1);
+      flow.get("offset").assign(vec4(offset, flowEnergy));
+      flow.get("velocity").assign(vec4(velocity, 0));
+    })().compute(1);
 
     const encodeFixedPoint = (f32) => {
       return int(f32.mul(this.fixedPointMultiplier));
@@ -1085,6 +1263,10 @@ class mlsMpmSimulator {
       });
 
       If(this.uniforms.settleWeight.greaterThan(float(0.0005)), () => {
+        const formationBase = this.resolvedFormationBuffer
+          .element(instanceIndex)
+          .get("base")
+          .xyz.toConst("resolvedFormationBase");
         const settleData = this.settleTargetBuffer
           .element(instanceIndex)
           .get("settleTarget")
@@ -1114,6 +1296,13 @@ class mlsMpmSimulator {
             ),
           )
           .toVar("settleTargetPos");
+        settleTargetPos.assign(
+          mix(
+            settleTargetPos,
+            formationBase,
+            this.uniforms.formationActive.clamp(0, 1),
+          ),
+        );
 
         If(
           this.uniforms.livingSurfaceAperture
@@ -1247,9 +1436,14 @@ class mlsMpmSimulator {
         const toSettle = settleTargetPos
           .sub(particlePosition)
           .toConst("settleToTarget");
+        const formationCoherenceFloor = mix(
+          float(0.18),
+          float(0.72),
+          this.uniforms.formationActive.clamp(0, 1),
+        ).toConst("formationCoherenceFloor");
         const coherenceAttraction = mix(
           float(1),
-          mix(float(0.18), float(1), particleCoherence),
+          mix(formationCoherenceFloor, float(1), particleCoherence),
           this.uniforms.coherenceMotionT.clamp(0, 1),
         ).toConst("coherenceAttraction");
         particleVelocity.addAssign(
@@ -1388,8 +1582,44 @@ class mlsMpmSimulator {
             .mul(WALL_RESPONSE.predictionScale),
         )
         .toConst("xN");
-      const wallMin = this.uniforms.simBoundsMin.toConst("wallMin");
-      const wallMax = this.uniforms.simBoundsMax.toConst("wallMax");
+      const baseWallMin = this.uniforms.simBoundsMin.toConst("baseWallMin");
+      const baseWallMax = this.uniforms.simBoundsMax.toConst("baseWallMax");
+      const wallCenter = baseWallMin
+        .add(baseWallMax)
+        .mul(float(0.5))
+        .toConst("wallCenter");
+      const baseWallHalf = baseWallMax
+        .sub(baseWallMin)
+        .mul(float(0.5))
+        .toConst("baseWallHalf");
+      const perspectiveScale = float(1)
+        .add(
+          xN
+            .sub(this.uniforms.screenBoundsReference)
+            .dot(this.uniforms.screenBoundsDepthGradient),
+        )
+        .clamp(float(0.45), float(1.65))
+        .toConst("screenWallPerspectiveScale");
+      const visualHalfX = baseWallHalf.x
+        .mul(perspectiveScale)
+        .sub(this.uniforms.screenBoundsInset.x)
+        .max(float(0.5))
+        .toConst("screenWallHalfX");
+      const visualHalfY = baseWallHalf.y
+        .mul(perspectiveScale)
+        .sub(this.uniforms.screenBoundsInset.y)
+        .max(float(0.5))
+        .toConst("screenWallHalfY");
+      const wallMin = vec3(
+        wallCenter.x.sub(visualHalfX),
+        wallCenter.y.sub(visualHalfY),
+        baseWallMin.z,
+      ).toConst("wallMin");
+      const wallMax = vec3(
+        wallCenter.x.add(visualHalfX),
+        wallCenter.y.add(visualHalfY),
+        baseWallMax.z,
+      ).toConst("wallMax");
 
       // Reflective bounce (Lenox screen edges). restitution 0 = disabled.
       const rest = this.uniforms.wallRestitution.toConst("wallRest");
@@ -2093,12 +2323,16 @@ class mlsMpmSimulator {
     this.uniforms.mouseRayDirection.value.copy(direction.normalize());
     this.uniforms.mouseRayOrigin.value.copy(origin);
     this.mousePos.copy(pos);
+    if (this.uniforms.formationActive.value > 0.5) {
+      this.formationResolveDirty = true;
+    }
   }
 
   async update(interval) {
     if (!this.renderer || !this.particleBuffer || !this.runtime) {
       return;
     }
+    this.lastDispatchPasses = 0;
 
     const { particles, run, speed } = this.runtime;
 
@@ -2106,6 +2340,7 @@ class mlsMpmSimulator {
 
     if (particles !== this.numParticles) {
       this.numParticles = particles;
+      this.design01FlowPrimed = false;
       this.uniforms.numParticles.value = particles;
       this.kernels.p2g1.count = particles;
       this.kernels.p2g1.updateDispatchCount();
@@ -2113,6 +2348,11 @@ class mlsMpmSimulator {
       this.kernels.p2g2.updateDispatchCount();
       this.kernels.g2p.count = particles;
       this.kernels.g2p.updateDispatchCount();
+      this.kernels.resolveFormation.count = particles;
+      this.kernels.resolveFormation.updateDispatchCount();
+      this.kernels.design01TargetFlow.count = particles;
+      this.kernels.design01TargetFlow.updateDispatchCount();
+      this.formationResolveDirty = true;
       this.kernels.postEnterArrestDamp.count = particles;
       this.kernels.postEnterArrestDamp.updateDispatchCount();
       this.kernels.initPostEnterRiftFlight.count = particles;
@@ -2127,12 +2367,58 @@ class mlsMpmSimulator {
       this.kernels.gravityLiving.updateDispatchCount();
     }
 
+    if (
+      this.runtime.design01FlowActive
+      && this.design01BootstrapPending
+      && this.uniforms.formationActive.value > 0.5
+    ) {
+      const primeInterval = Math.max(1 / 240, Math.min(interval, 1 / 60));
+      this.uniforms.dt.value = primeInterval * 6 * this.design01BootstrapSpeed;
+      const primeKernels = [
+        ...(this.formationResolveDirty ? [this.kernels.resolveFormation] : []),
+        this.kernels.clearGrid,
+        this.kernels.p2g1,
+        this.kernels.p2g2,
+        this.kernels.updateGrid,
+        this.kernels.g2p,
+      ];
+      await this.renderer.computeAsync(primeKernels);
+      this.formationResolveDirty = false;
+      this.design01FlowPrimed = true;
+      this.design01BootstrapPending = false;
+
+      // One neutral Target Flow pass establishes the same authored storage
+      // state as the animated path. Reduced Motion then remains at zero passes.
+      this.uniforms.dt.value = primeInterval;
+      await this.renderer.computeAsync(this.kernels.design01TargetFlow);
+      this.lastDispatchPasses = primeKernels.length + 1;
+      return;
+    }
+
     // FORENSIC: dispatch one-shot velocity + C zero before main kernels.
     if (this._zeroVelocitiesNextFrame) {
       this._zeroVelocitiesNextFrame = false;
       this.kernels.zeroVelocities.count = this.numParticles;
       this.kernels.zeroVelocities.updateDispatchCount();
       await this.renderer.computeAsync(this.kernels.zeroVelocities);
+    }
+
+    if (
+      this.runtime.design01FlowActive
+      && this.design01FlowPrimed
+      && this.uniforms.formationActive.value > 0.5
+    ) {
+      this.uniforms.dt.value = Math.max(1 / 240, Math.min(interval, 1 / 30));
+      const kernels = [
+        ...(this.formationResolveDirty ? [this.kernels.resolveFormation] : []),
+        ...(run ? [this.kernels.design01TargetFlow] : []),
+      ];
+      if (kernels.length > 0) {
+        await this.renderer.computeAsync(kernels);
+      }
+      this.lastDispatchPasses = kernels.length;
+      this.formationResolveDirty = false;
+      return;
     }
 
     if (this.runtime.postEnterArrestActive) {
@@ -2198,6 +2484,9 @@ class mlsMpmSimulator {
 
     if (run) {
       const kernels = [
+        ...(this.uniforms.formationActive.value > 0.5 && this.formationResolveDirty
+          ? [this.kernels.resolveFormation]
+          : []),
         this.kernels.clearGrid,
         this.kernels.p2g1,
         this.kernels.p2g2,
@@ -2208,8 +2497,22 @@ class mlsMpmSimulator {
         this.uniforms.dt.value = subDt;
         await this.renderer.computeAsync(kernels);
       }
+      this.lastDispatchPasses = kernels.length * substeps;
+      this.formationResolveDirty = false;
+    } else if (
+      this.uniforms.formationActive.value > 0.5
+      && this.formationResolveDirty
+    ) {
+      await this.renderer.computeAsync(this.kernels.resolveFormation);
+      this.lastDispatchPasses = 1;
+      this.formationResolveDirty = false;
+    } else {
+      this.lastDispatchPasses = 0;
     }
 
+    if (run && this.runtime.design01FlowActive) {
+      this.design01FlowPrimed = true;
+    }
   }
 
   /**
@@ -2272,6 +2575,28 @@ class mlsMpmSimulator {
     }
   }
 
+  setFormationPointerEnergy(value) {
+    const clamped = Math.max(0, Math.min(Number.isFinite(value) ? value : 0, 1));
+    const next = clamped < 1e-4 ? 0 : clamped;
+    if (next === this.uniforms.formationPointerEnergy.value) return;
+    this.uniforms.formationPointerEnergy.value = next;
+    this.formationResolveDirty = true;
+  }
+
+  setDesign01PointerEnergy(value) {
+    const clamped = Math.max(0, Math.min(Number.isFinite(value) ? value : 0, 1));
+    this.uniforms.design01PointerEnergy.value = clamped < 1e-4 ? 0 : clamped;
+  }
+
+  setFormationPairCenters(from, to) {
+    if (!from || !to || from.length !== 3 || to.length !== 3) return false;
+    if (![...from, ...to].every(Number.isFinite)) return false;
+    this.uniforms.formationFromCenter.value.set(from[0], from[1], from[2]);
+    this.uniforms.formationToCenter.value.set(to[0], to[1], to[2]);
+    this.formationResolveDirty = true;
+    return true;
+  }
+
   setMouseInfluence(value) {
     this.uniforms.mouseInfluence.value = value;
   }
@@ -2315,6 +2640,9 @@ class mlsMpmSimulator {
     this.uniforms.apicBlend.value = runtime.apicBlend;
     this.uniforms.maxVelocity.value = runtime.maxVelocity;
     this.uniforms.restDensity.value = runtime.restDensity;
+    this.uniforms.formationPointerScale.value =
+      Math.max(0, runtime.actualSize ?? 1) * 0.26 * 1.08;
+    this.uniforms.design01HeroActive.value = runtime.design01HeroActive ? 1 : 0;
     this.uniforms.sourceFieldCenter.value.copy(runtime.sourceFieldCenter);
     this.uniforms.sourceFieldSecondaryCenter.value.copy(
       runtime.sourceFieldSecondaryCenter,
@@ -2385,6 +2713,19 @@ class mlsMpmSimulator {
         this.gridSize.y - wallLo,
         this.gridSize.z - wallLo,
       );
+    }
+    if (runtime.screenBoundsReference) {
+      this.uniforms.screenBoundsReference.value.copy(runtime.screenBoundsReference);
+    }
+    if (runtime.screenBoundsDepthGradient) {
+      this.uniforms.screenBoundsDepthGradient.value.copy(runtime.screenBoundsDepthGradient);
+    } else {
+      this.uniforms.screenBoundsDepthGradient.value.set(0, 0, 0);
+    }
+    if (runtime.screenBoundsInset) {
+      this.uniforms.screenBoundsInset.value.copy(runtime.screenBoundsInset);
+    } else {
+      this.uniforms.screenBoundsInset.value.set(0, 0);
     }
     this.uniforms.wallRestitution.value = runtime.wallRestitution ?? 0;
   }
@@ -2493,6 +2834,71 @@ class mlsMpmSimulator {
     }
 
     this.markParticleBufferDirty();
+  }
+
+  /**
+   * Hero Field authored seed — "Suspended Rift Mass" (V1).
+   *
+   * Replaces the inherited Chamber idle path (`carvePopulationSlit` +
+   * recall/return targets) for the hero-field mode only. One coherent
+   * floating mass: primary core, upper canopy, depth stream, sparse
+   * satellites, an authored stay-out void, and an explicit floor at
+   * `floorY`. Deterministic placement and velocities from
+   * `buildHeroFieldSeed` — same reload, same world.
+   *
+   * Fully resets every particle state field so no stale values survive
+   * from a previous population (position, velocity, C, density,
+   * direction, color, heat, dissolveState, coherence, mass).
+   *
+   * @param {"landscape"|"portrait"} layout  resolved from composition mode
+   */
+  seedHeroFieldPopulation(layout = "landscape", viewport = null) {
+    if (!this.particleBuffer || !this.runtime) return;
+
+    const particleCount = Math.min(
+      this.runtime?.particles
+        ?? (this.numParticles > 0 ? this.numParticles : (this.particleBuffer.length || 0)),
+      this.particleBuffer.length || 0,
+    );
+    if (particleCount <= 0) return;
+
+    const { positions, velocities } = buildHeroFieldSeed(particleCount, layout);
+    fitHeroFieldSeedToViewport(positions, viewport);
+
+    const zeroColor = [0, 0, 0];
+    const zeroMat3 = new Array(12).fill(0);
+
+    for (let i = 0; i < particleCount; i++) {
+      this.particleBuffer.set(i, "position", [
+        positions[i * 3 + 0],
+        positions[i * 3 + 1],
+        positions[i * 3 + 2],
+      ]);
+      this.particleBuffer.set(i, "velocity", [
+        velocities[i * 3 + 0],
+        velocities[i * 3 + 1],
+        velocities[i * 3 + 2],
+      ]);
+      this.particleBuffer.set(i, "C", zeroMat3);
+      this.particleBuffer.set(i, "density", this.runtime.restDensity);
+      // Direction is solver-owned after the first step; give a deterministic
+      // neutral start aligned with the seed's near-zero motion.
+      this.particleBuffer.set(i, "direction", [
+        velocities[i * 3 + 0],
+        velocities[i * 3 + 1],
+        velocities[i * 3 + 2],
+      ]);
+      this.particleBuffer.set(i, "color", zeroColor);
+      this.particleBuffer.set(i, "heat", 0);
+      this.particleBuffer.set(i, "dissolveState", [0, 0]);
+      // Never inherit a stale cohort: uninitialised memory reads as permanent
+      // false coherence and the core would exist before anyone touched it.
+      this.particleBuffer.set(i, "coherence", 0);
+      this.particleBuffer.set(i, "mass", 1.0);
+    }
+
+    this.markParticleBufferDirty();
+    return { positions, velocities };
   }
 
   /**
@@ -3049,16 +3455,104 @@ class mlsMpmSimulator {
     return true;
   }
 
+  /** Upload one active ALLOTROP pair. Scroll updates only the progress uniform. */
+  uploadFormationPair(packed, count) {
+    if (!this.formationBuffer || !packed) return false;
+    const requested = Math.floor(count);
+    if (
+      this.formationBuffer.structSize !== 24
+      || requested <= 0
+      || requested > (this.formationBuffer.length || 0)
+      || packed.length !== requested * 24
+    ) {
+      return false;
+    }
+    const n = requested;
+    if (n <= 0) return false;
+    const floatCount = n * this.formationBuffer.structSize;
+    for (let index = 0; index < floatCount; index++) {
+      if (!Number.isFinite(packed[index])) return false;
+    }
+    for (let index = 0; index < n; index++) {
+      const base = index * 24;
+      if (
+        packed[base + 3] <= 0
+        || packed[base + 7] <= 0
+        || packed[base + 19] <= 0
+        || packed[base + 20] < 0
+        || packed[base + 20] > 1
+        || packed[base + 22] <= 0
+        || packed[base + 23] !== 0
+      ) return false;
+      for (const rotationOffset of [8, 12]) {
+        const magnitude = Math.hypot(
+          packed[base + rotationOffset],
+          packed[base + rotationOffset + 1],
+          packed[base + rotationOffset + 2],
+          packed[base + rotationOffset + 3],
+        );
+        if (Math.abs(magnitude - 1) > 1e-4) return false;
+      }
+    }
+    this.formationBuffer.floatArray.fill(0);
+    this.formationBuffer.floatArray.set(packed.subarray(0, floatCount));
+    const capacity = this.formationBuffer.length || n;
+    for (let index = n; index < capacity; index++) {
+      const source = (index % n) * this.formationBuffer.structSize;
+      const target = index * this.formationBuffer.structSize;
+      this.formationBuffer.floatArray.copyWithin(
+        target,
+        source,
+        source + this.formationBuffer.structSize,
+      );
+    }
+    const buffer = this.formationBuffer.buffer;
+    if (buffer) {
+      buffer.needsUpdate = true;
+      if (buffer.value) buffer.value.needsUpdate = true;
+    }
+    this.uniforms.formationActive.value = 1;
+    this.formationResolveDirty = true;
+    return true;
+  }
+
+  requestDesign01Bootstrap(speed = 1) {
+    this.design01BootstrapSpeed = Number.isFinite(speed)
+      ? Math.max(0.05, speed)
+      : 1;
+    this.design01BootstrapPending = true;
+    this.design01FlowPrimed = false;
+    this.formationResolveDirty = true;
+    return true;
+  }
+
+  setFormationDrive(progress, graphiteT = 0) {
+    if (!this.uniforms.formationProgress) return;
+    const nextProgress = Math.min(
+      1,
+      Math.max(0, Number.isFinite(progress) ? progress : 0),
+    );
+    if (Math.abs(nextProgress - this.uniforms.formationProgress.value) > 1e-6) {
+      this.uniforms.formationProgress.value = nextProgress;
+      this.formationResolveDirty = true;
+    }
+    this.uniforms.formationGraphiteT.value = Math.min(
+      1,
+      Math.max(0, Number.isFinite(graphiteT) ? graphiteT : 0),
+    );
+  }
+
   /** Living Surface boot only: begin inside the ambient target bank. */
-  seedPopulationFromTargets(points, count) {
+  seedPopulationFromTargets(points, count, startIndex = 0) {
     if (!this.runtime || !this.particleBuffer || !points) return false;
     const cap = this.particleBuffer.length || 0;
     const n = Math.min(Math.floor(count), cap, Math.floor(points.length / 3));
-    if (n <= 0) return false;
+    const start = Math.min(n, Math.max(0, Math.floor(startIndex)));
+    if (n <= 0 || start >= n) return false;
 
     const zeroColor = [0, 0, 0];
     const zeroMat3 = new Array(12).fill(0);
-    for (let i = 0; i < n; i++) {
+    for (let i = start; i < n; i++) {
       const angle = TAU * hash01(i, 17.917);
       const speed = 0.22 + hash01(i, 41.233) * 0.18;
       this.particleBuffer.set(i, "position", [
@@ -3145,12 +3639,18 @@ class mlsMpmSimulator {
     this.recallTargetBuffer = null;
     this.returnBodyTargetBuffer = null;
     this.settleTargetBuffer = null;
+    this.formationBuffer = null;
+    this.resolvedFormationBuffer = null;
+    this.design01FlowBuffer = null;
     this.riftFlightStartBuffer = null;
     this.riftFlightTargetBuffer = null;
     this.gravityCreationStartBuffer = null;
     this._zeroVelocitiesNextFrame = false;
     this._postEnterRiftFlightInitPending = false;
     this._gravityCreationInitPending = false;
+    this.design01FlowPrimed = false;
+    this.design01BootstrapPending = false;
+    this.design01BootstrapSpeed = 1;
     this.kernels = {};
     this.uniforms = {};
     this.particleBuffer = null;

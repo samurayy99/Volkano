@@ -5,7 +5,7 @@ type Localized = Record<Locale, string>;
 /**
  * The content kernel. One set of words, five chapters, two locales — shared by every
  * registered design. A design may change type, colour, rhythm and composition; it may
- * never change a sentence. Contract: docs/product/studio-content-contract.md
+ * never change a sentence. This file is the contract.
  */
 export const chapters: ReadonlyArray<{
   id: ChapterId;

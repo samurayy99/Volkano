@@ -63,6 +63,47 @@ export type LenoxSignals = {
  */
 export type CompositionMode = "side" | "banded";
 
+/** Deterministic macro states for the Design 01 ALLOTROP material journey. */
+export type FormationId =
+  | "source.graphiteClosed"
+  | "source.graphiteOpen"
+  | "principle.triad"
+  | "principle.graphite"
+  | "principle.fullerene"
+  | "principle.diamondLattice"
+  | "principle.continuum"
+  | "capability.graphene"
+  | "capability.triaxis"
+  | "capability.nanotube"
+  | "capability.routingLattice"
+  | "lenox.seed"
+  | "lenox.crystal"
+  | "lenox.roughDiamond"
+  | "lenox.vectorLoom"
+  | "contact.brilliant"
+  | "contact.forwardVector";
+
+/**
+ * The screen band the matter may occupy, named after what the chapter needs.
+ * Resolved to real bounds in `formations/allotropFormations.ts`.
+ */
+export type MatterCorridorId = "wide" | "narrow" | "right";
+
+/** Scroll-owned formation pair. The engine must not time-smooth `progress`. */
+export type FormationDrive = {
+  from: FormationId;
+  to: FormationId;
+  progress: number;
+  phase: "hold" | "morph";
+  /**
+   * Which copy corridor the matter must stay inside. This belongs to the
+   * chapter, not the formation: the same graphite body is the hero and is also
+   * held under the far narrower capabilities column, and authoring both by hand
+   * is how a headline ends up with matter across it.
+   */
+  corridor: MatterCorridorId;
+};
+
 /**
  * The signature worlds (DER BEGLEITER). Lenox himself is never themed — a
  * signature is the room he stands in: backdrop, floor, his reflections, and
@@ -167,6 +208,8 @@ export interface FlowEngineApi {
   setLenoxEyeRigEnhanced: (enabled: boolean) => void;
   /** Which way he makes room when the page is built. Lenox mode only. */
   setCompositionMode: (mode: CompositionMode) => void;
+  /** Exact scroll-owned Design 01 macro geometry. */
+  setFormationDrive: (drive: FormationDrive) => void;
   /** Living Surface opening intent; the engine owns damping and return. */
   setLivingSurfaceOpening: (
     intent: { tension: number; aperture: number },
@@ -254,7 +297,7 @@ export interface FlowEngineApi {
 export interface FlowEngineBridgeOptions {
   onError?: (error: unknown) => void;
   /** Explicit production experience. Legacy booleans remain compatible. */
-  experienceMode?: "legacy-lenox" | "living-surface";
+  experienceMode?: "legacy-lenox" | "living-surface" | "hero-field";
   /** Lenox proof: void visual (no vessel), LenoxEyesDrive owns the runtime. */
   lenoxMode?: boolean;
   /** Compresses the awakening timeline and calms all motion. */

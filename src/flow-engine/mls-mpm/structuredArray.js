@@ -1,3 +1,14 @@
+/*
+ * Derived from holtsetio/flow — https://github.com/holtsetio/flow
+ * MIT License, Copyright (c) 2025 Holtsetio. Full text: ./LICENSE.upstream
+ *
+ * Substantially verbatim from the upstream project (two methods added).
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in the
+ * Software without restriction, subject to the conditions in LICENSE.upstream. THE
+ * SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+ */
 import {struct, instancedArray} from "three/tsl";
 
 const TYPES = {

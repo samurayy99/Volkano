@@ -4,6 +4,8 @@ import type { ChapterId } from "./experienceState";
 import { semanticScrollTarget } from "./experienceState";
 import { mapScrollToClipProgress } from "./studioTimeline";
 import { mapStudioOpening, type StudioOpeningScore } from "./studioOpening";
+import { mapAllotropFormation } from "./allotropScore";
+import type { FormationDrive } from "../../flow-engine/types";
 import type { StationPose } from "../stage/stations";
 
 export type StudioStation = {
@@ -27,6 +29,7 @@ type Hooks = {
   onProgress: (progress: number, clipAProgress: number) => void;
   onPosition: (position: SemanticPosition, changed: boolean) => void;
   onOpening: (score: StudioOpeningScore) => void;
+  onFormation: (drive: FormationDrive) => void;
   setPose: (pose: StationPose, tau: number) => void;
 };
 
@@ -81,6 +84,12 @@ export function createStudioDirector(
     position = { chapter: stations[index].id, localProgress };
     const opening = mapStudioOpening(position.chapter, localProgress, reduced);
     hooks.onOpening(opening);
+    if (reduced && changed) {
+      hooks.setPose(poses[index], 0);
+    }
+    hooks.onFormation(
+      mapAllotropFormation(position.chapter, localProgress, mode, reduced),
+    );
 
     sections.forEach((item, itemIndex) => {
       item.dataset.live = itemIndex === index ? "true" : "false";
@@ -89,15 +98,40 @@ export function createStudioDirector(
         itemIndex < index ? "1" : itemIndex > index ? "0" : localProgress.toFixed(4),
       );
     });
+    const capabilities = sections.find(
+      (item) => item.dataset.chapter === "capabilities",
+    );
+    if (capabilities) {
+      const capabilityLocal = position.chapter === "capabilities"
+        ? localProgress
+        : position.chapter === "hero" || position.chapter === "principle" ? 0 : 1;
+      capabilities.dataset.capabilityActive = capabilityLocal < 0.3
+        ? "0"
+        : capabilityLocal < 0.58 ? "1" : "2";
+      const exitRaw = clamp01((capabilityLocal - 0.62) / 0.1);
+      const capabilityExit = reduced
+        ? 0
+        : exitRaw * exitRaw * (3 - 2 * exitRaw);
+      capabilities.style.setProperty("--capability-exit", capabilityExit.toFixed(4));
+    }
+    const lenox = sections.find((item) => item.dataset.chapter === "lenox");
+    if (lenox) {
+      const lenoxLocal = position.chapter === "lenox"
+        ? localProgress
+        : position.chapter === "contact" ? 1 : 0;
+      const exitRaw = clamp01((lenoxLocal - 0.58) / 0.1);
+      const lenoxExit = reduced
+        ? 0
+        : exitRaw * exitRaw * (3 - 2 * exitRaw);
+      lenox.style.setProperty("--lenox-exit", lenoxExit.toFixed(4));
+    }
 
     if (!reduced) {
       const next = Math.min(index + 1, poses.length - 1);
       const eased = openingEnabled && index === 0
         ? opening.camera
         : localProgress * localProgress * (3 - 2 * localProgress);
-      hooks.setPose(lerpPose(poses[index], poses[next], eased), 0.06);
-    } else if (changed) {
-      hooks.setPose(poses[index], 0);
+      hooks.setPose(lerpPose(poses[index], poses[next], eased), openingEnabled ? 0 : 0.06);
     }
     hooks.onPosition(position, changed);
   };
