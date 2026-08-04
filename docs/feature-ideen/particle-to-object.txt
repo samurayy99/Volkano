@@ -1,0 +1,2420 @@
+Overview
+Relevant source files
+.github/workflows/ci-cd-production.yml
+README.md
+package.json
+src/index.html
+src/style.css
+This document provides an introduction to the Morph Particles system, a WebGL-based interactive particle animation framework that enables smooth morphing between 3D models through particle transformations. The system creates visually stunning effects where particles dynamically rearrange to form different shapes as users scroll through a webpage.
+
+Purpose and Scope
+Morph Particles is designed to:
+
+Create high-performance particle-based transitions between 3D models
+Utilize GPU-accelerated simulations via WebGL and Frame Buffer Objects (FBO)
+Provide an interactive scrolling experience where visual elements morph in response to user input
+Demonstrate advanced shader-based techniques for particle rendering and animation
+For detailed information on the particle system implementation, see Particle System, and for the underlying FBO technology, see Frame Buffer Objects.
+
+System Overview
+Morph Particles is built on a modular architecture centered around the Experience class, which orchestrates various subsystems to create the interactive visual experience.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/index.html
+74-75
+ 
+package.json
+10-24
+
+Key Components
+The system consists of the following key components:
+
+Component	Description	Role
+Experience	Central orchestrator	Manages the main application lifecycle
+World	Environment container	Houses the 3D scene and visual elements
+Page	Content manager	Controls the particle effects and user interaction
+FBO (Frame Buffer Objects)	Particle system	Enables efficient GPU-based particle simulation
+Renderer	Display engine	Handles WebGL rendering and post-processing
+Time	Animation controller	Manages timekeeping and animation updates
+Resources	Asset management	Loads and prepares 3D models and textures
+Sources: 
+src/index.html
+44
+ 
+src/index.html
+47-73
+
+Particle Rendering Flow
+The core functionality of Morph Particles is its particle simulation and rendering pipeline, which enables the dynamic morphing between different 3D shapes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/index.html
+44-47
+
+User Interaction
+The system is designed to respond to user scrolling, which triggers the particle morphing animations. As the user scrolls down the page, the particles transition between different predefined shapes.
+
+
+
+Sources: 
+src/style.css
+229-275
+ 
+src/index.html
+47-73
+
+Technical Stack
+Morph Particles leverages several modern web technologies:
+
+Three.js: 3D rendering library for WebGL
+GLSL Shaders: Custom shader code for particle simulation and rendering
+Vite: Build tool and development server
+JavaScript/ES Modules: Modern JavaScript with module system
+CSS: Styling and animations
+GitHub Actions: CI/CD pipeline for deployment
+Sources: 
+package.json
+10-24
+ 
+.github/workflows/ci-cd-production.yml
+1-33
+
+Getting Started
+To run the Morph Particles system locally:
+
+Clone the repository
+Install dependencies with npm install
+Start the development server with npm run dev
+Access the application through your web browser
+For production deployment, the system uses GitHub Actions to build and deploy the code to a production server via FTP.
+
+Sources: 
+README.md
+1-6
+ 
+.github/workflows/ci-cd-production.yml
+15-32
+
+
+Architecture
+Relevant source files
+src/Experience/Experience.js
+src/Experience/World/Page.js
+src/Experience/World/World.js
+The Architecture page describes the overall structure of the morph-particles system, including its core components, their relationships, and how they work together to create the particle morphing effects. This document covers the high-level system design, component interactions, and data flow.
+
+For details about the particle system implementation, see Particle System. For information about specific rendering techniques, see Rendering Pipeline.
+
+System Overview
+The morph-particles project implements a framework for creating 3D particle animations that morph between different models based on user scrolling. The system is built with Three.js and uses Frame Buffer Objects (FBO) to efficiently simulate and render thousands of particles.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Experience.js
+18-106
+ 
+src/Experience/World/World.js
+5-87
+ 
+src/Experience/World/Page.js
+21-56
+
+Component Hierarchy
+The system is organized in a hierarchical structure with the Experience class at the top, serving as the main orchestrator. The architecture follows a composition pattern where each component has a specific responsibility.
+
+Sources: 
+src/Experience/Experience.js
+18-106
+ 
+src/Experience/World/World.js
+5-62
+ 
+src/Experience/World/Page.js
+21-427
+
+Key responsibilities of each component:
+
+Experience: Central orchestrator that initializes and manages all other components
+World: Manages the 3D scene environment and objects within it
+Page: Controls the particle system and handles user scrolling interaction
+FBO: Implements the frame buffer object for efficient particle simulation and rendering
+Initialization Flow
+The system follows a specific initialization sequence to ensure all resources are loaded before setting up the particle system:
+
+
+
+Sources: 
+src/Experience/Experience.js
+77-105
+ 
+src/Experience/World/World.js
+17-61
+ 
+src/Experience/World/Page.js
+55-299
+
+The initialization process follows a resource-dependent pattern, where the world and particle systems are created only after all required assets have been loaded by the Resources manager.
+
+Data Flow
+The morph-particles system processes data through several stages, from loading 3D models to rendering particles on screen:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+108-236
+ 
+src/Experience/World/Page.js
+401-426
+
+The data flow represents how information moves through the system:
+
+3D models are loaded and converted to data textures using the makeTexture() method
+Scroll position and time values are captured and normalized
+The simulation shader uses these inputs to calculate new particle positions
+The render shader displays particles based on the calculated positions
+The final result is rendered to the screen
+Model Morphing System
+The core feature of the system is its ability to morph between different 3D models. This is achieved through a sophisticated texture-based approach:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+58-107
+ 
+src/Experience/World/Page.js
+141-186
+ 
+src/Experience/World/Page.js
+187-236
+
+The model morphing process involves:
+
+Extracting geometry from GLTF models and preprocessing them (scaling, positioning)
+Converting vertex position data into data textures using the makeTexture() method
+Passing these textures as uniforms to the simulation shader
+Using the scroll position to determine the interpolation between models
+Computing the final particle positions in the simulation shader
+Rendering particles at the calculated positions
+Scroll Interaction System
+User scrolling drives the particle morphing effects through a carefully designed interaction system:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+47-49
+ 
+src/Experience/World/Page.js
+309-362
+ 
+src/Experience/World/Page.js
+401-426
+
+The scroll interaction works as follows:
+
+A scroll event listener is attached to the fake-scroll element
+When scrolling occurs, the Page.scroll() method captures and normalizes the scroll position
+The normalized value (0-1 range) is smoothly interpolated to prevent sudden jumps
+This value is passed to shader materials as a uniform
+The shader uses this value to determine the morphing stage between models
+The particles are updated and rendered based on this interpolation
+Update Loop
+The animation and interaction system relies on a continuous update loop:
+
+
+
+Sources: 
+src/Experience/Experience.js
+86-91
+ 
+src/Experience/Experience.js
+121-130
+ 
+src/Experience/World/Page.js
+401-426
+
+The update loop follows this sequence:
+
+The Time class dispatches a tick event on each animation frame
+The Experience class receives this event and calls update() on its components
+The update propagates through the component hierarchy
+The Page class updates simulation parameters and scroll values
+The FBO instance runs the simulation and render passes
+The particles are updated and displayed on screen
+Summary
+The morph-particles architecture follows a component-based design that separates concerns while maintaining efficient data flow. The central Experience class orchestrates all other components, the World class manages the 3D environment, and the Page class handles the particle system through the FBO implementation.
+
+The system's innovative approach to particle morphing relies on converting 3D model geometry to data textures, which are then processed by custom shaders in a two-pass rendering pipeline. User scrolling provides the interactive element, controlling the morphing between different models through normalized scroll values passed to the shader system.
+
+For detailed information about the implementation of specific components, refer to Experience Orchestration, World and Page System, and Rendering Pipeline.
+
+Experience Orchestration
+Relevant source files
+src/Experience/Camera.js
+src/Experience/Experience.js
+Purpose and Scope
+This document details the Experience class, which serves as the central orchestrator for the morph-particles system. The Experience class manages the core Three.js components, handles user interactions, coordinates the update loop, and ensures proper communication between various subsystems. It essentially acts as the "backbone" of the application, tying together rendering, particle simulation, camera controls, and other essential components.
+
+For information about the World system and Page class that handle the 3D environment and particle effects, see World and Page System. For details on the rendering pipeline, see Rendering Pipeline.
+
+Overview
+The Experience class implements the singleton pattern to ensure a single instance manages the entire application. It initializes all core subsystems and maintains references to them, providing a centralized point of access for cross-component communication.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Experience.js
+18-211
+
+Initialization and Component Setup
+When the Experience class is instantiated, it performs the following initialization sequence:
+
+
+
+Sources: 
+src/Experience/Experience.js
+20-106
+
+Component Construction
+The Experience constructor initializes all necessary components in a specific order to ensure dependencies are available when needed:
+
+First sets up utility classes like Debug, Sizes, and Time
+Creates the THREE.js scene
+Initializes the Camera, Renderer, and Sound systems
+Finally creates the World, which depends on all previous components
+The Experience class attaches event listeners to the Sizes and Time utilities to handle resize events and animation updates respectively.
+
+Sources: 
+src/Experience/Experience.js
+57-75
+
+Configuration and Device Handling
+The Experience class includes methods to:
+
+Detect mobile devices using user agent patterns
+Configure debug mode based on URL hash
+Calculate appropriate pixel ratio
+Determine the correct canvas dimensions
+this.config = {
+    debug: window.location.hash === '#debug',
+    pixelRatio: Math.min(Math.max(window.devicePixelRatio, 1), 2),
+    width: boundings.width,
+    height: boundings.height || window.innerHeight
+}
+Sources: 
+src/Experience/Experience.js
+132-176
+
+Event Management
+The Experience class serves as the central event coordinator, handling various types of events and distributing them to appropriate subsystems.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Experience.js
+81-104
+
+Resize Handling
+When the window resizes, the Experience class triggers resize methods on relevant components:
+
+resize() {
+    this.camera.resize()
+    this.world.resize()
+    this.renderer.resize()
+}
+This ensures the camera aspect ratio, renderer dimensions, and any size-dependent elements in the world are properly updated.
+
+Sources: 
+src/Experience/Experience.js
+108-114
+
+Animation Loop
+The Experience class manages the animation loop through the Time utility. On each frame:
+
+Debug panel is refreshed (if active)
+Animation timeline is updated
+World components are updated
+Camera is updated
+Renderer performs final rendering
+update() {
+    if (this.debug.active)
+        this.debug.panel.refresh()
+    this.timeline.time(this.time.elapsed);
+    this.world.update()
+    this.camera.update()
+    this.renderer.update()
+}
+Sources: 
+src/Experience/Experience.js
+121-130
+
+Resource Management
+The Experience class initializes the Resources utility with a list of sources to preload. This ensures all assets (models, textures, etc.) are available before particle systems are initialized.
+
+this.resources = new Resources(sources)
+The Resources utility emits a 'ready' event when all assets are loaded, which other components can listen for to initialize their dependent systems.
+
+Sources: 
+src/Experience/Experience.js
+57
+
+Camera System Integration
+The Experience class creates and maintains the Camera instance, which handles:
+
+Perspective camera setup
+OrbitControls for user interaction
+Camera positioning and targeting
+Viewport aspect ratio adjustments
+The Camera class itself references back to the Experience to access shared resources like the scene, canvas, and size information.
+
+
+
+Sources: 
+src/Experience/Experience.js
+72
+ 
+src/Experience/Camera.js
+6-72
+
+Cleanup and Resource Management
+The Experience class implements a thorough cleanup method to prevent memory leaks:
+
+destroy() {
+    // Remove event listeners
+    this.sizes.off('resize')
+    this.time.off('tick')
+    
+    // Dispose of all meshes and materials
+    this.scene.traverse((child) => {
+        if(child instanceof THREE.Mesh) {
+            child.geometry.dispose()
+            // Dispose material properties
+            for(const key in child.material) {
+                const value = child.material[key]
+                if(value && typeof value.dispose === 'function') {
+                    value.dispose()
+                }
+            }
+        }
+    })
+    
+    // Dispose of controls and renderer
+    this.camera.controls.dispose()
+    this.renderer.instance.dispose()
+    
+    // Destroy debug UI if active
+    if(this.debug.active)
+        this.debug.ui.destroy()
+}
+This method:
+
+Removes event listeners to prevent callbacks after destruction
+Properly disposes of all THREE.js resources (geometries, materials, textures)
+Cleans up the camera controls and renderer
+Destroys the debug UI if active
+Sources: 
+src/Experience/Experience.js
+178-210
+
+Component Relationships and Dependencies
+The Experience class creates and maintains references to all major system components, establishing a clear hierarchy and dependency chain.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Experience.js
+57-75
+
+Technical Details
+Singleton Implementation
+The Experience class uses the singleton pattern to ensure only one instance exists:
+
+let instance = null
+ 
+export default class Experience {
+    constructor(_canvas) {
+        // Singleton
+        if(instance) {
+            return instance
+        }
+        instance = this
+        
+        // Rest of initialization...
+    }
+}
+This allows any component to access the Experience instance through new Experience() and always receive the same instance, facilitating global access to core systems.
+
+Sources: 
+src/Experience/Experience.js
+16-27
+
+Global Access
+The Experience instance is attached to the window object for convenient access:
+
+// Global access
+window.experience = this
+This makes debugging easier and allows external scripts or components to access the Experience instance.
+
+Sources: 
+src/Experience/Experience.js
+48
+
+Summary
+The Experience class serves as the backbone of the morph-particles system, orchestrating all components and managing their lifecycle. It:
+
+Initializes and connects all subsystems
+Manages the animation loop
+Handles browser events and user interactions
+Provides global access to shared resources
+Ensures proper resource cleanup
+Its central role makes it essential for understanding the overall architecture of the application and how different components interact with each other.
+
+World and Page System
+Relevant source files
+src/Experience/World/Page.js
+src/Experience/World/World.js
+Purpose and Scope
+This document details the World and Page system in the Morph Particles application. The World system serves as a container for all 3D environment elements, while the Page system manages the particle morphing effects and handles user interaction through scrolling. For information about the Frame Buffer Objects (FBO) implementation that powers the particle system, see Frame Buffer Objects (FBO).
+
+World System Overview
+The World class acts as an orchestrator for the 3D environment, responsible for initializing the visual components after resources are loaded and managing the update cycle.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+The World system has three main responsibilities:
+
+Initialize the 3D environment components when resources are ready
+Provide a bridge for event handlers (resize, scroll)
+Manage the update cycle for all contained components
+Initialization Process
+The World is responsible for initializing the Page and Environment objects after all resources have been loaded:
+
+
+
+Sources: 
+src/Experience/World/World.js
+5-62
+
+Update Cycle
+The World class manages the update cycle of its components through its update, resize, and scroll methods, which delegate to the respective methods in the Page class:
+
+update() {
+    if(this.page)
+        this.page.update()
+}
+ 
+resize() {
+    this.page.resize()
+}
+ 
+scroll() {
+    if (this.page)
+        this.page.scroll()
+}
+Sources: 
+src/Experience/World/World.js
+72-86
+
+Page System
+The Page class is the central component that manages the particle morphing effects. It converts 3D models into particle systems and handles user scroll interactions to create smooth transitions between different models.
+
+Page Components and Dependencies
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+21-56
+ 
+src/Experience/World/Page.js
+235-239
+
+Scroll Management System
+The Page class implements a sophisticated scroll handling system that:
+
+Tracks the raw scroll position
+Normalizes it to a 0-1 range based on page height
+Applies smoothing using damping functions
+Updates shader uniforms with the normalized scroll values
+
+
+
+
+
+
+
+
+
+
+
+
+The scroll method captures the scroll position and normalizes it:
+
+scroll() {
+    this.scrollY = document.getElementById('fake-scroll').scrollTop
+    // ...
+    this.normalizedScrollY = this.scrollY / (this.sectionCount * window.innerHeight);
+    this.normalizedScrollY = Math.min(this.normalizedScrollY, 1.0)
+}
+The scrollSet method then applies smoothing and updates uniforms:
+
+scrollSet() {
+    const lambda = this.isMobile ? 9 : 3
+    this.normalizedTargetScrollY = MathUtils.damp(
+        this.normalizedTargetScrollY, 
+        this.normalizedScrollY, 
+        lambda, 
+        this.time.delta
+    );
+    // Update shader uniforms with the smoothed value
+    this.simMaterial.uniforms.uScroll.value = this.normalizedTargetScrollY
+    this.renderMaterial.uniforms.uScroll.value = this.normalizedTargetScrollY
+    // ...
+}
+Sources: 
+src/Experience/World/Page.js
+317-362
+
+Model Processing and Texture Generation
+The Page class processes 3D models and converts them into textures that can be used by the shader system:
+
+
+
+
+
+
+
+
+
+
+
+
+
+The makeTexture method converts a THREE.js geometry into a data texture:
+
+makeTexture(g) {
+    let vertAmount = g.attributes.position.count;
+    let texWidth = Math.ceil(Math.sqrt(vertAmount));
+    let texHeight = Math.ceil(vertAmount / texWidth);
+    let data = new Float32Array(texWidth * texHeight * 4);
+    
+    // Shuffle and copy position data
+    shuffleArrayByThree(g.attributes.position.array);
+    
+    for(let i = 0; i < vertAmount; i++) {
+        const x = g.attributes.position.array[i * 3 + 0];
+        const y = g.attributes.position.array[i * 3 + 1];
+        const z = g.attributes.position.array[i * 3 + 2];
+        const w = 0;
+        
+        data[i * 4 + 0] = x;
+        data[i * 4 + 1] = y;
+        data[i * 4 + 2] = z;
+        data[i * 4 + 3] = w;
+    }
+    
+    let dataTexture = new THREE.DataTexture(
+        data, 
+        texWidth, 
+        texHeight, 
+        THREE.RGBAFormat, 
+        THREE.FloatType
+    );
+    dataTexture.needsUpdate = true;
+    
+    return dataTexture;
+}
+Sources: 
+src/Experience/World/Page.js
+58-107
+
+FBO Particle System Setup
+The Page class sets up the Frame Buffer Object (FBO) particle system, which is the core visual element of the application. The setFBOParticles method handles:
+
+Loading and processing 3D models
+Converting geometries to data textures
+Creating simulation and render materials with appropriate shaders
+Initializing the FBO system
+
+
+
+
+
+
+
+
+
+
+
+
+
+Key components of the FBO setup:
+
+Model Processing:
+
+this.boyGeometry = this.resources.items.boyModel.scene.children[0].geometry
+this.boyGeometry.scale(2.2, 2.2, 2.2)
+this.boyGeometry.translate(-1, -2.5, 0)
+this.boyGeometry.rotateY(-Math.PI / 2)
+Simulation Material:
+
+this.simMaterial = new THREE.ShaderMaterial({
+    uniforms:{
+        uTextureA: { type: "t", value: uTextureA },
+        uTextureB: { type: "t", value: uTextureB },
+        // ...other uniforms
+    },
+    vertexShader: simVertex,
+    fragmentShader: simFragment
+});
+Render Material:
+
+this.renderMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+        uPositions: { value: null },
+        uSize: { value: 12 },
+        uTime: { value: 0 },
+        // ...other uniforms
+    },
+    vertexShader: particlesVertex,
+    fragmentShader: particlesFragment,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+});
+FBO Initialization:
+
+this.fbo = new FBO(width, height, this.renderer, this.simMaterial, this.renderMaterial);
+this.scene.add(this.fbo.particles);
+Sources: 
+src/Experience/World/Page.js
+109-306
+
+Update Cycle
+The Page update cycle handles:
+
+Animation updates
+Time uniform updates
+Scroll calculations
+FBO updates
+Model transformations
+
+
+Key parts of the update method:
+
+update() {
+    // Update animation if it exists
+    if (this.animation)
+        this.animation.mixer.update(this.time.delta)
+    
+    // Update time uniforms
+    this.simMaterial.uniforms.uTime.value = this.time.elapsed
+    this.renderMaterial.uniforms.uTime.value = this.time.elapsed
+    this.horsePointsMaterial.uniforms.uTime.value = this.time.elapsed
+    
+    // Process scroll values
+    this.scrollSet()
+    
+    // Update FBO (this updates particle positions)
+    this.fbo.update();
+    
+    // Update tree position and rotation
+    // ...
+    
+    // Update camera position based on cursor
+    // ...
+}
+Sources: 
+src/Experience/World/Page.js
+402-426
+
+Integration with Experience
+The World and Page systems are integrated into the main Experience through a hierarchical relationship:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/World.js
+5-36
+ 
+src/Experience/World/Page.js
+21-34
+
+Summary
+The World and Page systems form the core of the Morph Particles visual experience:
+
+World serves as a container and coordinator for 3D environment components
+Page manages the particle system that creates the morphing effect
+The system responds to scroll events to create transitions between different 3D models
+FBO (Frame Buffer Objects) are used for efficient particle simulation and rendering
+The update cycle ensures smooth animations and transitions
+These systems convert static 3D models into dynamic particle systems that morph between different shapes as the user scrolls through the page, creating the central visual effect of the application.
+
+Rendering Pipeline
+Relevant source files
+src/Experience/Renderer.js
+src/Experience/Utils/FBO.js
+This document details the rendering pipeline implementation in the morph-particles system, covering WebGL renderer configuration, post-processing effects, and frame processing flow. The rendering pipeline is responsible for transforming 3D scene data (particularly particle systems) into the final visual output displayed on screen.
+
+For information about the particle system that is being rendered, see Particle System, and for details about the Frame Buffer Objects that power particle simulations, see Frame Buffer Objects.
+
+Overview
+The rendering pipeline in morph-particles implements a sophisticated WebGL-based render system with post-processing effects, particularly focused on rendering morphing particle systems with bloom effects. The pipeline is engineered for high performance while maintaining visual quality.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Renderer.js
+1-60
+ This diagram shows the high-level flow of data through the rendering system.
+
+WebGL Renderer Configuration
+The system creates a highly optimized WebGL renderer with specific configurations for performance and visual quality.
+
+Renderer Initialization
+The Renderer class initializes a THREE.WebGLRenderer with specific settings optimized for particle rendering:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Renderer.js
+30-51
+
+The renderer uses specific settings:
+
+High-performance power preference for GPU utilization
+SRGB color space for accurate color rendering
+Disabled antialiasing to maximize performance
+Physical lighting system for realistic light behavior
+Pixel ratio clamped to improve performance on high-DPI displays
+Post-Processing System
+Post-processing effects are applied using Three.js's EffectComposer system, which processes the rendered scene through a series of passes.
+
+Effect Composer Setup
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Renderer.js
+63-140
+
+The post-processing system uses:
+
+A custom WebGLRenderTarget with specific settings for optimal performance
+An EffectComposer that manages the sequence of render passes
+A RenderPass that renders the scene to a texture
+An UnrealBloomPass that adds a bloom effect to bright areas
+Custom Bloom Configuration
+The UnrealBloomPass includes a custom fragment shader to enable tinting of the bloom effect:
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Renderer.js
+72-117
+
+The bloom pass is configured with:
+
+Customizable strength, radius, and threshold parameters
+A custom tint color with adjustable strength
+Modified fragment shader that blends the bloom effect with the tint color
+Render Pipeline Flow
+The rendering process follows a specific flow to produce each frame:
+
+
+
+Sources: 
+src/Experience/Renderer.js
+203-210
+ 
+src/Experience/Utils/FBO.js
+112-123
+
+The rendering process:
+
+On each animation frame, the Experience triggers an update
+The Renderer decides whether to use post-processing
+If using post-processing, the EffectComposer processes all passes (RenderPass, BloomPass)
+If not using post-processing, the renderer directly renders the scene
+FBO Integration
+The Frame Buffer Object (FBO) system is tightly integrated with the rendering pipeline, enabling efficient particle simulations.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+37-123
+
+The FBO rendering process:
+
+Sets the renderer's target to the FBO's render texture
+Renders the simulation scene containing the simulation mesh
+Sets the renderer's target back to null (screen)
+Updates the particle render material with the new position texture
+The particles are then rendered as part of the main scene
+Resize Handling
+The rendering pipeline properly handles viewport resizing to maintain visual quality across different screen sizes.
+
+
+
+Sources: 
+src/Experience/Renderer.js
+53-61
+ 
+src/Experience/Utils/FBO.js
+108-110
+
+The resize process ensures that:
+
+The WebGL renderer adapts to the new viewport size
+The EffectComposer and its render targets are resized accordingly
+The FBO system's render targets are also resized
+Debug Features
+The rendering pipeline includes debug controls for tuning visual parameters during development.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Renderer.js
+142-201
+
+The debug panel provides controls for:
+
+Enabling/disabling the bloom effect
+Adjusting bloom strength, radius, and threshold
+Modifying the bloom tint color and strength
+Performance Considerations
+The rendering pipeline includes several optimizations to maintain performance:
+
+Limited pixel ratio to prevent performance issues on high-DPI displays
+Disabled antialiasing to reduce rendering cost
+Optimized render target configuration
+Minimal buffer usage in the FBO system
+Sources: 
+src/Experience/Renderer.js
+34-49
+ 
+src/Experience/Utils/FBO.js
+43-52
+
+Particle System
+Relevant source files
+src/Experience/Utils/FBO.js
+src/Experience/World/Page.js
+The Particle System is the core visual component of the Morph Particles project, responsible for creating fluid transitions between different 3D models represented as particle formations. This document details the architecture, implementation, and key components of the particle system, focusing on how it utilizes Frame Buffer Objects (FBO) for efficient particle simulation and rendering.
+
+For more detailed information about the specific FBO implementation, see Frame Buffer Objects (FBO). For information about the shaders that drive the particle system, see Shader System.
+
+1. System Overview
+The particle system transforms 3D models into clouds of particles that can morph between different shapes as the user scrolls through the page. It employs GPU-based simulation techniques using WebGL to achieve high performance with thousands of particles.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+109-239
+ 
+src/Experience/Utils/FBO.js
+3-14
+
+2. Key Components
+2.1 Model Processing Pipeline
+The particle system begins by processing 3D models into position data that can be used for morphing:
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+141-185
+
+The system loads multiple 3D models (boy, oni, e2, tree) and processes them by:
+
+Extracting geometry data
+Applying transformations (scale, rotation, translation)
+Converting vertex positions to a data texture format
+2.2 Frame Buffer Object (FBO)
+The FBO mechanism is central to the particle simulation:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+3-124
+
+The FBO class implements a double-buffer technique where:
+
+A simulation step is rendered to a texture
+That texture is then used as input for rendering particles
+This creates a feedback loop that allows for complex particle behaviors
+3. Simulation and Rendering Process
+The simulation and rendering process involves two distinct shader materials and a specific rendering pipeline:
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+112-123
+ 
+src/Experience/World/Page.js
+402-426
+
+3.1 Simulation Material
+The simulation material (simMaterial) is responsible for:
+
+Computing particle positions based on input textures
+Interpolating between different model states based on scroll position
+Applying animations and time-based effects
+It receives these key uniforms:
+
+uTextureA through uTextureE: Data textures containing particle positions for each model
+uTime: Elapsed time for animations
+uScroll: Normalized scroll position (0.0 to 1.0)
+Sources: 
+src/Experience/World/Page.js
+188-205
+
+3.2 Render Material
+The render material (renderMaterial) is responsible for:
+
+Sampling the position texture generated by the simulation
+Rendering particles with the appropriate size, color, and behavior
+Applying visual effects like alpha blending
+Key uniforms include:
+
+uPositions: Texture containing current particle positions (from FBO)
+uSize: Particle size
+uTime: Elapsed time for animations
+uScroll: Normalized scroll position
+Sources: 
+src/Experience/World/Page.js
+209-233
+
+4. Data Management
+4.1 Position Data Textures
+The system converts 3D model vertex data into data textures using the makeTexture function:
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+58-107
+
+The texture creation process:
+
+Takes a geometry as input
+Calculates optimal texture dimensions based on vertex count
+Shuffles vertex positions for randomization (optional)
+Places XYZ coordinates into RGBA texture format
+Creates a THREE.DataTexture with FloatType to ensure precision
+4.2 Particle Creation
+Particles are created as a THREE.Points object using a simple vertex buffer:
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+90-106
+
+The particle creation process:
+
+Creates a flat array of UV coordinates (not actual positions)
+These coordinates are used to sample the position texture
+The shader does the actual positioning of particles
+5. Scrolling and Animation
+The particle system reacts to user scrolling to control the morphing between different models:
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+317-362
+
+The scrolling implementation:
+
+Captures scroll events and calculates a normalized value (0-1)
+Applies damping for smooth transitions
+Updates shader uniforms to trigger morphing
+Optional section centering for desktop (non-mobile) users
+6. Integration with Three.js
+The particle system integrates with Three.js through specific hooks:
+
+Method	Purpose	Called By
+setFBOParticles()	Initialize the particle system	Page constructor
+update()	Update simulation and animation state	Experience update loop
+resize()	Handle window resizing	Experience resize handler
+scroll()	Process scroll events	Scroll event listener
+Sources: 
+src/Experience/World/Page.js
+109-307
+ 
+src/Experience/World/Page.js
+402-426
+
+7. Implementation Details
+The particle system supports multiple models with seamless transitions:
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Page.js
+176-185
+ 
+src/Experience/World/Page.js
+188-205
+
+7.1 Performance Considerations
+Several optimizations are used to maintain performance:
+
+Using FBO technique to leverage GPU for particle simulation
+Texture-based position storage (more efficient than per-vertex updates)
+Using THREE.Points for efficient particle rendering
+Optimized resize handling to adapt to different screen sizes
+Sources: 
+src/Experience/Utils/FBO.js
+43-52
+ 
+src/Experience/World/Page.js
+310-315
+
+7.2 Additional Effects
+The system also handles auxiliary effects:
+
+Horse model with its own specialized shader
+Tree model that rotates independently
+Camera position updates based on cursor movement
+Sources: 
+src/Experience/World/Page.js
+242-306
+ 
+src/Experience/World/Page.js
+416-425
+
+Frame Buffer Objects (FBO)
+Relevant source files
+src/Experience/Utils/FBO.js
+src/Experience/World/Cube_old.js
+src/Experience/World/Cube_old_2.js
+Purpose
+This document explains the Frame Buffer Object (FBO) implementation in the morph-particles system. The FBO class provides a GPU-accelerated method for efficiently simulating and rendering large numbers of particles, enabling smooth morphing animations between different 3D models represented as particle systems.
+
+For information about the shaders that drive the particle morphing, see Shader System.
+
+FBO Overview
+Frame Buffer Objects are OpenGL objects that allow rendering to destinations other than the screen. In the morph-particles system, FBOs are used to perform particle position simulation on the GPU by rendering to a texture, which is then used to position particles in the scene.
+
+The FBO class encapsulates this rendering-to-texture technique to enable efficient particle animations that would be prohibitively expensive if calculated on the CPU.
+
+Sources: 
+src/Experience/Utils/FBO.js
+1-124
+
+FBO Architecture
+The following diagram shows where the FBO fits within the larger system architecture:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+3-14
+
+FBO Implementation Details
+The FBO class is responsible for two main tasks:
+
+Running a simulation pass that updates particle positions
+Rendering particles based on the simulated positions
+Class Structure
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+3-14
+
+Initialization
+The FBO class is initialized with parameters defining its size and rendering materials:
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+3-21
+
+Render Target Creation
+The FBO creates a WebGLRenderTarget with specific settings optimized for particle simulation:
+
+minFilter and magFilter set to NearestFilter to sample exact pixel values
+generateMipmaps disabled as unnecessary
+depthBuffer and stencilBuffer disabled to improve performance
+type set to FloatType for precise coordinates
+Sources: 
+src/Experience/Utils/FBO.js
+37-52
+
+Simulation Setup
+The simulation process uses a simple quad (two triangles forming a rectangle) with the simulation material to update particle positions:
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+55-88
+
+Particle Creation
+The FBO creates a particle system using normalized coordinates as lookup positions:
+
+Creates a vertex buffer with UV-like coordinates (normalized 0-1 range)
+These coordinates are used in the shader to look up positions in the simulation texture
+Resulting positions determine where particles appear in 3D space
+Sources: 
+src/Experience/Utils/FBO.js
+90-106
+
+Rendering Pipeline
+The FBO uses a two-step rendering process:
+
+
+
+Sources: 
+src/Experience/Utils/FBO.js
+112-123
+
+Usage Example
+The FBO class is typically used in the Page component of the application to manage particle morphing effects:
+
+Create simulation and render materials with appropriate shaders
+Initialize the FBO with these materials and the renderer
+Add the FBO's particles to the scene
+Call the FBO's update method on each frame
+Here's a simplified flow of how the FBO is used in practice:
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/World/Cube_old_2.js
+307-391
+ 
+src/Experience/World/Cube_old_2.js
+429-436
+
+Technical Details
+Hardware Requirements
+The FBO implementation can optionally check for hardware capabilities required for its operation:
+
+Support for floating-point textures (OES_texture_float extension)
+Ability to read textures in vertex shaders (MAX_VERTEX_TEXTURE_IMAGE_UNITS > 0)
+These checks ensure that the GPU can handle the texture-based simulation technique used by the FBO.
+
+Sources: 
+src/Experience/Utils/FBO.js
+23-35
+
+Performance Optimizations
+The FBO implementation includes several optimizations:
+
+Using WebGLRenderTarget with minimal settings (no mipmaps, depth, or stencil buffers)
+Performing calculations on the GPU rather than CPU
+Using a simple quad for the simulation pass
+Creating particles with a normalized coordinate system for efficient texture lookups
+These optimizations allow the system to handle large numbers of particles with smooth performance.
+
+Sources: 
+src/Experience/Utils/FBO.js
+37-52
+ 
+src/Experience/Utils/FBO.js
+90-106
+
+Related Components
+The FBO class works in conjunction with:
+
+Simulation shaders - Calculate new particle positions
+Render shaders - Display particles based on the simulation results
+Page class - Manages the FBO instances and updates them on scroll events
+World system - Integrates the particle effects into the 3D environment
+For more information about these components, see World and Page System and Shader System.
+
+Shader System
+Relevant source files
+src/Experience/Shaders/Particles/horseParticles.frag
+src/Experience/Shaders/Particles/horseParticles.vert
+src/Experience/Shaders/Particles/particles.frag
+src/Experience/Shaders/Particles/particles.vert
+src/Experience/Shaders/Particles/simulation.frag
+src/Experience/Shaders/Particles/simulation.vert
+The Shader System is the core component responsible for creating, controlling, and rendering particles within the morph-particles framework. This system utilizes WebGL shaders implemented through THREE.js to enable smooth transitions between 3D models, particle simulations, and dynamic visual effects.
+
+For information about the Frame Buffer Objects (FBO) implementation that powers these shaders, see Frame Buffer Objects (FBO).
+
+Overview
+The Shader System consists of two primary shader pipelines that work together to create the morphing particle effects:
+
+Simulation Shaders: Responsible for computing particle positions and transformations
+Rendering Shaders: Responsible for visualizing particles with proper size, color, and appearance
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources:
+
+src/Experience/Shaders/Particles/simulation.vert
+src/Experience/Shaders/Particles/simulation.frag
+src/Experience/Shaders/Particles/particles.vert
+src/Experience/Shaders/Particles/particles.frag
+src/Experience/Shaders/Particles/horseParticles.vert
+src/Experience/Shaders/Particles/horseParticles.frag
+Simulation Shaders
+The simulation shaders are responsible for calculating particle positions during each frame, particularly handling the transformation and morphing between different 3D models based on scroll position.
+
+Vertex Shader
+The simulation vertex shader is straightforward, mainly responsible for passing UV coordinates to the fragment shader:
+
+
+
+
+
+
+
+
+Sources:
+
+src/Experience/Shaders/Particles/simulation.vert
+Fragment Shader
+The simulation fragment shader performs the core transformation and morphing logic:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+The fragment shader handles:
+
+Model Selection: Determines which models to morph between based on scroll position
+Transition Calculation: Computes interpolation values for smooth transitions
+Position Transformation: Applies rotations and position adjustments
+Random Offset: Uses random values to create staggered transitions for particles
+Key functions include:
+
+Model rotation using rotation matrices
+Random value generation for particle variation
+Range remapping for controlled transitions
+Smooth interpolation between model positions
+Sources:
+
+src/Experience/Shaders/Particles/simulation.frag
+52-110
+Rendering Shaders
+The rendering shaders use the position data calculated by the simulation shader to draw particles on screen with the appropriate size, color, and visual effects.
+
+Main Particle Rendering
+The main particle shaders handle the standard rendering of morphing particles:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Key features:
+
+Dynamic particle size based on scroll position and screen resolution
+Distance-based point rendering for circular particles
+Color transitions tied to scroll position
+Sources:
+
+src/Experience/Shaders/Particles/particles.vert
+8-38
+src/Experience/Shaders/Particles/particles.frag
+4-26
+Horse Particle Rendering
+A specialized version for horse model particles with additional features:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Key differences:
+
+Uses a specialized attribute (aE2Geometry)
+Has more complex rotation logic
+Controls opacity gradually based on scroll position
+Uses orange coloring for a "fireflies" effect
+Sources:
+
+src/Experience/Shaders/Particles/horseParticles.vert
+27-92
+src/Experience/Shaders/Particles/horseParticles.frag
+4-27
+Uniform Variables
+The shader system relies on various uniform variables to control its behavior:
+
+Uniform	Type	Purpose
+uPositions	sampler2D	Texture containing transformed positions
+uTextureA-E	sampler2D	Model position textures for morphing
+uTime	float	Current time for animations
+uScroll	float	Normalized scroll position (0.0-1.0)
+uSize	float	Base particle size
+uPixelRatio	float	Device pixel ratio for sizing
+uResolution	vec2	Screen resolution
+uTreePos	vec3	Tree model position adjustment
+uTotalModels	float	Number of models for range calculation
+uRange	float	Range size per model transition
+Sources:
+
+src/Experience/Shaders/Particles/simulation.frag
+1-9
+src/Experience/Shaders/Particles/particles.vert
+1-5
+src/Experience/Shaders/Particles/horseParticles.vert
+1-11
+Morphing Logic
+The core of the shader system is the model morphing logic that creates smooth transitions between different 3D models. This is primarily handled in the simulation fragment shader.
+
+
+
+The key aspects of the morphing logic:
+
+Range Calculation: Each model transition occurs within a specific scroll range:
+
+float range = 1.0 / uTotalModels;
+Staggered Transitions: Random offsets create natural-looking transitions:
+
+float r = random(vUv) * 0.2;
+float t = remap(clamp(uScroll - (r * 0.5), 0.0, range - r), 0.0, range - r, 0.0, 1.0);
+Model Interpolation: Linear interpolation between model positions:
+
+pos = mix(textureA, textureB, t);
+Dynamic Rotation: Models are rotated based on time:
+
+vec3 textureA = rotationMatrix3(vec3(1.0, 0.0, 0.0), sin(uTime) * 0.1) * texture2D(uTextureA, vUv).xyz;
+Sources:
+
+src/Experience/Shaders/Particles/simulation.frag
+52-90
+Integration with FBO System
+The Shader System integrates with the Frame Buffer Object (FBO) system to efficiently process and render particles. This integration enables the simulation results to be stored in textures that are then used for rendering.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Key integration points:
+
+FBO creates shader materials with appropriate uniforms
+Simulation results are stored in textures
+Render materials read from simulation textures
+THREE.Points particles are rendered with appropriate shaders
+Sources:
+
+src/Experience/Shaders/Particles/particles.vert
+1-11
+src/Experience/Shaders/Particles/simulation.frag
+1-9
+Conclusion
+The Shader System is the visual heart of the morph-particles framework, enabling the impressive particle morphing effects. By combining simulation and rendering shaders with careful control of model transitions through scroll position, the system creates fluid transformations between different 3D models represented as particle systems.
+
+Understanding this shader system is crucial for modifying or extending the visual effects of the application. The combination of GLSL shader code for both simulation and rendering, along with the FBO implementation, provides a powerful foundation for creating dynamic particle-based visualizations.
+
+Utilities and Resources
+Relevant source files
+src/Experience/Utils/Debug.js
+src/Experience/Utils/ElastickNumner.js
+src/Experience/Utils/EventEmitter.js
+src/Experience/Utils/Resources.js
+src/Experience/Utils/Sizes.js
+src/Experience/Utils/Time.js
+This document details the utility classes and resource management systems that support the morph-particles application. These components provide essential services such as event handling, timing, resource loading, and debugging capabilities that the core systems depend on to function properly.
+
+For information about the particle system itself, see Particle System. For details on the overall architecture, see Architecture.
+
+Core Utility Classes
+The morph-particles application is built on several key utility classes that provide fundamental functionality across the system. These utilities follow a modular design, with many inheriting from a common event handling base class.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/EventEmitter.js
+1-197
+ 
+src/Experience/Utils/Resources.js
+8-13
+ 
+src/Experience/Utils/Time.js
+3-8
+ 
+src/Experience/Utils/Sizes.js
+3-8
+
+EventEmitter
+The EventEmitter class implements the observer pattern, allowing components to communicate without direct dependencies. This is a foundational class that many other utilities inherit from.
+
+Key features:
+
+Event subscription (on method)
+Event unsubscription (off method)
+Event triggering (trigger method)
+Support for namespaced events
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/EventEmitter.js
+1-197
+
+Time
+The Time class manages the application's animation loop and time-tracking. It extends EventEmitter to broadcast timing events to the system.
+
+Key features:
+
+Tracks elapsed time since application start
+Calculates delta time between frames
+Emits 'tick' events on each animation frame
+Caps delta to prevent large jumps after pauses
+
+
+Sources: 
+src/Experience/Utils/Time.js
+1-42
+
+Sizes
+The Sizes class monitors window dimensions and device pixel ratio, emitting resize events when changes occur.
+
+Key features:
+
+Tracks window width and height
+Monitors device pixel ratio (capped at 2 for performance)
+Emits 'resize' events when window dimensions change
+Sources: 
+src/Experience/Utils/Sizes.js
+1-24
+
+Debug
+The Debug class provides development tools for monitoring performance and adjusting parameters in real-time.
+
+Key features:
+
+Conditionally activates when URL contains '#debug' hash
+Integrates stats.js for performance monitoring
+Uses Tweakpane for parameter adjustment panel
+Exposed as an optional system that doesn't affect production
+Sources: 
+src/Experience/Utils/Debug.js
+1-23
+
+Resource Management
+The resource management system handles loading and managing external assets such as 3D models, textures, fonts, and audio files.
+
+Resources Class
+The Resources class extends EventEmitter to manage asset loading and provide access to loaded assets throughout the application.
+
+Key features:
+
+Supports multiple asset types (models, textures, fonts, audio)
+Uses appropriate THREE.js loaders based on asset type
+Tracks loading progress
+Emits 'ready' event when all assets are loaded
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/Resources.js
+1-134
+
+Asset Loading Process
+The Resources class implements a systematic approach to asset loading:
+
+Initialize with an array of source definitions
+Create appropriate loaders for each asset type
+Load each asset using its respective loader
+Store loaded assets in the items object
+Track loading progress
+Emit 'ready' event when all assets are loaded
+
+
+Sources: 
+src/Experience/Utils/Resources.js
+21-133
+
+Helper Utilities
+ElasticNumber
+The ElasticNumber class provides smooth numeric transitions with elastic easing, useful for animations and transitions.
+
+Key features:
+
+Tracks current value and target value
+Configurable animation speed
+Time-scaled updates
+Creates natural, spring-like motion
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/ElastickNumner.js
+1-15
+
+Integration with Core Systems
+The utility classes are integrated throughout the core systems of the application, providing essential services to the main components.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+src/Experience/Utils/Resources.js
+8-13
+ 
+src/Experience/Utils/Time.js
+3-8
+ 
+src/Experience/Utils/Sizes.js
+3-8
+ 
+src/Experience/Utils/EventEmitter.js
+1-197
+ 
+src/Experience/Utils/ElastickNumner.js
+1-15
+
+Resource Types and Loaders
+The Resources class supports multiple types of assets through specialized loaders:
+
+Asset Type	Loader	Purpose
+gltfModel	GLTFLoader	Loading 3D models in GLTF format
+objModel	OBJLoader	Loading 3D models in OBJ format
+texture	TextureLoader	Loading 2D textures
+cubeTexture	CubeTextureLoader	Loading cubemap textures for environment mapping
+rgbeTexture	RGBELoader	Loading HDR environment maps
+font	FontLoader	Loading font definitions for text rendering
+audio	AudioLoader	Loading audio files for sound effects and music
+Sources: 
+src/Experience/Utils/Resources.js
+24-35
+ 
+src/Experience/Utils/Resources.js
+42-111
+
+This modular approach to utilities and resource management provides a flexible foundation that enables the complex particle effects and transitions in the morph-particles system.
+
+Development and Deployment
+Relevant source files
+.github/workflows/ci-cd-production.yml
+.gitignore
+.htaccess
+package-lock.json
+package.json
+src/index.html
+src/style.css
+This document provides comprehensive information about the development environment, build process, and deployment pipeline for the Morph Particles system. It focuses on the technical aspects of setting up the development environment, managing dependencies, and deploying the application to production.
+
+Development Environment
+The Morph Particles project is built using modern web development tools and follows a component-based architecture. This section covers the setup required to begin development on the project.
+
+Prerequisites
+Before you can start development on the Morph Particles system, you need to have the following tools installed:
+
+Node.js (v14+)
+npm (v6+)
+Git
+Project Setup
+To set up the development environment:
+
+Clone the repository
+Install dependencies
+Start the development server
+git clone https://github.com/MisterPrada/morph-particles
+cd morph-particles
+npm install
+npm run dev
+The development server will start on localhost:5173 (default Vite port) with hot module replacement enabled.
+
+Sources: 
+package.json
+4-9
+
+Project Structure
+The project follows a structured organization pattern to maintain clear separation of concerns:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+package.json
+4-24
+
+Dependencies
+The Morph Particles system relies on several key libraries and frameworks to deliver its functionality. The dependencies are managed through npm.
+
+Core Dependencies
+Dependency	Version	Purpose
+three.js	^0.164.1	3D graphics rendering engine
+@studio-freight/lenis	^1.0.27	Smooth scrolling
+gsap	^3.12.2	Animation library
+locomotive-scroll	^4.1.4	Alternative scrolling library
+stats.js	^0.17.0	Performance monitoring
+tweakpane	^4.0.1	Debug UI for parameter adjustment
+Development Dependencies
+Dependency	Version	Purpose
+vite	^4.4.9	Build tool and dev server
+vite-plugin-glsl	^1.0.2	GLSL shader import plugin
+vite-plugin-glslify	^2.0.2	Shader preprocessor
+vite-plugin-top-level-await	^1.3.1	Support for top-level await
+Sources: 
+package.json
+10-24
+
+Dependency Management Flow
+The following diagram illustrates how dependencies are managed and incorporated into the build process:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+package.json
+4-24
+
+Development Workflow
+The development workflow is centered around Vite, which provides a fast development server with hot module replacement.
+
+
+
+The project utilizes various development tools:
+
+Vite for fast development and building
+GLSL plugins for shader processing
+Hot Module Replacement for instant feedback
+Sources: 
+package.json
+6-9
+
+Build Process
+The build process transforms the development code into optimized files ready for production deployment.
+
+Build Configuration
+The build process is managed by Vite, which handles:
+
+JavaScript/TypeScript transpilation and bundling
+GLSL shader processing
+Asset optimization
+HTML and CSS minification
+Build Commands
+# Development build with hot reload
+npm run dev
+ 
+# Production build
+npm run build
+The production build creates a dist/ directory containing all optimized assets.
+
+Sources: 
+package.json
+6-9
+ 
+.gitignore
+156-157
+
+Deployment Pipeline
+The Morph Particles project uses GitHub Actions for continuous integration and deployment.
+
+Deployment Architecture
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CI/CD Configuration
+The deployment process is automated using GitHub Actions. When code is pushed to the master branch, the following steps are executed:
+
+Checkout the latest code
+Install dependencies
+Build the project
+Deploy to the production server via FTP
+The GitHub Actions workflow is defined in .github/workflows/ci-cd-production.yml.
+
+Sources: 
+.github/workflows/ci-cd-production.yml
+5-32
+
+Deployment Configuration
+The deployment configuration includes:
+
+Target: FTP server (ftp.misterprada.com)
+Directory: /christmas.misterprada.com/
+Trigger: Push to master branch
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sources: 
+.github/workflows/ci-cd-production.yml
+15-32
+ 
+.htaccess
+1-6
+
+Server Configuration
+The server uses an .htaccess file to properly route requests to the dist/ directory:
+
+RewriteEngine on
+RewriteRule ^$ dist/ [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ dist/$1 [L]
+This configuration ensures that:
+
+The root URL is served from the dist/ directory
+All other requests are routed to the corresponding path in the dist/ directory if they don't match an existing file or directory
+Sources: 
+.htaccess
+1-6
+
+Development Best Practices
+When developing for the Morph Particles system, follow these best practices:
+
+Performance optimization: The particle system is performance-intensive, so monitor FPS using Stats.js during development
+Shader development: Test shader changes incrementally and validate on different GPUs when possible
+Scroll interaction: Test scroll-based animations at different screen sizes and scroll speeds
+Code organization: Follow the established project structure with clear separation of concerns
+Troubleshooting
+Common issues and their solutions:
+
+Issue	Solution
+Shader compilation errors	Check GLSL syntax, particularly across different GLSL versions
+Performance issues	Reduce particle count or shader complexity
+Deployment failures	Verify FTP credentials and GitHub Secrets
+Dependencies conflicts	Clear node_modules and reinstall with npm ci
+Conclusion
+The Morph Particles development and deployment pipeline is designed for efficient development workflow and automated deployment. By following the setup instructions and best practices outlined in this document, developers can contribute to the project effectively.
+
+For information about the core architecture of the system, see Architecture.
+

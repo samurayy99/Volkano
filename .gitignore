@@ -47,6 +47,9 @@ public/targets/2048/*.bin
 /docs+examples/
 codepen_examples1.txt
 
+# review captures, reference frames and working notes stay local
+/docs/review/
+
 # screenshots
 Screenshot *.png
 
