@@ -282,11 +282,38 @@ export function buildHeroFieldSeed(count, layout) {
   return { positions, velocities };
 }
 
+/** Value below which `fraction` of the sorted samples lie. */
+function quantile(sorted, fraction) {
+  if (sorted.length === 0) return 0;
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.round(fraction * (sorted.length - 1))),
+  );
+  return sorted[index];
+}
+
 /**
  * Fit one authored Hero Field population into the current projected viewport.
  * The source silhouette remains authored; only its X/Y placement and scale are
  * resolved from the live screen envelope. Z is untouched so the rift keeps its
  * designed depth hierarchy.
+ *
+ * Two properties make this a fit rather than a stretch:
+ *
+ * **One scale for both axes.** Normalising X and Y independently maps the
+ * authored bounding box onto the viewport box, so the mass ends up filling
+ * exactly `fill` of the frame in both directions whatever it was authored as —
+ * a wide sheet on desktop, a hard horizontal slab in portrait. A single
+ * contain-scale keeps the authored proportion and lets the frame's spare axis
+ * become negative space.
+ *
+ * **A robust extent, not min/max.** Cohort D satellites are by design the
+ * outermost particles. Fitting to the true extremes lets ~8 % of the population
+ * define the box and pins those particles exactly on its edge, which reads as a
+ * cut rectangle. The extent comes from a high quantile instead, so the core
+ * governs the scale and the satellites trail past it into the margin — the
+ * silhouette gets a soft edge because the sparse matter is outside it, not
+ * because it was blurred.
  *
  * @param {Float32Array} positions
  * @param {{min:number[], max:number[], inset?:number[], fill?:number}} viewport
@@ -294,38 +321,62 @@ export function buildHeroFieldSeed(count, layout) {
 export function fitHeroFieldSeedToViewport(positions, viewport) {
   if (!viewport || positions.length === 0) return positions;
 
-  const sourceMin = [Infinity, Infinity];
-  const sourceMax = [-Infinity, -Infinity];
-  for (let i = 0; i < positions.length; i += 3) {
-    sourceMin[0] = Math.min(sourceMin[0], positions[i]);
-    sourceMax[0] = Math.max(sourceMax[0], positions[i]);
-    sourceMin[1] = Math.min(sourceMin[1], positions[i + 1]);
-    sourceMax[1] = Math.max(sourceMax[1], positions[i + 1]);
+  const count = positions.length / 3;
+  const xs = new Float64Array(count);
+  const ys = new Float64Array(count);
+  for (let i = 0, p = 0; i < positions.length; i += 3, p += 1) {
+    xs[p] = positions[i];
+    ys[p] = positions[i + 1];
   }
+  const sortedX = Float64Array.prototype.slice.call(xs).sort();
+  const sortedY = Float64Array.prototype.slice.call(ys).sort();
+
+  // Median centre: the core decides where the mass sits, not two stray
+  // satellites on opposite sides of the frame.
+  const sourceCenterX = quantile(sortedX, 0.5);
+  const sourceCenterY = quantile(sortedY, 0.5);
+
+  const deviationX = new Float64Array(count);
+  const deviationY = new Float64Array(count);
+  for (let p = 0; p < count; p += 1) {
+    deviationX[p] = Math.abs(xs[p] - sourceCenterX);
+    deviationY[p] = Math.abs(ys[p] - sourceCenterY);
+  }
+  deviationX.sort();
+  deviationY.sort();
+
+  const sourceHalfX = Math.max(0.0001, quantile(deviationX, 0.98));
+  const sourceHalfY = Math.max(0.0001, quantile(deviationY, 0.98));
+  const trueHalfX = Math.max(0.0001, deviationX[count - 1]);
+  const trueHalfY = Math.max(0.0001, deviationY[count - 1]);
 
   const fill = Math.max(0.5, Math.min(viewport.fill ?? 0.86, 0.98));
   const insetX = Math.max(0, viewport.inset?.[0] ?? 0);
   const insetY = Math.max(0, viewport.inset?.[1] ?? 0);
   const targetCenterX = (viewport.min[0] + viewport.max[0]) * 0.5;
   const targetCenterY = (viewport.min[1] + viewport.max[1]) * 0.5;
-  const targetHalfX = Math.max(
+  const availableHalfX = Math.max(
     0.5,
-    ((viewport.max[0] - viewport.min[0]) * 0.5 - insetX) * fill,
+    (viewport.max[0] - viewport.min[0]) * 0.5 - insetX,
   );
-  const targetHalfY = Math.max(
+  const availableHalfY = Math.max(
     0.5,
-    ((viewport.max[1] - viewport.min[1]) * 0.5 - insetY) * fill,
+    (viewport.max[1] - viewport.min[1]) * 0.5 - insetY,
   );
-  const sourceCenterX = (sourceMin[0] + sourceMax[0]) * 0.5;
-  const sourceCenterY = (sourceMin[1] + sourceMax[1]) * 0.5;
-  const sourceHalfX = Math.max(0.0001, (sourceMax[0] - sourceMin[0]) * 0.5);
-  const sourceHalfY = Math.max(0.0001, (sourceMax[1] - sourceMin[1]) * 0.5);
+
+  // Contain the core inside `fill` of the envelope, then hold the whole
+  // population — satellites included — inside the envelope itself, so the
+  // fill headroom is what the outliers travel into.
+  const scale = Math.min(
+    (availableHalfX * fill) / sourceHalfX,
+    (availableHalfY * fill) / sourceHalfY,
+    availableHalfX / trueHalfX,
+    availableHalfY / trueHalfY,
+  );
 
   for (let i = 0; i < positions.length; i += 3) {
-    positions[i] = targetCenterX
-      + ((positions[i] - sourceCenterX) / sourceHalfX) * targetHalfX;
-    positions[i + 1] = targetCenterY
-      + ((positions[i + 1] - sourceCenterY) / sourceHalfY) * targetHalfY;
+    positions[i] = targetCenterX + (positions[i] - sourceCenterX) * scale;
+    positions[i + 1] = targetCenterY + (positions[i + 1] - sourceCenterY) * scale;
   }
 
   return positions;
